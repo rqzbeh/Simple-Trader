@@ -14,17 +14,18 @@ Highlights
 Table of Contents
 - [Quickstart](#quickstart)
 - [Key Concepts](#key-concepts)
-- [Configuration & Environment Variables](#configuration--environment-variables)
-- [CLI & Usage](#cli--usage)
-- [Database & Migrations](#database--migrations)
-- [Telemetry & Observability](#telemetry--observability)
-- [Security & Secrets](#security--secrets)
-- [Testing & Development](#testing--development)
+- [Configuration & Environment Variables](#configuration)
+- [CLI & Usage](#cli-usage)
+- [Database & Migrations](#database-migrations)
+- [Telemetry & Observability](#telemetry-observability)
+- [Security & Secrets](#security)
+- [Testing & Development](#testing-development)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
 - [License](#license)
 
-Quickstart
+<a id="quickstart"></a>
+## Quickstart
 1. Clone the repository:
 ```bash
 git clone https://github.com/rqzbeh/Simple-Trader.git
@@ -56,7 +57,8 @@ python main.py process --max-news 100
 python main.py run --interval 300 --max-news 200
 ```
 
-Key Concepts
+<a id="key-concepts"></a>
+## Key Concepts
 - News Fetching: `NewsFetcher` aggregates RSS and optional news API sources, dedupes entries, and stores raw news.
 - LLM Analysis: `LLMPool` queries configured LLM providers and stores each analysis.
 - Market Data: `MarketDataClient` collects OHLC data (CoinGecko for crypto; AlphaVantage for forex) and aggregates 2-hour candles.
@@ -65,7 +67,8 @@ Key Concepts
 - Telegram Notifier: Sends formatted message notifications for created/open/closed signals.
 - Tuner & Learning: `StrategyTuner` uses recorded trade outcomes to adapt parameters automatically.
 
-Configuration & Environment Variables
+<a id="configuration"></a>
+## Configuration & Environment Variables
 Simple-Trader reads configuration from environment variables (or `.env`). Important variables:
 - `DATABASE_PATH`: SQLite file path. Default: `simple_trader.db`.
 - `LOG_LEVEL`: e.g., `INFO`, `DEBUG`. Default: `INFO`.
@@ -101,7 +104,8 @@ ENABLE_TELEMETRY=true
 PROMETHEUS_PORT=9000
 ```
 
-CLI & Usage
+<a id="cli-usage"></a>
+## CLI & Usage
 The CLI command `python main.py` supports the following subcommands:
 
 - Fetch news:
@@ -131,7 +135,8 @@ The CLI command `python main.py` supports the following subcommands:
 - Tuner suggestions and application:
   - `python main.py suggest --min-win-rate 0.4 --min-avg-rr 3.0 --min-sample-size 10 --apply`
 
-Database & Migrations
+<a id="database-migrations"></a>
+## Database & Migrations
 - Default local DB is SQLite. For production use, consider migrating to PostgreSQL.
 - There is a migrations script: `migrations/001_create_postgres_schema.sql`.
 - Use `tools/migrate_sqlite_to_postgres.py` to migrate from SQLite to Postgres if needed:
@@ -139,35 +144,41 @@ Database & Migrations
 python tools/migrate_sqlite_to_postgres.py --sqlite simple_trader.db --pg "postgresql://user:pass@host:5432/dbname"
 ```
 
-Telemetry & Observability
+<a id="telemetry-observability"></a>
+## Telemetry & Observability
 - Enable Prometheus metrics with `ENABLE_TELEMETRY=true`. Use `PROMETHEUS_PORT` to set the port (default `9000`).
 - Grafana dashboard sample is included in `grafana/simple_trader_dashboard.json`.
 
-Security & Secrets
+<a id="security"></a>
+## Security & Secrets
 - Do NOT commit `.env` or any API keys. Use a secure injection mechanism or GitHub secrets in CI.
 - Avoid versioning local DB files — use `.gitignore` to exclude `*.db`, `.env` and other local artifacts.
 
-Testing & Development
+<a id="testing-development"></a>
+## Testing & Development
 - Run unit tests (if provided) with pytest:
 ```bash
 pytest
 ```
 - Add debugging by enabling `LOG_LEVEL=DEBUG`.
 
-Troubleshooting
+<a id="troubleshooting"></a>
+## Troubleshooting
 - LLM endpoints failing: check provider credentials and rate limits, check the DB `llm_usage` for errors.
 - Market data not found: ensure symbol maps to a CoinGecko id or confirm AlphaVantage requests/keys for forex.
 - Telegram messages missing: check `BACKTEST_MODE`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_CHAT_ID`.
 - If a secret accidentally gets committed, use `git filter-repo` or `BFG` to remove it and rotate your keys.
 
-Contributing
+<a id="contributing"></a>
+## Contributing
 Contributions are welcome. Guidelines:
 - Fork the repo and create a feature branch.
 - Add tests for new features and ensure existing tests pass.
 - Follow code style: prefer Black formatting and type hints.
 - Open a PR with a clear summary and testing instructions.
 
-License
+<a id="license"></a>
+## License
 - This repository is licensed under the MIT License (see the full text below).
 - If you prefer another license, let the maintainers know and we can update `LICENSE`.
 
