@@ -1,0 +1,187 @@
+# Python .gitignore - Recommended for Python projects
+#
+# Keep secrets, build artifacts, and local environment files out of source control.
+# This file is tailored for a Python project that uses SQLite, virtualenvs, and common editors/IDEs.
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Virtual environments (various names)
+venv/
+ENV/
+env/
+.venv/
+.venv/*
+venv.bak/
+venv-old/
+pipenv/
+
+# Python environment tool files
+Pipfile.lock
+poetry.lock
+
+# SQLite / DB files (keep your db out of repo)
+*.sqlite
+*.sqlite3
+*.db
+simple_trader.db
+
+# Flask / Django / other local settings (local files, instance folder)
+instance/
+.webassets-cache
+local_settings.py
+
+# dotenv and secrets
+.env
+.env.*
+*.env
+*.secret
+credentials.json
+client_secrets.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Byte-compiled
+*.pyc
+*.pyo
+*.pyd
+
+# Logs and runtime files
+*.log
+logs/
+*.out
+*.err
+*.pid
+*.sock
+
+# System-specific files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editors & IDEs
+.vscode/
+.idea/
+*.iml
+*.sublime-project
+*.sublime-workspace
+*.vscode-test
+
+# PyCharm
+# JetBrains keep cache and config
+.idea/
+*.iws
+*.iml
+*.ipr
+
+# Vim / temporary files
+*~
+*.swp
+*.swo
+*.swn
+
+# GNU Emacs
+*~
+
+# macOS
+.DS_Store
+
+# Windows
+$RECYCLE.BIN/
+desktop.ini
+
+# Common containers / artifacts
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker
+docker-compose.override.yml
+*.dockerfile
+.dockerignore
+
+# Build artifacts from other tools
+doc/build/
+build/
+dist/
+
+# Local configuration / caches
+.local/
+.cache/
+.mypy_cache/
+.pytype/
+.pip-cache/
+pip-wheel-metadata/
+
+# Coverage output
+coverage/
+htmlcov/
+
+# Don't ignore these (explicitly tracking)
+# - Migrations folder (versioned schema) should stay committed.
+# - grafana/* files to keep the dashboard JSON tracked
+# If you add new local or secret files, add them here.
+
+# NOTE:
+# - Ensure you do not commit API keys, tokens, certificate files, or DB files.
+# - If you have a `.env` with secrets, keep it locally and add an example: `.env.example` or `.env.sample`.

@@ -1,0 +1,145 @@
+{
+  "dashboard": {
+    "id": null,
+    "uid": "simple-trader-dashboard",
+    "title": "Simple Trader - Core Metrics",
+    "tags": ["simple-trader", "llm", "signals", "monitoring"],
+    "timezone": "browser",
+    "schemaVersion": 36,
+    "version": 1,
+    "refresh": "30s",
+    "panels": [
+      {
+        "id": 1,
+        "gridPos": { "x": 0, "y": 0, "w": 12, "h": 6 },
+        "type": "timeseries",
+        "title": "LLM Requests (rate per provider)",
+        "targets": [
+          {
+            "expr": "sum(rate(simple_trader_llm_requests_total[5m])) by (provider)",
+            "legendFormat": "{{provider}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "req/s" }
+        }
+      },
+      {
+        "id": 2,
+        "gridPos": { "x": 12, "y": 0, "w": 12, "h": 6 },
+        "type": "timeseries",
+        "title": "LLM Request Latency (p50/p95)",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.50, sum(rate(simple_trader_llm_request_latency_seconds_bucket[5m])) by (le))",
+            "legendFormat": "p50",
+            "refId": "A"
+          },
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(simple_trader_llm_request_latency_seconds_bucket[5m])) by (le))",
+            "legendFormat": "p95",
+            "refId": "B"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "s" }
+        }
+      },
+      {
+        "id": 3,
+        "gridPos": { "x": 0, "y": 6, "w": 8, "h": 4 },
+        "type": "stat",
+        "title": "Open Signals (current)",
+        "targets": [
+          {
+            "expr": "simple_trader_open_signals_count",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "none", "min": 0 }
+        }
+      },
+      {
+        "id": 4,
+        "gridPos": { "x": 8, "y": 6, "w": 16, "h": 4 },
+        "type": "timeseries",
+        "title": "Signals Created (1h) by Symbol",
+        "targets": [
+          {
+            "expr": "sum(rate(simple_trader_signals_created_total[1h])) by (symbol)",
+            "legendFormat": "{{symbol}}",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "req/s" }
+        }
+      },
+      {
+        "id": 5,
+        "gridPos": { "x": 0, "y": 10, "w": 24, "h": 5 },
+        "type": "timeseries",
+        "title": "News Processed Rate (5m)",
+        "targets": [
+          {
+            "expr": "sum(rate(simple_trader_news_processed_total[5m]))",
+            "legendFormat": "news_processed",
+            "refId": "A"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": { "unit": "req/s" }
+        }
+      }
+    ],
+    "templating": {
+      "list": [
+        {
+          "name": "provider",
+          "label": "LLM Provider",
+          "type": "query",
+          "hide": 0,
+          "datasource": "Prometheus",
+          "query": "label_values(simple_trader_llm_requests_total, provider)",
+          "refresh": 1,
+          "multi": true,
+          "includeAll": true,
+          "allValue": null
+        },
+        {
+          "name": "symbol",
+          "label": "Symbol",
+          "type": "query",
+          "datasource": "Prometheus",
+          "query": "label_values(simple_trader_signals_created_total, symbol)",
+          "refresh": 1,
+          "multi": true,
+          "includeAll": true,
+          "allValue": null
+        }
+      ]
+    },
+    "annotations": {
+      "list": []
+    },
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {
+      "refresh_intervals": [
+        "5s",
+        "10s",
+        "30s",
+        "1m",
+        "5m",
+        "15m",
+        "1h"
+      ]
+    },
+    "schema": 1
+  },
+  "overwrite": true
+}
