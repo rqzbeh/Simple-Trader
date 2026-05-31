@@ -104,7 +104,7 @@ class SignalScorer:
         if SKLEARN_AVAILABLE:
             # Initialize a new model (SGD with log-loss for incremental logistic regression).
             self.model = SGDClassifier(
-                loss="log",
+                loss="log_loss",
                 alpha=0.0001,
                 learning_rate="optimal",
                 eta0=0.01,
@@ -182,15 +182,17 @@ class SignalScorer:
 
     def save_model_to_db(self) -> None:
         """
-        Persist the pickled model as a base64 string in runtime parameters (small store).
+        Persist model parameters as safe JSON in runtime parameters.
         """
         try:
-            # Save to a temporary bytes buffer first
-            payload = {"model": self.model, "scaler": self.scaler}
-            raw = pickle.dumps(payload)
-            b64 = base64.b64encode(raw).decode("ascii")
+            payload = self._build_safe_db_payload()
+            if payload is None:
+                return
+            b64 = base64.b64encode(
+                json.dumps(payload, separators=(",", ":")).encode("utf-8")
+            ).decode("ascii")
             self.db.set_runtime_param(
-                DB_MODEL_PARAM_KEY, b64, "Pickled model saved in DB"
+                DB_MODEL_PARAM_KEY, b64, "JSON-serialized scorer model saved in DB"
             )
             logger.info("Scorer model saved to DB runtime param %s", DB_MODEL_PARAM_KEY)
         except Exception:
@@ -198,7 +200,7 @@ class SignalScorer:
 
     def load_model_from_db(self) -> bool:
         """
-        Load the pickled model from the DB runtime parameter. Returns True on success.
+        Load the JSON-serialized model from DB runtime parameters. Returns True on success.
         """
         try:
             b64 = self.db.get_runtime_param(DB_MODEL_PARAM_KEY)
@@ -208,16 +210,75 @@ class SignalScorer:
                 )
                 return False
             raw = base64.b64decode(b64)
-            payload = pickle.loads(raw)
-            self.model = payload.get("model", self.model)
-            self.scaler = payload.get("scaler", self.scaler)
-            self._is_trained = bool(getattr(self.model, "coef_", None) is not None)
+            payload = json.loads(raw.decode("utf-8"))
+            if not self._restore_from_safe_db_payload(payload):
+                return False
             logger.info(
                 "Scorer model loaded from DB runtime param %s", DB_MODEL_PARAM_KEY
             )
             return True
         except Exception:
             logger.exception("Failed to load model from DB runtime param")
+            return False
+
+    def _build_safe_db_payload(self) -> Optional[Dict[str, Any]]:
+        if not SKLEARN_AVAILABLE or self.model is None:
+            return None
+        coef = getattr(self.model, "coef_", None)
+        intercept = getattr(self.model, "intercept_", None)
+        classes = getattr(self.model, "classes_", None)
+        if coef is None or intercept is None or classes is None:
+            return None
+        payload: Dict[str, Any] = {
+            "schema_version": 1,
+            "model": {
+                "coef": np.asarray(coef, dtype=float).tolist(),
+                "intercept": np.asarray(intercept, dtype=float).tolist(),
+                "classes": np.asarray(classes, dtype=int).tolist(),
+            },
+        }
+        if self.scaler is not None and hasattr(self.scaler, "mean_"):
+            payload["scaler"] = {
+                "mean": np.asarray(self.scaler.mean_, dtype=float).tolist(),
+                "scale": np.asarray(self.scaler.scale_, dtype=float).tolist(),
+                "var": np.asarray(self.scaler.var_, dtype=float).tolist(),
+                "n_samples_seen": int(getattr(self.scaler, "n_samples_seen_", 1)),
+            }
+        return payload
+
+    def _restore_from_safe_db_payload(self, payload: Dict[str, Any]) -> bool:
+        if not SKLEARN_AVAILABLE or self.model is None:
+            return False
+        model_payload = payload.get("model")
+        if not isinstance(model_payload, dict):
+            return False
+        try:
+            self.model.classes_ = np.asarray(model_payload["classes"], dtype=np.int64)
+            self.model.coef_ = np.asarray(model_payload["coef"], dtype=float)
+            self.model.intercept_ = np.asarray(model_payload["intercept"], dtype=float)
+            self.model.n_features_in_ = int(self.model.coef_.shape[1])
+            self.model.t_ = float(getattr(self.model, "t_", 1.0))
+            scaler_payload = payload.get("scaler")
+            if (
+                self.scaler is not None
+                and isinstance(scaler_payload, dict)
+                and "mean" in scaler_payload
+                and "scale" in scaler_payload
+            ):
+                self.scaler.mean_ = np.asarray(scaler_payload["mean"], dtype=float)
+                self.scaler.scale_ = np.asarray(scaler_payload["scale"], dtype=float)
+                self.scaler.var_ = np.asarray(
+                    scaler_payload.get("var", np.square(self.scaler.scale_)),
+                    dtype=float,
+                )
+                self.scaler.n_samples_seen_ = int(
+                    scaler_payload.get("n_samples_seen", 1)
+                )
+                self.scaler.n_features_in_ = int(len(self.scaler.mean_))
+            self._is_trained = True
+            return True
+        except Exception:
+            logger.exception("Failed to restore scorer model payload")
             return False
 
     def load_model(self) -> bool:
