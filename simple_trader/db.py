@@ -27,7 +27,7 @@ logger.addHandler(logging.NullHandler())
 
 
 def now_ts() -> int:
-    return int(datetime.utcnow().replace(tzinfo=timezone.utc).timestamp())
+    return int(datetime.now(timezone.utc).timestamp())
 
 
 def ensure_iso(ts: Optional[int]) -> Optional[str]:
@@ -166,7 +166,7 @@ class Database:
                     created_at TEXT DEFAULT (datetime('now'))
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_news_published at news (published_at);
+                CREATE INDEX IF NOT EXISTS idx_news_published ON news (published_at);
                 CREATE INDEX IF NOT EXISTS idx_news_asset ON news(asset);
                 CREATE INDEX IF NOT EXISTS idx_news_processed ON news(processed);
 
@@ -855,8 +855,14 @@ _default_db: Optional[Database] = None
 
 def get_default_db(db_path: Optional[str] = None) -> Database:
     global _default_db
+    resolved_path = db_path or "simple_trader.db"
     if _default_db is None:
-        _default_db = Database(db_path or "simple_trader.db")
+        _default_db = Database(resolved_path)
+    elif resolved_path != _default_db.db_path:
+        raise DatabaseError(
+            f"Default DB already initialized with path '{_default_db.db_path}', "
+            f"but got a request for '{resolved_path}'."
+        )
     return _default_db
 
 

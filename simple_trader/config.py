@@ -1,4 +1,4 @@
-Simple-Trader\simple_trader\config.py
+# Simple-Trader/simple_trader/config.py
 # -*- coding: utf-8 -*-
 """
 Configuration loader for Simple-Trader.
@@ -264,8 +264,8 @@ def _default_llm_provider_envs() -> List[LLMProviderConfig]:
 
     # Groq
     groq_key = os.getenv("GROQ_API_KEY")
-    groq_endpoint = os.getenv("GROQ_API_ENDPOINT", "https://api.groq.ai/v1")
-    groq_model = os.getenv("GROQ_MODEL", "gpt-4o-mini")
+    groq_endpoint = os.getenv("GROQ_API_ENDPOINT", "https://api.groq.com/openai/v1")
+    groq_model = os.getenv("GROQ_MODEL", "llama3-8b-8192")
     groq_rate_limit = _getenv_int("GROQ_RATE_LIMIT_PER_MINUTE", 20)
     groq_auth_header = os.getenv("GROQ_AUTH_HEADER", "Authorization")
     groq_auth_prefix = os.getenv("GROQ_AUTH_PREFIX", "Bearer ")
@@ -291,15 +291,15 @@ def _default_llm_provider_envs() -> List[LLMProviderConfig]:
     # This reduces the need to manually pass a fully-formed endpoint and keeps
     # a consistent convention for Cloudflare Workers model responses.
     cf_key = os.getenv("CLOUDFLARE_API_KEY")
-    cf_endpoint = os.getenv("CLOUDFLARE_API_ENDPOINT", "https://api.cloudflare.com/client/v4/accounts")
-    cf_model = os.getenv("CLOUDFLARE_MODEL", "gpt-4o-mini")
+    cf_endpoint = os.getenv("CLOUDFLARE_API_ENDPOINT", "https://api.cloudflare.com/client/v4")
+    cf_model = os.getenv("CLOUDFLARE_MODEL", "@cf/meta/llama-3.1-8b-instruct")
     cf_account = os.getenv("CLOUDFLARE_ACCOUNT", None)
     # If caller specified a Cloudflare account and the endpoint appears to be a base accounts path,
     # append the account and model-specific responses path to form the full model endpoint.
     try:
-        if cf_account and cf_endpoint and cf_endpoint.rstrip("/").endswith("/accounts"):
-            # build typical Cloudflare Workers Models 'responses' route for the provided account & model
-            cf_endpoint = f"{cf_endpoint.rstrip('/')}/{cf_account}/workers/models/{cf_model}/responses"
+        if cf_account and cf_endpoint and cf_endpoint.rstrip("/").endswith("/client/v4"):
+            # build Cloudflare Workers AI run route for the provided account and model
+            cf_endpoint = f"{cf_endpoint.rstrip('/')}/accounts/{cf_account}/ai/run/{cf_model}"
     except Exception:
         # Keep the configured endpoint untouched on any construction error; let the user override
         pass
@@ -472,3 +472,4 @@ def from_env() -> Config:
 
 # For convenience if modules import the config at module import time:
 CONFIG = from_env()
+load_config = from_env

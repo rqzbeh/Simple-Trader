@@ -1008,7 +1008,7 @@ class SignalManager:
             if not sessions:
                 # fallback to True to avoid blocking signals by default
                 return True
-            now_utc = datetime.utcnow().hour
+            now_utc = datetime.now(timezone.utc).hour
             # check if any preferred session is active
             for s in sessions:
                 times = cfg.session_map.get(s)

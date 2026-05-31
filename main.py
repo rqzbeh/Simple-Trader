@@ -338,6 +338,11 @@ class Orchestrator:
 
     def stop(self):
         self._stop_event.set()
+        try:
+            if getattr(self, "llm_pool", None) is not None:
+                self.llm_pool.shutdown(wait=True)
+        except Exception:
+            LOG.exception("Failed to shutdown LLM pool")
 
 
 def parse_cli_args(argv) -> argparse.Namespace:

@@ -1,4 +1,4 @@
-Simple-Trader\simple_trader\news_fetcher.py
+# Simple-Trader/simple_trader/news_fetcher.py
 # -*- coding: utf-8 -*-
 """
 News fetching module for Simple-Trader.
