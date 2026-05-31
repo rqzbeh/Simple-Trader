@@ -106,7 +106,9 @@ class TelegramNotifier:
         self.config = config or CONFIG
         self.token = token or self.config.telegram_bot_token
         self.chat_id = chat_id or self.config.telegram_chat_id
-        self.db = db or get_default_db(self.config.database_path)
+        self.db = db or get_default_db(
+            self.config.database_path, tenant_id=self.config.tenant_id
+        )
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "SimpleTrader-Telegram/1.0"})
         # If nil or not set, notifies will be no-op to avoid accidental messages

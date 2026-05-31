@@ -1,4 +1,4 @@
-Simple-Trader\simple_trader\config.py
+# Simple-Trader/simple_trader/config.py
 # -*- coding: utf-8 -*-
 """
 Configuration loader for Simple-Trader.
@@ -93,6 +93,7 @@ class Config:
     """
     # Basic / runtime
     database_path: str = "simple_trader.db"
+    tenant_id: str = "default"
     log_level: str = field(default="INFO")
     timezone: str = "UTC"
 
@@ -153,6 +154,13 @@ class Config:
 
     def validate(self) -> None:
         """Assert that the config is sane."""
+        tenant = (self.tenant_id or "").strip()
+        if not tenant:
+            raise ValueError("tenant_id must not be empty")
+        if len(tenant) > 64:
+            raise ValueError("tenant_id length must be <= 64")
+        if not all(c.isalnum() or c in ("-", "_") for c in tenant):
+            raise ValueError("tenant_id must contain only letters, numbers, '-' or '_'")
         if self.min_risk_reward_ratio < 1.0:
             raise ValueError("min_risk_reward_ratio must be >= 1")
         if self.risk_per_trade_pct <= 0 or self.risk_per_trade_pct > 0.2:
@@ -264,8 +272,8 @@ def _default_llm_provider_envs() -> List[LLMProviderConfig]:
 
     # Groq
     groq_key = os.getenv("GROQ_API_KEY")
-    groq_endpoint = os.getenv("GROQ_API_ENDPOINT", "https://api.groq.ai/v1")
-    groq_model = os.getenv("GROQ_MODEL", "gpt-4o-mini")
+    groq_endpoint = os.getenv("GROQ_API_ENDPOINT", "https://api.groq.com/openai/v1")
+    groq_model = os.getenv("GROQ_MODEL", "llama3-8b-8192")
     groq_rate_limit = _getenv_int("GROQ_RATE_LIMIT_PER_MINUTE", 20)
     groq_auth_header = os.getenv("GROQ_AUTH_HEADER", "Authorization")
     groq_auth_prefix = os.getenv("GROQ_AUTH_PREFIX", "Bearer ")
@@ -291,15 +299,15 @@ def _default_llm_provider_envs() -> List[LLMProviderConfig]:
     # This reduces the need to manually pass a fully-formed endpoint and keeps
     # a consistent convention for Cloudflare Workers model responses.
     cf_key = os.getenv("CLOUDFLARE_API_KEY")
-    cf_endpoint = os.getenv("CLOUDFLARE_API_ENDPOINT", "https://api.cloudflare.com/client/v4/accounts")
-    cf_model = os.getenv("CLOUDFLARE_MODEL", "gpt-4o-mini")
+    cf_endpoint = os.getenv("CLOUDFLARE_API_ENDPOINT", "https://api.cloudflare.com/client/v4")
+    cf_model = os.getenv("CLOUDFLARE_MODEL", "@cf/meta/llama-3.1-8b-instruct")
     cf_account = os.getenv("CLOUDFLARE_ACCOUNT", None)
     # If caller specified a Cloudflare account and the endpoint appears to be a base accounts path,
     # append the account and model-specific responses path to form the full model endpoint.
     try:
-        if cf_account and cf_endpoint and cf_endpoint.rstrip("/").endswith("/accounts"):
-            # build typical Cloudflare Workers Models 'responses' route for the provided account & model
-            cf_endpoint = f"{cf_endpoint.rstrip('/')}/{cf_account}/workers/models/{cf_model}/responses"
+        if cf_account and cf_endpoint and cf_endpoint.rstrip("/").endswith("/client/v4"):
+            # build Cloudflare Workers AI run route for the provided account and model
+            cf_endpoint = f"{cf_endpoint.rstrip('/')}/accounts/{cf_account}/ai/run/{cf_model}"
     except Exception:
         # Keep the configured endpoint untouched on any construction error; let the user override
         pass
@@ -376,6 +384,7 @@ def from_env() -> Config:
     """
     # Basic config
     database_path = os.getenv("DATABASE_PATH", "simple_trader.db")
+    tenant_id = os.getenv("TENANT_ID", "default")
     log_level = os.getenv("LOG_LEVEL", "INFO")
     timezone = os.getenv("TIMEZONE", "UTC")
 
@@ -423,6 +432,7 @@ def from_env() -> Config:
 
     cfg = Config(
         database_path=database_path,
+        tenant_id=tenant_id,
         log_level=log_level,
         timezone=timezone,
         account_balance_usd=account_balance_usd,
@@ -460,6 +470,7 @@ def from_env() -> Config:
     logger.setLevel(getattr(logging, cfg.log_level.upper(), logging.INFO))
     logger.debug("Loaded configuration from environment (with secrets masked):")
     logger.debug("database_path=%s", cfg.database_path)
+    logger.debug("tenant_id=%s", cfg.tenant_id)
     logger.debug("queue capacity per minute (LLM): %s", cfg.token_bucket_capacity_per_minute())
     logger.debug("number of LLM providers enabled: %s", len(cfg.get_llm_providers_enabled()))
     logger.debug("rss_feeds_count=%s", len(cfg.news_rss_feeds))
@@ -472,3 +483,4 @@ def from_env() -> Config:
 
 # For convenience if modules import the config at module import time:
 CONFIG = from_env()
+load_config = from_env

@@ -66,7 +66,9 @@ class StrategyTuner:
 
     def __init__(self, db: Optional[Database] = None, config: Optional[Config] = None):
         self.config = config or CONFIG
-        self.db = db or get_default_db(self.config.database_path)
+        self.db = db or get_default_db(
+            self.config.database_path, tenant_id=self.config.tenant_id
+        )
 
     def update_from_trade(
         self,
@@ -497,7 +499,9 @@ class SignalManager:
         telegram_notifier: Optional[TelegramNotifier] = None,
     ):
         self.config = config or CONFIG
-        self.db = db or get_default_db(self.config.database_path)
+        self.db = db or get_default_db(
+            self.config.database_path, tenant_id=self.config.tenant_id
+        )
         self.news_fetcher = news_fetcher or NewsFetcher(self.config, self.db)
         self.llm_pool = llm_pool or LLMPool(self.config, self.db)
         self.market = market_client or MarketDataClient(self.config, self.db)
@@ -1008,7 +1012,7 @@ class SignalManager:
             if not sessions:
                 # fallback to True to avoid blocking signals by default
                 return True
-            now_utc = datetime.utcnow().hour
+            now_utc = datetime.now(timezone.utc).hour
             # check if any preferred session is active
             for s in sessions:
                 times = cfg.session_map.get(s)

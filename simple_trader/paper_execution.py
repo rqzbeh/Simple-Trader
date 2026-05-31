@@ -75,7 +75,9 @@ class PaperExecutor:
 
     def __post_init__(self) -> None:
         self.config = self.config or CONFIG
-        self.db = self.db or get_default_db(self.config.database_path)
+        self.db = self.db or get_default_db(
+            self.config.database_path, tenant_id=self.config.tenant_id
+        )
         self.market_client = self.market_client or MarketDataClient(
             self.config, self.db
         )
@@ -255,10 +257,16 @@ class PaperExecutor:
             # Note: if both high >= TP and low <= SL in the same candle, choose the more likely/close one.
             tp_hit = False
             sl_hit = False
-            if high is not None and take_profit is not None and high >= take_profit:
-                tp_hit = True
-            if low is not None and stop_loss is not None and low <= stop_loss:
-                sl_hit = True
+            if side == "long":
+                if high is not None and take_profit is not None and high >= take_profit:
+                    tp_hit = True
+                if low is not None and stop_loss is not None and low <= stop_loss:
+                    sl_hit = True
+            elif side == "short":
+                if low is not None and take_profit is not None and low <= take_profit:
+                    tp_hit = True
+                if high is not None and stop_loss is not None and high >= stop_loss:
+                    sl_hit = True
 
             chosen = None
             if tp_hit and sl_hit:

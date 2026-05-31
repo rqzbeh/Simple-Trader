@@ -1,4 +1,4 @@
-Simple-Trader\simple_trader\llm_pool.py
+# Simple-Trader/simple_trader/llm_pool.py
 # -*- coding: utf-8 -*-
 """
 LLM Pool for Simple-Trader
@@ -61,11 +61,11 @@ logger.addHandler(logging.NullHandler())
 class LLMSummary:
     provider: str
     news_id: Optional[int]
-    asset: Optional[str] = None
     direction: str  # 'long' | 'short' | 'neutral'
     impact_score: float  # normalized -1..1
     confidence: float  # 0..1
     summary: str
+    asset: Optional[str] = None
     recommended_leverage: Optional[int] = None
     raw: Optional[Dict] = None
 
@@ -117,7 +117,9 @@ class LLMClient:
     def __init__(self, provider_cfg: LLMProviderConfig, config: Optional[Config] = None, db: Optional[Database] = None):
         self.provider_cfg = provider_cfg
         self.config = config or CONFIG
-        self.db = db or get_default_db(self.config.database_path)
+        self.db = db or get_default_db(
+            self.config.database_path, tenant_id=self.config.tenant_id
+        )
         self.rate_limiter = RateLimiter(self.provider_cfg.rate_limit_per_minute)
         self.session = requests.Session()
         # Allow provider-specific auth header name and optional API-key prefix (e.g., 'Bearer ').
@@ -216,7 +218,13 @@ class LLMClient:
         if not endpoint:
             raise RuntimeError(f"No endpoint configured for provider '{self.name()}'")
         prompt = self.construct_prompt(news_item)
-        model = getattr(self.provider_cfg, "model", None) or "gpt-4o-mini"
+        model = getattr(self.provider_cfg, "model", None)
+        if not model:
+            provider_name = (self.name() or "").lower()
+            if provider_name == "groq":
+                model = "llama3-8b-8192"
+            else:
+                model = "gpt-4o-mini"
         # Basic system instruction to help ensure consistent JSON output from providers.
         system_message = {
             "role": "system",
@@ -592,7 +600,9 @@ class LLMPool:
 
     def __init__(self, config: Optional[Config] = None, db: Optional[Database] = None):
         self.config = config or CONFIG
-        self.db = db or get_default_db(self.config.database_path)
+        self.db = db or get_default_db(
+            self.config.database_path, tenant_id=self.config.tenant_id
+        )
         self.providers_cfg = [p for p in self.config.llm_providers if p.enabled]
         # Build client instances
         self.clients = self._init_clients_from_cfg(self.providers_cfg)
@@ -606,6 +616,19 @@ class LLMPool:
         # a pool for concurrency; limit by `llm_global_concurrency`
         max_workers = max(1, min(32, self.config.llm_global_concurrency))
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
+
+    def shutdown(self, wait: bool = True) -> None:
+        try:
+            if getattr(self, "executor", None) is not None:
+                self.executor.shutdown(wait=wait)
+        except Exception:
+            logger.exception("Failed to shut down LLMPool executor")
+
+    def __del__(self):
+        try:
+            self.shutdown(wait=False)
+        except Exception:
+            pass
 
     def _init_clients_from_cfg(self, cfgs: Iterable[LLMProviderConfig]) -> List[LLMClient]:
         result: List[LLMClient] = []
@@ -882,7 +905,7 @@ class LLMPool:
 if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     cfg = CONFIG
-    db = get_default_db(cfg.database_path)
+    db = get_default_db(cfg.database_path, tenant_id=cfg.tenant_id)
     pool = LLMPool(config=cfg, db=db)
 
     # Create example news items
