@@ -11,26 +11,29 @@ BEGIN;
 -- News table
 CREATE TABLE IF NOT EXISTS news (
     id BIGSERIAL PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
     provider TEXT NOT NULL,
     url TEXT,
     title TEXT,
     content TEXT,
     published_at TIMESTAMPTZ,
     asset TEXT,
-    hash TEXT UNIQUE,
+    hash TEXT,
     fetched_at TIMESTAMPTZ,
     processed BOOLEAN DEFAULT FALSE,
     raw_json JSONB,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE(tenant_id, hash)
 );
 
-CREATE INDEX IF NOT EXISTS idx_news_published ON news (published_at);
-CREATE INDEX IF NOT EXISTS idx_news_asset ON news (asset);
-CREATE INDEX IF NOT EXISTS idx_news_processed ON news (processed);
+CREATE INDEX IF NOT EXISTS idx_news_tenant_published ON news (tenant_id, published_at);
+CREATE INDEX IF NOT EXISTS idx_news_tenant_asset ON news (tenant_id, asset);
+CREATE INDEX IF NOT EXISTS idx_news_tenant_processed ON news (tenant_id, processed);
 
 -- Analysis table (LLM analyses)
 CREATE TABLE IF NOT EXISTS analysis (
     id BIGSERIAL PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
     news_id BIGINT NOT NULL REFERENCES news(id) ON DELETE CASCADE,
     provider TEXT NOT NULL,
     analysis_json JSONB,
@@ -38,11 +41,12 @@ CREATE TABLE IF NOT EXISTS analysis (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_analysis_news_id ON analysis(news_id);
+CREATE INDEX IF NOT EXISTS idx_analysis_tenant_news_id ON analysis(tenant_id, news_id);
 
 -- Market data (cached OHLC)
 CREATE TABLE IF NOT EXISTS market_data (
     id BIGSERIAL PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
     symbol TEXT NOT NULL,
     timeframe TEXT NOT NULL,
     start_ts BIGINT NOT NULL,
@@ -52,14 +56,15 @@ CREATE TABLE IF NOT EXISTS market_data (
     close NUMERIC,
     volume NUMERIC,
     created_at TIMESTAMPTZ DEFAULT now(),
-    UNIQUE(symbol, timeframe, start_ts)
+    UNIQUE(tenant_id, symbol, timeframe, start_ts)
 );
 
-CREATE INDEX IF NOT EXISTS idx_market_data_symbol_time ON market_data(symbol, timeframe, start_ts);
+CREATE INDEX IF NOT EXISTS idx_market_data_tenant_symbol_time ON market_data(tenant_id, symbol, timeframe, start_ts);
 
 -- Signals table
 CREATE TABLE IF NOT EXISTS signals (
     id BIGSERIAL PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
     news_id BIGINT REFERENCES news(id) ON DELETE SET NULL,
     symbol TEXT NOT NULL,
     side TEXT NOT NULL, -- 'long' or 'short'
@@ -81,12 +86,13 @@ CREATE TABLE IF NOT EXISTS signals (
     pnl NUMERIC
 );
 
-CREATE INDEX IF NOT EXISTS idx_signals_status ON signals(status);
-CREATE INDEX IF NOT EXISTS idx_signals_symbol ON signals(symbol);
+CREATE INDEX IF NOT EXISTS idx_signals_tenant_status ON signals(tenant_id, status);
+CREATE INDEX IF NOT EXISTS idx_signals_tenant_symbol ON signals(tenant_id, symbol);
 
 -- Trades table (actual executions / recorded results)
 CREATE TABLE IF NOT EXISTS trades (
     id BIGSERIAL PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
     signal_id BIGINT REFERENCES signals(id) ON DELETE CASCADE,
     executed_at TIMESTAMPTZ NOT NULL,
     executed_price NUMERIC NOT NULL,
@@ -98,11 +104,12 @@ CREATE TABLE IF NOT EXISTS trades (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_trades_signal_id ON trades(signal_id);
+CREATE INDEX IF NOT EXISTS idx_trades_tenant_signal_id ON trades(tenant_id, signal_id);
 
 -- Tuning stats table
 CREATE TABLE IF NOT EXISTS tuning_stats (
     id BIGSERIAL PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
     pattern_name TEXT NOT NULL,
     symbol TEXT,
     wins INTEGER DEFAULT 0,
@@ -110,15 +117,16 @@ CREATE TABLE IF NOT EXISTS tuning_stats (
     avg_rr REAL DEFAULT 0.0,
     avg_hold_time_seconds REAL DEFAULT 0.0,
     last_updated TIMESTAMPTZ DEFAULT now(),
-    UNIQUE(pattern_name, symbol)
+    UNIQUE(tenant_id, pattern_name, symbol)
 );
 
-CREATE INDEX IF NOT EXISTS idx_tuning_stats_pattern ON tuning_stats(pattern_name);
-CREATE INDEX IF NOT EXISTS idx_tuning_stats_symbol ON tuning_stats(symbol);
+CREATE INDEX IF NOT EXISTS idx_tuning_stats_tenant_pattern ON tuning_stats(tenant_id, pattern_name);
+CREATE INDEX IF NOT EXISTS idx_tuning_stats_tenant_symbol ON tuning_stats(tenant_id, symbol);
 
 -- LLM usage telemetry
 CREATE TABLE IF NOT EXISTS llm_usage (
     id BIGSERIAL PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
     provider TEXT,
     request_ts BIGINT,
     request_size INTEGER,
@@ -129,15 +137,18 @@ CREATE TABLE IF NOT EXISTS llm_usage (
 
 -- Runtime parameters (runtime knobs / tuning)
 CREATE TABLE IF NOT EXISTS runtime_params (
-    key TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    key TEXT NOT NULL,
     value TEXT,
     description TEXT,
-    last_updated TIMESTAMPTZ DEFAULT now()
+    last_updated TIMESTAMPTZ DEFAULT now(),
+    PRIMARY KEY(tenant_id, key)
 );
 
 -- Tuning history (audit trail for auto-applied changes)
 CREATE TABLE IF NOT EXISTS tuning_history (
     id BIGSERIAL PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
     pattern_name TEXT,
     symbol TEXT,
     change TEXT,
@@ -148,7 +159,7 @@ CREATE TABLE IF NOT EXISTS tuning_history (
     created_at TIMESTAMPTZ DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_tuning_history_pattern ON tuning_history(pattern_name);
-CREATE INDEX IF NOT EXISTS idx_tuning_history_symbol ON tuning_history(symbol);
+CREATE INDEX IF NOT EXISTS idx_tuning_history_tenant_pattern ON tuning_history(tenant_id, pattern_name);
+CREATE INDEX IF NOT EXISTS idx_tuning_history_tenant_symbol ON tuning_history(tenant_id, symbol);
 
 COMMIT;

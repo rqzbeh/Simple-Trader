@@ -99,7 +99,9 @@ class Orchestrator:
             level=getattr(logging, self.config.log_level.upper(), logging.INFO)
         )
         # Initialize DB and components
-        self.db = get_default_db(self.config.database_path)
+        self.db = get_default_db(
+            self.config.database_path, tenant_id=self.config.tenant_id
+        )
 
         # Seed runtime parameters with safe default tuning values in the database.
         # This ensures a fresh deployment will initialize the runtime tuning parameters
@@ -338,6 +340,11 @@ class Orchestrator:
 
     def stop(self):
         self._stop_event.set()
+        try:
+            if getattr(self, "llm_pool", None) is not None:
+                self.llm_pool.shutdown(wait=True)
+        except Exception:
+            LOG.exception("Failed to shutdown LLM pool")
 
 
 def parse_cli_args(argv) -> argparse.Namespace:

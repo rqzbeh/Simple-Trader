@@ -209,6 +209,7 @@ def main():
     def transform_news(row):
         return (
             row.get("id"),
+            row.get("tenant_id") or "default",
             row.get("provider"),
             row.get("url"),
             row.get("title"),
@@ -225,6 +226,7 @@ def main():
     def transform_analysis(row):
         return (
             row.get("id"),
+            row.get("tenant_id") or "default",
             row.get("news_id"),
             row.get("provider"),
             json_parse_or_none(row.get("analysis_json")),
@@ -235,6 +237,7 @@ def main():
     def transform_market_data(row):
         return (
             row.get("id"),
+            row.get("tenant_id") or "default",
             row.get("symbol"),
             row.get("timeframe"),
             row.get("start_ts"),
@@ -249,6 +252,7 @@ def main():
     def transform_signals(row):
         return (
             row.get("id"),
+            row.get("tenant_id") or "default",
             row.get("news_id"),
             row.get("symbol"),
             row.get("side"),
@@ -273,6 +277,7 @@ def main():
     def transform_trades(row):
         return (
             row.get("id"),
+            row.get("tenant_id") or "default",
             row.get("signal_id"),
             parse_iso_to_dt(row.get("executed_at")),
             row.get("executed_price"),
@@ -287,6 +292,7 @@ def main():
     def transform_tuning_stats(row):
         return (
             row.get("id"),
+            row.get("tenant_id") or "default",
             row.get("pattern_name"),
             row.get("symbol"),
             row.get("wins"),
@@ -299,6 +305,7 @@ def main():
     def transform_llm_usage(row):
         return (
             row.get("id"),
+            row.get("tenant_id") or "default",
             row.get("provider"),
             row.get("request_ts"),
             row.get("request_size"),
@@ -309,6 +316,7 @@ def main():
 
     def transform_runtime_params(row):
         return (
+            row.get("tenant_id") or "default",
             row.get("key"),
             row.get("value"),
             row.get("description"),
@@ -318,6 +326,7 @@ def main():
     def transform_tuning_history(row):
         return (
             row.get("id"),
+            row.get("tenant_id") or "default",
             row.get("pattern_name"),
             row.get("symbol"),
             row.get("change"),
@@ -335,6 +344,7 @@ def main():
             "SELECT * FROM news",
             [
                 "id",
+                "tenant_id",
                 "provider",
                 "url",
                 "title",
@@ -352,7 +362,15 @@ def main():
         (
             "analysis",
             "SELECT * FROM analysis",
-            ["id", "news_id", "provider", "analysis_json", "confidence", "created_at"],
+            [
+                "id",
+                "tenant_id",
+                "news_id",
+                "provider",
+                "analysis_json",
+                "confidence",
+                "created_at",
+            ],
             transform_analysis,
         ),
         (
@@ -360,6 +378,7 @@ def main():
             "SELECT * FROM market_data",
             [
                 "id",
+                "tenant_id",
                 "symbol",
                 "timeframe",
                 "start_ts",
@@ -377,6 +396,7 @@ def main():
             "SELECT * FROM signals",
             [
                 "id",
+                "tenant_id",
                 "news_id",
                 "symbol",
                 "side",
@@ -404,6 +424,7 @@ def main():
             "SELECT * FROM trades",
             [
                 "id",
+                "tenant_id",
                 "signal_id",
                 "executed_at",
                 "executed_price",
@@ -421,6 +442,7 @@ def main():
             "SELECT * FROM tuning_stats",
             [
                 "id",
+                "tenant_id",
                 "pattern_name",
                 "symbol",
                 "wins",
@@ -436,6 +458,7 @@ def main():
             "SELECT * FROM llm_usage",
             [
                 "id",
+                "tenant_id",
                 "provider",
                 "request_ts",
                 "request_size",
@@ -448,7 +471,7 @@ def main():
         (
             "runtime_params",
             "SELECT * FROM runtime_params",
-            ["key", "value", "description", "last_updated"],
+            ["tenant_id", "key", "value", "description", "last_updated"],
             transform_runtime_params,
         ),
         (
@@ -456,6 +479,7 @@ def main():
             "SELECT * FROM tuning_history",
             [
                 "id",
+                "tenant_id",
                 "pattern_name",
                 "symbol",
                 "change",

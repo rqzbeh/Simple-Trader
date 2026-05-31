@@ -24,16 +24,30 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 logger = logging.getLogger("simple_trader.db")
 logger.addHandler(logging.NullHandler())
+DEFAULT_TENANT_ID = "default"
 
 
 def now_ts() -> int:
-    return int(datetime.utcnow().replace(tzinfo=timezone.utc).timestamp())
+    return int(datetime.now(timezone.utc).timestamp())
 
 
 def ensure_iso(ts: Optional[int]) -> Optional[str]:
     if ts is None:
         return None
     return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+
+
+def normalize_tenant_id(tenant_id: Optional[str]) -> str:
+    candidate = (tenant_id or DEFAULT_TENANT_ID).strip()
+    if not candidate:
+        raise DatabaseError("tenant_id must not be empty")
+    if len(candidate) > 64:
+        raise DatabaseError("tenant_id length must be <= 64")
+    if not all(c.isalnum() or c in ("-", "_") for c in candidate):
+        raise DatabaseError(
+            "tenant_id must contain only letters, numbers, '-' or '_'"
+        )
+    return candidate
 
 
 @dataclass
@@ -110,8 +124,11 @@ class Database:
     The class ensures the schema exists on creation.
     """
 
-    def __init__(self, db_path: str = "simple_trader.db"):
+    def __init__(
+        self, db_path: str = "simple_trader.db", tenant_id: str = DEFAULT_TENANT_ID
+    ):
         self.db_path = db_path
+        self.tenant_id = normalize_tenant_id(tenant_id)
         self._lock = threading.RLock()
         # permit shared cache and allow connections to be used across threads
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30)
@@ -119,6 +136,7 @@ class Database:
         with self._lock:
             self._configure()
             self._create_schema()
+            self._migrate_schema_for_tenant_support()
         logger.info("Database initialized: %s", self.db_path)
 
     def close(self) -> None:
@@ -153,25 +171,28 @@ class Database:
 
                 CREATE TABLE IF NOT EXISTS news (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
                     provider TEXT NOT NULL,
                     url TEXT,
                     title TEXT,
                     content TEXT,
                     published_at TEXT,
                     asset TEXT,
-                    hash TEXT UNIQUE,
+                    hash TEXT,
                     fetched_at TEXT,
                     processed INTEGER DEFAULT 0,
                     raw_json TEXT,
-                    created_at TEXT DEFAULT (datetime('now'))
+                    created_at TEXT DEFAULT (datetime('now')),
+                    UNIQUE(tenant_id, hash)
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_news_published at news (published_at);
-                CREATE INDEX IF NOT EXISTS idx_news_asset ON news(asset);
-                CREATE INDEX IF NOT EXISTS idx_news_processed ON news(processed);
+                CREATE INDEX IF NOT EXISTS idx_news_tenant_published ON news (tenant_id, published_at);
+                CREATE INDEX IF NOT EXISTS idx_news_tenant_asset ON news(tenant_id, asset);
+                CREATE INDEX IF NOT EXISTS idx_news_tenant_processed ON news(tenant_id, processed);
 
                 CREATE TABLE IF NOT EXISTS analysis (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
                     news_id INTEGER NOT NULL REFERENCES news(id) ON DELETE CASCADE,
                     provider TEXT NOT NULL,
                     analysis_json TEXT,
@@ -179,22 +200,24 @@ class Database:
                     created_at TEXT DEFAULT (datetime('now'))
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_analysis_news_id ON analysis(news_id);
+                CREATE INDEX IF NOT EXISTS idx_analysis_tenant_news_id ON analysis(tenant_id, news_id);
 
                 CREATE TABLE IF NOT EXISTS market_data (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
                     symbol TEXT NOT NULL,
                     timeframe TEXT NOT NULL,
                     start_ts INTEGER NOT NULL,
                     open REAL, high REAL, low REAL, close REAL, volume REAL,
                     created_at TEXT DEFAULT (datetime('now')),
-                    UNIQUE(symbol, timeframe, start_ts)
+                    UNIQUE(tenant_id, symbol, timeframe, start_ts)
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_market_data_symbol_time ON market_data(symbol, timeframe, start_ts);
+                CREATE INDEX IF NOT EXISTS idx_market_data_tenant_symbol_time ON market_data(tenant_id, symbol, timeframe, start_ts);
 
                 CREATE TABLE IF NOT EXISTS signals (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
                     news_id INTEGER REFERENCES news(id) ON DELETE SET NULL,
                     symbol TEXT NOT NULL,
                     side TEXT NOT NULL,
@@ -216,11 +239,12 @@ class Database:
                     pnl REAL
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_signals_status ON signals(status);
-                CREATE INDEX IF NOT EXISTS idx_signals_symbol ON signals(symbol);
+                CREATE INDEX IF NOT EXISTS idx_signals_tenant_status ON signals(tenant_id, status);
+                CREATE INDEX IF NOT EXISTS idx_signals_tenant_symbol ON signals(tenant_id, symbol);
 
                 CREATE TABLE IF NOT EXISTS trades (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
                     signal_id INTEGER REFERENCES signals(id) ON DELETE CASCADE,
                     executed_at TEXT NOT NULL,
                     executed_price REAL NOT NULL,
@@ -232,10 +256,11 @@ class Database:
                     created_at TEXT DEFAULT (datetime('now'))
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_trades_signal_id ON trades(signal_id);
+                CREATE INDEX IF NOT EXISTS idx_trades_tenant_signal_id ON trades(tenant_id, signal_id);
 
                 CREATE TABLE IF NOT EXISTS tuning_stats (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
                     pattern_name TEXT NOT NULL,
                     symbol TEXT,
                     wins INTEGER DEFAULT 0,
@@ -243,14 +268,15 @@ class Database:
                     avg_rr REAL DEFAULT 0.0,
                     avg_hold_time_seconds REAL DEFAULT 0.0,
                     last_updated TEXT DEFAULT (datetime('now')),
-                    UNIQUE(pattern_name, symbol)
+                    UNIQUE(tenant_id, pattern_name, symbol)
                 );
 
-                CREATE INDEX IF NOT EXISTS idx_tuning_stats_pattern ON tuning_stats(pattern_name);
-                CREATE INDEX IF NOT EXISTS idx_tuning_stats_symbol ON tuning_stats(symbol);
+                CREATE INDEX IF NOT EXISTS idx_tuning_stats_tenant_pattern ON tuning_stats(tenant_id, pattern_name);
+                CREATE INDEX IF NOT EXISTS idx_tuning_stats_tenant_symbol ON tuning_stats(tenant_id, symbol);
 
                 CREATE TABLE IF NOT EXISTS llm_usage (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
                     provider TEXT,
                     request_ts INTEGER,
                     request_size INTEGER,
@@ -260,14 +286,17 @@ class Database:
                 );
 
                 CREATE TABLE IF NOT EXISTS runtime_params (
-                    key TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
+                    key TEXT NOT NULL,
                     value TEXT,
                     description TEXT,
-                    last_updated TEXT DEFAULT (datetime('now'))
+                    last_updated TEXT DEFAULT (datetime('now')),
+                    PRIMARY KEY(tenant_id, key)
                 );
 
                 CREATE TABLE IF NOT EXISTS tuning_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
                     pattern_name TEXT,
                     symbol TEXT,
                     change TEXT,
@@ -287,6 +316,35 @@ class Database:
             self.conn.commit()
         finally:
             cur.close()
+
+    def _migrate_schema_for_tenant_support(self) -> None:
+        tables_to_patch = (
+            "news",
+            "analysis",
+            "market_data",
+            "signals",
+            "trades",
+            "tuning_stats",
+            "llm_usage",
+            "runtime_params",
+            "tuning_history",
+        )
+        allowed_tables = set(tables_to_patch)
+        for table_name in tables_to_patch:
+            if table_name not in allowed_tables:
+                raise DatabaseError(f"Unexpected table in tenant migration: {table_name}")
+            info_rows = self._execute(f"PRAGMA table_info({table_name})").fetchall()
+            columns = {r["name"] for r in info_rows}
+            if "tenant_id" not in columns:
+                self._execute(
+                    f"ALTER TABLE {table_name} ADD COLUMN tenant_id TEXT NOT NULL DEFAULT '{DEFAULT_TENANT_ID}'"
+                )
+        for table_name in tables_to_patch:
+            self._execute(
+                f"UPDATE {table_name} SET tenant_id = ? WHERE tenant_id IS NULL OR tenant_id = ''",
+                (DEFAULT_TENANT_ID,),
+            )
+        self.conn.commit()
 
     def _execute(
         self, query: str, params: Optional[Iterable[Any]] = None
@@ -313,6 +371,18 @@ class Database:
             finally:
                 cur.close()
 
+    def _tenant_scoped_hash(self, raw_hash: str) -> str:
+        value = (raw_hash or "").strip()
+        if not value:
+            raise DatabaseError("news hash must not be empty")
+        scoped_prefix = f"{self.tenant_id}:"
+        if value.startswith(scoped_prefix):
+            return value
+        return f"{scoped_prefix}{value}"
+
+    def _runtime_key(self, key: str) -> str:
+        return f"{self.tenant_id}:{key}"
+
     # ----------------------
     # News methods
     # ----------------------
@@ -333,19 +403,21 @@ class Database:
             import hashlib
 
             news.hash = hashlib.sha256(base.encode("utf-8")).hexdigest()
+        scoped_hash = self._tenant_scoped_hash(news.hash)
 
         query = """
-            INSERT INTO news (provider, url, title, content, published_at, asset, hash, fetched_at, raw_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO news (tenant_id, provider, url, title, content, published_at, asset, hash, fetched_at, raw_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = (
+            self.tenant_id,
             news.provider,
             news.url,
             news.title,
             news.content,
             ensure_iso(news.published_at) if news.published_at else None,
             news.asset,
-            news.hash,
+            scoped_hash,
             ensure_iso(news.fetched_at or now_ts()),
             json.dumps(news.raw_json) if news.raw_json is not None else None,
         )
@@ -357,36 +429,42 @@ class Database:
         except sqlite3.IntegrityError:
             # Duplicate; return existing ID
             row = self._execute(
-                "SELECT id FROM news WHERE hash = ? LIMIT 1", (news.hash,)
+                "SELECT id FROM news WHERE tenant_id = ? AND hash = ? LIMIT 1",
+                (self.tenant_id, scoped_hash),
             ).fetchone()
             if row:
                 return int(row["id"])
             raise DatabaseError("Failed to insert or lookup duplicate news")
 
     def get_news_by_hash(self, hash: str) -> Optional[sqlite3.Row]:
-        cur = self._execute("SELECT * FROM news WHERE hash = ? LIMIT 1", (hash,))
+        scoped_hash = self._tenant_scoped_hash(hash)
+        # Keep compatibility with records written before tenant scoping was introduced.
+        cur = self._execute(
+            "SELECT * FROM news WHERE tenant_id = ? AND hash IN (?, ?) LIMIT 1",
+            (self.tenant_id, scoped_hash, hash),
+        )
         row = cur.fetchone()
         return row
 
     def mark_news_processed(self, news_id: int, processed: bool = True) -> None:
         self._execute(
-            "UPDATE news SET processed = ?, fetched_at = ? WHERE id = ?",
-            (1 if processed else 0, ensure_iso(now_ts()), news_id),
+            "UPDATE news SET processed = ?, fetched_at = ? WHERE tenant_id = ? AND id = ?",
+            (1 if processed else 0, ensure_iso(now_ts()), self.tenant_id, news_id),
         )
         self.conn.commit()
 
     def get_unprocessed_news(self, limit: int = 100) -> List[sqlite3.Row]:
         cur = self._execute(
-            "SELECT * FROM news WHERE processed = 0 ORDER BY published_at DESC LIMIT ? ",
-            (limit,),
+            "SELECT * FROM news WHERE tenant_id = ? AND processed = 0 ORDER BY published_at DESC LIMIT ? ",
+            (self.tenant_id, limit),
         )
         rows = cur.fetchall()
         return list(rows)
 
     def get_news(self, offset: int = 0, limit: int = 100) -> List[sqlite3.Row]:
         cur = self._execute(
-            "SELECT * FROM news ORDER BY published_at DESC LIMIT ? OFFSET ?",
-            (limit, offset),
+            "SELECT * FROM news WHERE tenant_id = ? ORDER BY published_at DESC LIMIT ? OFFSET ?",
+            (self.tenant_id, limit, offset),
         )
         return list(cur.fetchall())
 
@@ -395,10 +473,11 @@ class Database:
     # ----------------------
     def insert_analysis(self, analysis: AnalysisItem) -> int:
         query = """
-            INSERT INTO analysis (news_id, provider, analysis_json, confidence)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO analysis (tenant_id, news_id, provider, analysis_json, confidence)
+            VALUES (?, ?, ?, ?, ?)
         """
         params = (
+            self.tenant_id,
             analysis.news_id,
             analysis.provider,
             json.dumps(analysis.analysis_json),
@@ -410,14 +489,15 @@ class Database:
 
     def get_analysis_for_news(self, news_id: int) -> List[sqlite3.Row]:
         cur = self._execute(
-            "SELECT * FROM analysis WHERE news_id = ? ORDER BY id ASC", (news_id,)
+            "SELECT * FROM analysis WHERE tenant_id = ? AND news_id = ? ORDER BY id ASC",
+            (self.tenant_id, news_id),
         )
         return list(cur.fetchall())
 
     def get_latest_analysis(self, news_id: int) -> Optional[sqlite3.Row]:
         cur = self._execute(
-            "SELECT * FROM analysis WHERE news_id = ? ORDER BY created_at DESC LIMIT 1",
-            (news_id,),
+            "SELECT * FROM analysis WHERE tenant_id = ? AND news_id = ? ORDER BY created_at DESC LIMIT 1",
+            (self.tenant_id, news_id),
         )
         return cur.fetchone()
 
@@ -439,10 +519,20 @@ class Database:
         Insert or replace a market data candle row.
         """
         query = """
-            INSERT OR REPLACE INTO market_data (symbol, timeframe, start_ts, open, high, low, close, volume)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO market_data (tenant_id, symbol, timeframe, start_ts, open, high, low, close, volume)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        params = (symbol, timeframe, start_ts, open_, high, low, close, volume)
+        params = (
+            self.tenant_id,
+            symbol,
+            timeframe,
+            start_ts,
+            open_,
+            high,
+            low,
+            close,
+            volume,
+        )
         cur = self._execute(query, params)
         self.conn.commit()
         return int(cur.lastrowid)
@@ -451,8 +541,8 @@ class Database:
         self, symbol: str, timeframe: str, start_ts_min: int = 0, limit: int = 500
     ) -> List[sqlite3.Row]:
         cur = self._execute(
-            "SELECT * FROM market_data WHERE symbol = ? AND timeframe = ? AND start_ts >= ? ORDER BY start_ts ASC LIMIT ?",
-            (symbol, timeframe, start_ts_min, limit),
+            "SELECT * FROM market_data WHERE tenant_id = ? AND symbol = ? AND timeframe = ? AND start_ts >= ? ORDER BY start_ts ASC LIMIT ?",
+            (self.tenant_id, symbol, timeframe, start_ts_min, limit),
         )
         return list(cur.fetchall())
 
@@ -461,10 +551,11 @@ class Database:
     # ----------------------
     def create_signal(self, signal: Signal) -> int:
         query = """
-            INSERT INTO signals (news_id, symbol, side, entry_price, stop_loss, take_profit, leverage, position_size, risk_amount, rr, timeframe_hours, status, analysis_ids, created_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO signals (tenant_id, news_id, symbol, side, entry_price, stop_loss, take_profit, leverage, position_size, risk_amount, rr, timeframe_hours, status, analysis_ids, created_at, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = (
+            self.tenant_id,
             signal.news_id,
             signal.symbol,
             signal.side,
@@ -489,15 +580,15 @@ class Database:
 
     def get_open_signals(self, limit: int = 200) -> List[sqlite3.Row]:
         cur = self._execute(
-            "SELECT * FROM signals WHERE status = 'open' ORDER BY created_at ASC LIMIT ?",
-            (limit,),
+            "SELECT * FROM signals WHERE tenant_id = ? AND status = 'open' ORDER BY created_at ASC LIMIT ?",
+            (self.tenant_id, limit),
         )
         return list(cur.fetchall())
 
     def get_signals_by_news(self, news_id: int) -> List[sqlite3.Row]:
         cur = self._execute(
-            "SELECT * FROM signals WHERE news_id = ? ORDER BY created_at DESC",
-            (news_id,),
+            "SELECT * FROM signals WHERE tenant_id = ? AND news_id = ? ORDER BY created_at DESC",
+            (self.tenant_id, news_id),
         )
         return list(cur.fetchall())
 
@@ -516,15 +607,15 @@ class Database:
         """
         exit_time_iso = ensure_iso(exit_time or now_ts())
         cur = self._execute(
-            "UPDATE signals SET status = 'closed', closed_at = ?, close_reason = ?, outcome = ?, pnl = ? WHERE id = ?",
-            (exit_time_iso, reason, outcome, pnl, signal_id),
+            "UPDATE signals SET status = 'closed', closed_at = ?, close_reason = ?, outcome = ?, pnl = ? WHERE tenant_id = ? AND id = ?",
+            (exit_time_iso, reason, outcome, pnl, self.tenant_id, signal_id),
         )
         self.conn.commit()
 
     def cancel_signal(self, signal_id: int, reason: Optional[str] = None) -> None:
         self._execute(
-            "UPDATE signals SET status = 'cancelled', closed_at = ?, close_reason = ? WHERE id = ?",
-            (ensure_iso(now_ts()), reason, signal_id),
+            "UPDATE signals SET status = 'cancelled', closed_at = ?, close_reason = ? WHERE tenant_id = ? AND id = ?",
+            (ensure_iso(now_ts()), reason, self.tenant_id, signal_id),
         )
         self.conn.commit()
 
@@ -537,8 +628,8 @@ class Database:
         cutoff = int(now_ts()) - within_seconds
         cutoff_iso = ensure_iso(cutoff)
         cur = self._execute(
-            "SELECT * FROM signals WHERE symbol = ? AND side = ? AND created_at >= ? AND status = 'open'",
-            (symbol, side, cutoff_iso),
+            "SELECT * FROM signals WHERE tenant_id = ? AND symbol = ? AND side = ? AND created_at >= ? AND status = 'open'",
+            (self.tenant_id, symbol, side, cutoff_iso),
         )
         return list(cur.fetchall())
 
@@ -547,10 +638,11 @@ class Database:
     # ----------------------
     def record_trade(self, record: TradeRecord) -> int:
         query = """
-            INSERT INTO trades (signal_id, executed_at, executed_price, exit_at, exit_price, pnl, outcome, notes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO trades (tenant_id, signal_id, executed_at, executed_price, exit_at, exit_price, pnl, outcome, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = (
+            self.tenant_id,
             record.signal_id,
             ensure_iso(record.executed_at),
             record.executed_price,
@@ -566,8 +658,8 @@ class Database:
 
     def get_trades_for_signal(self, signal_id: int) -> List[sqlite3.Row]:
         cur = self._execute(
-            "SELECT * FROM trades WHERE signal_id = ? ORDER BY created_at ASC",
-            (signal_id,),
+            "SELECT * FROM trades WHERE tenant_id = ? AND signal_id = ? ORDER BY created_at ASC",
+            (self.tenant_id, signal_id),
         )
         return list(cur.fetchall())
 
@@ -579,13 +671,13 @@ class Database:
     ) -> Optional[sqlite3.Row]:
         if symbol:
             cur = self._execute(
-                "SELECT * FROM tuning_stats WHERE pattern_name = ? AND symbol = ? LIMIT 1",
-                (pattern_name, symbol),
+                "SELECT * FROM tuning_stats WHERE tenant_id = ? AND pattern_name = ? AND symbol = ? LIMIT 1",
+                (self.tenant_id, pattern_name, symbol),
             )
         else:
             cur = self._execute(
-                "SELECT * FROM tuning_stats WHERE pattern_name = ? AND (symbol IS NULL OR symbol = '') LIMIT 1",
-                (pattern_name,),
+                "SELECT * FROM tuning_stats WHERE tenant_id = ? AND pattern_name = ? AND (symbol IS NULL OR symbol = '') LIMIT 1",
+                (self.tenant_id, pattern_name),
             )
         return cur.fetchone()
 
@@ -609,8 +701,17 @@ class Database:
             avg_rr = float(rr) if rr else 0.0
             avg_hold = float(hold_seconds) if hold_seconds else 0.0
             self._execute(
-                "INSERT INTO tuning_stats (pattern_name, symbol, wins, losses, avg_rr, avg_hold_time_seconds, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (pattern_name, symbol, wins, losses, avg_rr, avg_hold, now_iso),
+                "INSERT INTO tuning_stats (tenant_id, pattern_name, symbol, wins, losses, avg_rr, avg_hold_time_seconds, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    self.tenant_id,
+                    pattern_name,
+                    symbol,
+                    wins,
+                    losses,
+                    avg_rr,
+                    avg_hold,
+                    now_iso,
+                ),
             )
             self.conn.commit()
             return
@@ -629,8 +730,8 @@ class Database:
         if hold_seconds:
             new_avg_hold = ((prev_avg_hold * (total - 1)) + hold_seconds) / total
         self._execute(
-            "UPDATE tuning_stats SET wins = ?, losses = ?, avg_rr = ?, avg_hold_time_seconds = ?, last_updated = ? WHERE id = ?",
-            (wins, losses, new_avg_rr, new_avg_hold, now_iso, existing["id"]),
+            "UPDATE tuning_stats SET wins = ?, losses = ?, avg_rr = ?, avg_hold_time_seconds = ?, last_updated = ? WHERE tenant_id = ? AND id = ?",
+            (wins, losses, new_avg_rr, new_avg_hold, now_iso, self.tenant_id, existing["id"]),
         )
         self.conn.commit()
 
@@ -650,8 +751,17 @@ class Database:
         Record a single tuning change applied by the automatic tuner or manually, for auditing.
         """
         cur = self._execute(
-            "INSERT INTO tuning_history (pattern_name, symbol, change, old_value, new_value, notes, applied_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (pattern_name, symbol, change, old_value, new_value, notes, applied_by),
+            "INSERT INTO tuning_history (tenant_id, pattern_name, symbol, change, old_value, new_value, notes, applied_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                self.tenant_id,
+                pattern_name,
+                symbol,
+                change,
+                old_value,
+                new_value,
+                notes,
+                applied_by,
+            ),
         )
         self.conn.commit()
         return int(cur.lastrowid)
@@ -667,23 +777,23 @@ class Database:
         """
         if pattern_name and symbol:
             cur = self._execute(
-                "SELECT * FROM tuning_history WHERE pattern_name = ? AND symbol = ? ORDER BY created_at DESC LIMIT ?",
-                (pattern_name, symbol, limit),
+                "SELECT * FROM tuning_history WHERE tenant_id = ? AND pattern_name = ? AND symbol = ? ORDER BY created_at DESC LIMIT ?",
+                (self.tenant_id, pattern_name, symbol, limit),
             )
         elif pattern_name:
             cur = self._execute(
-                "SELECT * FROM tuning_history WHERE pattern_name = ? ORDER BY created_at DESC LIMIT ?",
-                (pattern_name, limit),
+                "SELECT * FROM tuning_history WHERE tenant_id = ? AND pattern_name = ? ORDER BY created_at DESC LIMIT ?",
+                (self.tenant_id, pattern_name, limit),
             )
         elif symbol:
             cur = self._execute(
-                "SELECT * FROM tuning_history WHERE symbol = ? ORDER BY created_at DESC LIMIT ?",
-                (symbol, limit),
+                "SELECT * FROM tuning_history WHERE tenant_id = ? AND symbol = ? ORDER BY created_at DESC LIMIT ?",
+                (self.tenant_id, symbol, limit),
             )
         else:
             cur = self._execute(
-                "SELECT * FROM tuning_history ORDER BY created_at DESC LIMIT ?",
-                (limit,),
+                "SELECT * FROM tuning_history WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?",
+                (self.tenant_id, limit),
             )
 
         rows = cur.fetchall()
@@ -701,8 +811,15 @@ class Database:
         estimated_cost: float = 0.0,
     ) -> int:
         cur = self._execute(
-            "INSERT INTO llm_usage (provider, request_ts, request_size, response_tokens, estimated_cost) VALUES (?, ?, ?, ?, ?)",
-            (provider, request_ts, request_size, response_tokens, estimated_cost),
+            "INSERT INTO llm_usage (tenant_id, provider, request_ts, request_size, response_tokens, estimated_cost) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                self.tenant_id,
+                provider,
+                request_ts,
+                request_size,
+                response_tokens,
+                estimated_cost,
+            ),
         )
         self.conn.commit()
         return int(cur.lastrowid)
@@ -712,21 +829,24 @@ class Database:
     ) -> List[sqlite3.Row]:
         if provider and since_ts:
             cur = self._execute(
-                "SELECT * FROM llm_usage WHERE provider = ? AND request_ts >= ? ORDER BY request_ts DESC",
-                (provider, since_ts),
+                "SELECT * FROM llm_usage WHERE tenant_id = ? AND provider = ? AND request_ts >= ? ORDER BY request_ts DESC",
+                (self.tenant_id, provider, since_ts),
             )
         elif provider:
             cur = self._execute(
-                "SELECT * FROM llm_usage WHERE provider = ? ORDER BY request_ts DESC",
-                (provider,),
+                "SELECT * FROM llm_usage WHERE tenant_id = ? AND provider = ? ORDER BY request_ts DESC",
+                (self.tenant_id, provider),
             )
         elif since_ts:
             cur = self._execute(
-                "SELECT * FROM llm_usage WHERE request_ts >= ? ORDER BY request_ts DESC",
-                (since_ts,),
+                "SELECT * FROM llm_usage WHERE tenant_id = ? AND request_ts >= ? ORDER BY request_ts DESC",
+                (self.tenant_id, since_ts),
             )
         else:
-            cur = self._execute("SELECT * FROM llm_usage ORDER BY request_ts DESC")
+            cur = self._execute(
+                "SELECT * FROM llm_usage WHERE tenant_id = ? ORDER BY request_ts DESC",
+                (self.tenant_id,),
+            )
         return list(cur.fetchall())
 
     # ----------------------
@@ -740,9 +860,10 @@ class Database:
         without needing to modify environment variables or redeploy. The table stores
         the last updated timestamp automatically.
         """
+        scoped_key = self._runtime_key(key)
         self._execute(
-            "INSERT OR REPLACE INTO runtime_params (key, value, description, last_updated) VALUES (?, ?, ?, datetime('now'))",
-            (key, value, description),
+            "INSERT OR REPLACE INTO runtime_params (tenant_id, key, value, description, last_updated) VALUES (?, ?, ?, ?, datetime('now'))",
+            (self.tenant_id, scoped_key, value, description),
         )
         self.conn.commit()
 
@@ -750,8 +871,10 @@ class Database:
         """
         Read a runtime parameter value. Returns None if not found.
         """
+        scoped_key = self._runtime_key(key)
         cur = self._execute(
-            "SELECT value FROM runtime_params WHERE key = ? LIMIT 1", (key,)
+            "SELECT value FROM runtime_params WHERE tenant_id = ? AND key = ? LIMIT 1",
+            (self.tenant_id, scoped_key),
         )
         row = cur.fetchone()
         return row["value"] if row else None
@@ -760,23 +883,35 @@ class Database:
         """
         Return a dictionary of runtime parameters. If prefix is provided, only return keys starting with that prefix.
         """
+        scoped_prefix = self._runtime_key(prefix) if prefix else None
         if prefix:
             rows = self._execute(
-                "SELECT key, value FROM runtime_params WHERE key LIKE ?;",
-                (f"{prefix}%",),
+                "SELECT key, value FROM runtime_params WHERE tenant_id = ? AND key LIKE ?;",
+                (self.tenant_id, f"{scoped_prefix}%"),
             ).fetchall()
         else:
-            rows = self._execute("SELECT key, value FROM runtime_params;").fetchall()
+            rows = self._execute(
+                "SELECT key, value FROM runtime_params WHERE tenant_id = ?;",
+                (self.tenant_id,),
+            ).fetchall()
         results: Dict[str, str] = {}
+        key_prefix = f"{self.tenant_id}:"
         for r in rows:
-            results[r["key"]] = r["value"]
+            db_key = r["key"]
+            if isinstance(db_key, str) and db_key.startswith(key_prefix):
+                db_key = db_key[len(key_prefix) :]
+            results[db_key] = r["value"]
         return results
 
     def delete_runtime_param(self, key: str) -> None:
         """
         Remove a runtime parameter.
         """
-        self._execute("DELETE FROM runtime_params WHERE key = ?;", (key,))
+        scoped_key = self._runtime_key(key)
+        self._execute(
+            "DELETE FROM runtime_params WHERE tenant_id = ? AND key = ?;",
+            (self.tenant_id, scoped_key),
+        )
         self.conn.commit()
 
     def get_runtime_param_as_bool(self, key: str, default: bool = False) -> bool:
@@ -816,7 +951,10 @@ class Database:
     # ----------------------
     def prune_market_data_older_than(self, seconds: int) -> None:
         cutoff = ensure_iso(int(now_ts()) - seconds)
-        self._execute("DELETE FROM market_data WHERE created_at < ?", (cutoff,))
+        self._execute(
+            "DELETE FROM market_data WHERE tenant_id = ? AND created_at < ?",
+            (self.tenant_id, cutoff),
+        )
         self.conn.commit()
 
     def vacuum(self) -> None:
@@ -853,10 +991,24 @@ class Database:
 _default_db: Optional[Database] = None
 
 
-def get_default_db(db_path: Optional[str] = None) -> Database:
+def get_default_db(
+    db_path: Optional[str] = None, tenant_id: str = DEFAULT_TENANT_ID
+) -> Database:
     global _default_db
+    resolved_path = db_path or "simple_trader.db"
+    resolved_tenant = normalize_tenant_id(tenant_id)
     if _default_db is None:
-        _default_db = Database(db_path or "simple_trader.db")
+        _default_db = Database(resolved_path, tenant_id=resolved_tenant)
+    elif resolved_path != _default_db.db_path:
+        raise DatabaseError(
+            f"Default DB already initialized with path '{_default_db.db_path}', "
+            f"but got a request for '{resolved_path}'."
+        )
+    elif resolved_tenant != _default_db.tenant_id:
+        raise DatabaseError(
+            f"Default DB already initialized with tenant '{_default_db.tenant_id}', "
+            f"but got a request for '{resolved_tenant}'."
+        )
     return _default_db
 
 

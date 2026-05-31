@@ -12,6 +12,7 @@ from __future__ import annotations
 __all__ = [
     "setup_logging",
     "get_logger",
+    "CONFIG",
     "Config",
     "load_config",
     "Database",
@@ -70,12 +71,13 @@ def get_logger(name: str) -> logging.Logger:
 # so package import doesn't fail early when some files are not present yet in dev.
 Config = None
 load_config = None
+CONFIG = None
 Database = None
 
 try:
     # The following imports are intentionally lazy/optional and are wrapped in try/except.
     # Consumers can import these directly from their modules (e.g., `simple_trader.config`).
-    from .config import Config, load_config  # type: ignore
+    from .config import CONFIG, Config, load_config  # type: ignore
 except Exception:
     # If config is missing (e.g., during initial dev), just leave Config as None.
     pass

@@ -1,4 +1,4 @@
-Simple-Trader\simple_trader\news_fetcher.py
+# Simple-Trader/simple_trader/news_fetcher.py
 # -*- coding: utf-8 -*-
 """
 News fetching module for Simple-Trader.
@@ -93,7 +93,9 @@ class NewsFetcher:
 
     def __init__(self, config: Optional[Config] = None, db: Optional[Database] = None):
         self.config = config or CONFIG
-        self.db = db or get_default_db(self.config.database_path)
+        self.db = db or get_default_db(
+            self.config.database_path, tenant_id=self.config.tenant_id
+        )
         self.session = requests.Session()
         # Standard HTTP headers for our requests
         self.session.headers.update(
@@ -502,7 +504,7 @@ def _run_demo():
 
     logging.basicConfig(level=logging.DEBUG)
     cfg = CONFIG
-    db = get_default_db(cfg.database_path)
+    db = get_default_db(cfg.database_path, tenant_id=cfg.tenant_id)
     nf = NewsFetcher(cfg, db=db)
 
     logger.info("Fetching from RSS...")
