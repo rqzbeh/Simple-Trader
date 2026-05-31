@@ -89,7 +89,9 @@ class SignalScorer:
         market_client: Optional[Any] = None,
     ):
         self.config = config or CONFIG
-        self.db = db or get_default_db(self.config.database_path)
+        self.db = db or get_default_db(
+            self.config.database_path, tenant_id=self.config.tenant_id
+        )
         self.model_path = model_path or DEFAULT_MODEL_PATH
         self.use_db_store = use_db_store
         self.market_client = (

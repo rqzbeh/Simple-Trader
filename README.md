@@ -71,6 +71,7 @@ python main.py run --interval 300 --max-news 200
 ## Configuration & Environment Variables
 Simple-Trader reads configuration from environment variables (or `.env`). Important variables:
 - `DATABASE_PATH`: SQLite file path. Default: `simple_trader.db`.
+- `TENANT_ID`: tenant scope for multi-tenant SaaS isolation (letters/numbers/`-`/`_`). Default: `default`.
 - `LOG_LEVEL`: e.g., `INFO`, `DEBUG`. Default: `INFO`.
 - `ACCOUNT_BALANCE_USD`: Number for position sizing (default tuned conservatively).
 - `RISK_PER_TRADE_PCT`: percent of account risk per trade (e.g., `0.01` for 1%).
@@ -88,6 +89,7 @@ Simple-Trader reads configuration from environment variables (or `.env`). Import
 A more complete `env` scaffold:
 ```bash
 DATABASE_PATH=simple_trader.db
+TENANT_ID=default
 LOG_LEVEL=INFO
 ACCOUNT_BALANCE_USD=100000
 RISK_PER_TRADE_PCT=0.01
@@ -153,6 +155,7 @@ python tools/migrate_sqlite_to_postgres.py --sqlite simple_trader.db --pg "postg
 ## Security & Secrets
 - Do NOT commit `.env` or any API keys. Use a secure injection mechanism or GitHub secrets in CI.
 - Avoid versioning local DB files — use `.gitignore` to exclude `*.db`, `.env` and other local artifacts.
+- For SaaS deployments, set a unique `TENANT_ID` per customer/workspace to isolate all runtime data (news, analyses, signals, trades, tuning, and telemetry) at the storage layer.
 
 <a id="testing-development"></a>
 ## Testing & Development
