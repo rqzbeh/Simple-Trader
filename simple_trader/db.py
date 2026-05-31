@@ -329,7 +329,10 @@ class Database:
             "runtime_params",
             "tuning_history",
         )
+        allowed_tables = set(tables_to_patch)
         for table_name in tables_to_patch:
+            if table_name not in allowed_tables:
+                raise DatabaseError(f"Unexpected table in tenant migration: {table_name}")
             info_rows = self._execute(f"PRAGMA table_info({table_name})").fetchall()
             columns = {r["name"] for r in info_rows}
             if "tenant_id" not in columns:
@@ -371,7 +374,7 @@ class Database:
     def _tenant_scoped_hash(self, raw_hash: str) -> str:
         value = (raw_hash or "").strip()
         if not value:
-            return value
+            raise DatabaseError("news hash must not be empty")
         scoped_prefix = f"{self.tenant_id}:"
         if value.startswith(scoped_prefix):
             return value
@@ -435,6 +438,7 @@ class Database:
 
     def get_news_by_hash(self, hash: str) -> Optional[sqlite3.Row]:
         scoped_hash = self._tenant_scoped_hash(hash)
+        # Keep compatibility with records written before tenant scoping was introduced.
         cur = self._execute(
             "SELECT * FROM news WHERE tenant_id = ? AND hash IN (?, ?) LIMIT 1",
             (self.tenant_id, scoped_hash, hash),
