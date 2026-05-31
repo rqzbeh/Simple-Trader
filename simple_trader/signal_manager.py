@@ -66,7 +66,9 @@ class StrategyTuner:
 
     def __init__(self, db: Optional[Database] = None, config: Optional[Config] = None):
         self.config = config or CONFIG
-        self.db = db or get_default_db(self.config.database_path)
+        self.db = db or get_default_db(
+            self.config.database_path, tenant_id=self.config.tenant_id
+        )
 
     def update_from_trade(
         self,
@@ -497,7 +499,9 @@ class SignalManager:
         telegram_notifier: Optional[TelegramNotifier] = None,
     ):
         self.config = config or CONFIG
-        self.db = db or get_default_db(self.config.database_path)
+        self.db = db or get_default_db(
+            self.config.database_path, tenant_id=self.config.tenant_id
+        )
         self.news_fetcher = news_fetcher or NewsFetcher(self.config, self.db)
         self.llm_pool = llm_pool or LLMPool(self.config, self.db)
         self.market = market_client or MarketDataClient(self.config, self.db)

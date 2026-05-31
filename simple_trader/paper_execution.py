@@ -75,7 +75,9 @@ class PaperExecutor:
 
     def __post_init__(self) -> None:
         self.config = self.config or CONFIG
-        self.db = self.db or get_default_db(self.config.database_path)
+        self.db = self.db or get_default_db(
+            self.config.database_path, tenant_id=self.config.tenant_id
+        )
         self.market_client = self.market_client or MarketDataClient(
             self.config, self.db
         )

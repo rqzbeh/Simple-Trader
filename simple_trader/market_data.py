@@ -94,7 +94,9 @@ class MarketDataClient:
 
     def __init__(self, config: Optional[Config] = None, db: Optional[Database] = None):
         self.config = config or CONFIG
-        self.db = db or get_default_db(self.config.database_path)
+        self.db = db or get_default_db(
+            self.config.database_path, tenant_id=self.config.tenant_id
+        )
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": "SimpleTrader-MarketData/1.0"})
         self.coingecko_symbol_map: Dict[str, str] = {}  # symbol->id for CoinGecko
@@ -489,7 +491,7 @@ class MarketDataClient:
 if __name__ == "__main__":  # pragma: no cover - demo usage
     logging.basicConfig(level=logging.DEBUG)
     cfg = CONFIG
-    db = get_default_db(cfg.database_path)
+    db = get_default_db(cfg.database_path, tenant_id=cfg.tenant_id)
     md = MarketDataClient(cfg, db=db)
     try:
         print("Getting 2H OHLC for BTC...")
