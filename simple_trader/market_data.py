@@ -295,7 +295,7 @@ class MarketDataClient:
                 vol_dict[datetime.fromtimestamp(ts / 1000.0, tz=timezone.utc)] = vol
             vol_df = pd.DataFrame({"volume": list(vol_dict.values())}, index=pd.DatetimeIndex(list(vol_dict.keys())))
             vol_df = vol_df.resample("1H").ffill()
-            price_df["volume"] = vol_df.reindex(price_df.index).ffill()["volume"]
+            price_df["volume"] = vol_df.reindex(price_df.index)["volume"].ffill()
         else:
             price_df["volume"] = None
 
