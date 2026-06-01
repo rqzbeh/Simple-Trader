@@ -85,6 +85,7 @@ class Signal:
     risk_amount: Optional[float] = None
     rr: Optional[float] = None
     timeframe_hours: Optional[int] = None
+    pattern_name: Optional[str] = None
     created_at: Optional[int] = None
     expires_at: Optional[int] = None
     status: str = "open"  # 'open', 'closed', 'cancelled'
@@ -177,6 +178,7 @@ class Database:
                     title TEXT,
                     content TEXT,
                     published_at TEXT,
+                    processed_at TEXT,
                     asset TEXT,
                     hash TEXT,
                     fetched_at TEXT,
@@ -218,6 +220,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS signals (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     tenant_id TEXT NOT NULL DEFAULT 'default',
+                    pattern_name TEXT,
                     news_id INTEGER REFERENCES news(id) ON DELETE SET NULL,
                     symbol TEXT NOT NULL,
                     side TEXT NOT NULL,
@@ -339,6 +342,12 @@ class Database:
                 self._execute(
                     f"ALTER TABLE {table_name} ADD COLUMN tenant_id TEXT NOT NULL DEFAULT '{DEFAULT_TENANT_ID}'"
                 )
+            # Add 'processed_at' to news table and 'pattern_name' to signals table when missing
+            if table_name == "news" and "processed_at" not in columns:
+                self._execute("ALTER TABLE news ADD COLUMN processed_at TEXT")
+            if table_name == "signals" and "pattern_name" not in columns:
+                self._execute("ALTER TABLE signals ADD COLUMN pattern_name TEXT")
+
         for table_name in tables_to_patch:
             self._execute(
                 f"UPDATE {table_name} SET tenant_id = ? WHERE tenant_id IS NULL OR tenant_id = ''",
@@ -447,8 +456,9 @@ class Database:
         return row
 
     def mark_news_processed(self, news_id: int, processed: bool = True) -> None:
+        # Set processed flag and record processed_at timestamp. Do not overwrite fetched_at which is the original fetch time.
         self._execute(
-            "UPDATE news SET processed = ?, fetched_at = ? WHERE tenant_id = ? AND id = ?",
+            "UPDATE news SET processed = ?, processed_at = ? WHERE tenant_id = ? AND id = ?",
             (1 if processed else 0, ensure_iso(now_ts()), self.tenant_id, news_id),
         )
         self.conn.commit()
@@ -551,12 +561,13 @@ class Database:
     # ----------------------
     def create_signal(self, signal: Signal) -> int:
         query = """
-            INSERT INTO signals (tenant_id, news_id, symbol, side, entry_price, stop_loss, take_profit, leverage, position_size, risk_amount, rr, timeframe_hours, status, analysis_ids, created_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO signals (tenant_id, news_id, pattern_name, symbol, side, entry_price, stop_loss, take_profit, leverage, position_size, risk_amount, rr, timeframe_hours, status, analysis_ids, created_at, expires_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = (
             self.tenant_id,
             signal.news_id,
+            signal.pattern_name,
             signal.symbol,
             signal.side,
             signal.entry_price,

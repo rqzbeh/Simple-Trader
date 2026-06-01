@@ -161,6 +161,9 @@ class Orchestrator:
             "runtime_auto_apply_tuner": "true",
             # safe defaults for scorer training window (in seconds)
             "scorer_train_lookback_seconds": str(3600 * 24 * 30),  # 30 days
+            # SaaS safety defaults: keep a portion of portfolio in gold and a liquid reserve
+            "gold_allocation_pct": str(getattr(self.config, "gold_allocation_pct", 0.10)),
+            "liquid_reserve_pct": str(getattr(self.config, "liquid_reserve_pct", 0.10)),
         }
 
         # Persist these defaults if not already set in the DB.
