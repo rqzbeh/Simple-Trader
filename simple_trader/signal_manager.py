@@ -643,7 +643,14 @@ class SignalManager:
                     asset_symbol,
                     lookback_hours=max(48, self.config.timeframe_hours * 10),
                 )
-                if df_2h is None or df_2h.empty:
+                if df_2h is None:
+                    # None indicates a transient failure to fetch market data (e.g., API rate limit or network issue).
+                    # Do NOT mark the news processed so it can be retried later.
+                    logger.warning(
+                        "Transient market data fetch failure for %s; leaving news unprocessed for retry", asset_symbol
+                    )
+                    continue
+                if df_2h.empty:
                     logger.debug(
                         "No market data for %s; skip signal generation", asset_symbol
                     )
@@ -792,6 +799,41 @@ class SignalManager:
                     position_asset_units = risk_usd / price_diff
                     position_value_usd = position_asset_units * entry_price
 
+                    # Enforce portfolio safety budget: reserve gold and liquid reserve for SaaS operations
+                    try:
+                        gold_pct = float(
+                            self.db.get_runtime_param_as_float(
+                                "gold_allocation_pct", self.config.gold_allocation_pct
+                            )
+                        )
+                    except Exception:
+                        gold_pct = float(getattr(self.config, "gold_allocation_pct", 0.10))
+                    try:
+                        liquid_pct = float(
+                            self.db.get_runtime_param_as_float(
+                                "liquid_reserve_pct", self.config.liquid_reserve_pct
+                            )
+                        )
+                    except Exception:
+                        liquid_pct = float(getattr(self.config, "liquid_reserve_pct", 0.10))
+
+                    # Compute allowed risk budget in USD (conservative): remaining capital after reserves
+                    allowed_risk_budget = account_balance * max(0.0, 1.0 - gold_pct - liquid_pct)
+                    try:
+                        rows = self.db.execute_custom("SELECT SUM(risk_amount) AS s FROM signals WHERE status = 'open'")
+                        open_risk_sum = float(rows[0]["s"]) if rows and rows[0]["s"] is not None else 0.0
+                    except Exception:
+                        open_risk_sum = 0.0
+
+                    if (open_risk_sum + risk_usd) > allowed_risk_budget:
+                        logger.info(
+                            "Skipping signal: risk budget exceeded (open_risk=%.2f risk_usd=%.2f allowed=%.2f)",
+                            open_risk_sum,
+                            risk_usd,
+                            allowed_risk_budget,
+                        )
+                        continue
+
                     # Scoring check: compute signal score using SignalScorer if available.
                     # Build a candidate signal-like row for scoring (this mirrors fields used in the scorer)
                     candidate_signal_row = {
@@ -910,6 +952,7 @@ class SignalManager:
                         risk_amount=risk_usd,
                         rr=rr,
                         timeframe_hours=self.config.timeframe_hours,
+                        pattern_name=p.pattern_name,
                         created_at=created_at,
                         expires_at=expires_at,
                         analysis_ids=[analysis_id] if analysis_id is not None else None,
@@ -968,9 +1011,8 @@ class SignalManager:
                     asset_symbol,
                     news_rowid,
                 )
-                # Ensure we still mark news processed to avoid repeatedly failing
-                if news_rowid:
-                    self.db.mark_news_processed(news_rowid, processed=True)
+                # Do not mark news processed on unexpected exceptions (transient errors should be retried).
+                # This avoids losing articles due to intermittent downstream failures like market data or LLM timeouts.
                 continue
 
         return created_signal_ids

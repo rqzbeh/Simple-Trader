@@ -141,6 +141,12 @@ class Config:
     open_positions_limit: int = 10  # limit concurrently open signals
     backtest_mode: bool = False  # if true, the system won't send Telegram messages by default
 
+    # SaaS portfolio safety knobs
+    # Fraction of the total account balance to keep allocated to "gold" (conservative asset) as a hedge
+    gold_allocation_pct: float = 0.10  # 10% by default
+    # Fraction of the total account balance to keep liquid to support refunds/withdrawals without panic selling
+    liquid_reserve_pct: float = 0.10  # 10% by default
+
     # Market session mapping (useful for forex trading)
     session_map: Dict[str, Tuple[int, int]] = field(default_factory=dict)
     # Map of base currencies to preferred trading sessions
@@ -426,6 +432,10 @@ def from_env() -> Config:
 
     min_pattern_confidence = _getenv_float("MIN_PATTERN_CONFIDENCE", 0.6)
 
+    # SaaS safety overrides from env
+    gold_allocation_pct = _getenv_float("GOLD_ALLOCATION_PCT", 0.10)
+    liquid_reserve_pct = _getenv_float("LIQUID_RESERVE_PCT", 0.10)
+
     # Session & currency mapping
     session_map = _session_defaults()
     currency_session_map = _currency_to_sessions_defaults()
@@ -457,6 +467,8 @@ def from_env() -> Config:
         backtest_mode=backtest_mode,
         enable_telemetry=enable_telemetry,
         min_pattern_confidence=min_pattern_confidence,
+        gold_allocation_pct=gold_allocation_pct,
+        liquid_reserve_pct=liquid_reserve_pct,
         session_map=session_map,
         currency_session_map=currency_session_map,
     )

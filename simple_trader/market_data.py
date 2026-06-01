@@ -102,12 +102,86 @@ class MarketDataClient:
         self.coingecko_symbol_map: Dict[str, str] = {}  # symbol->id for CoinGecko
         self.last_coingecko_list_fetch: Optional[int] = None
         self.coingecko_list_ttl_seconds = 60 * 30  # refresh coin list every 30 minutes
+        # rate limiting: requests per minute to CoinGecko (free tier guidance)
+        self.coingecko_rate_limit_per_min = getattr(self.config, "coingecko_rate_limit_per_min", 50)
+        self._last_coingecko_call = 0.0
+        self._coingecko_min_interval = 60.0 / max(1.0, float(self.coingecko_rate_limit_per_min))
         self.alphavantage_key = self.config.alphavantage_api_key
         # Basic validation
         if pd is None:
             raise RuntimeError("pandas is required for market data processing. Please `pip install pandas`")
 
     # Public API ----------------------------------------------------
+
+    def _coingecko_get(self, url: str, params: Optional[Dict[str, any]] = None, timeout: int = 20) -> Optional[requests.Response]:
+        """
+        Rate-limited GET request to CoinGecko with retry-on-429 and exponential backoff.
+        Returns Response on success, None on permanent failure.
+        """
+        max_retries = 4
+        for attempt in range(max_retries):
+            # Enforce rate limit via minimum interval between requests
+            now = time.time()
+            elapsed = now - self._last_coingecko_call
+            if elapsed < self._coingecko_min_interval:
+                sleep_time = self._coingecko_min_interval - elapsed
+                logger.debug("Rate limit: sleeping %.2fs before CoinGecko request", sleep_time)
+                time.sleep(sleep_time)
+            
+            try:
+                self._last_coingecko_call = time.time()
+                r = self.session.get(url, params=params, timeout=timeout)
+                
+                # Handle 429 (too many requests) with backoff
+                if r.status_code == 429:
+                    retry_after = r.headers.get("Retry-After", None)
+                    if retry_after:
+                        try:
+                            backoff_sec = int(retry_after)
+                        except ValueError:
+                            backoff_sec = 2 ** attempt
+                    else:
+                        backoff_sec = 2 ** attempt
+                    
+                    logger.warning("CoinGecko returned 429; backing off for %.1fs (attempt %d/%d)", backoff_sec, attempt + 1, max_retries)
+                    if attempt < max_retries - 1:
+                        time.sleep(backoff_sec)
+                        continue
+                    else:
+                        logger.error("CoinGecko 429 persisted after %d retries; giving up", max_retries)
+                        return None
+                
+                # Handle 5xx server errors with backoff
+                if r.status_code >= 500:
+                    backoff_sec = 2 ** attempt
+                    logger.warning("CoinGecko returned %s; backing off for %.1fs (attempt %d/%d)", r.status_code, backoff_sec, attempt + 1, max_retries)
+                    if attempt < max_retries - 1:
+                        time.sleep(backoff_sec)
+                        continue
+                    else:
+                        logger.error("CoinGecko 5xx persisted after %d retries; giving up", max_retries)
+                        return None
+                
+                # Success or client error (not retryable)
+                return r
+            
+            except (requests.Timeout, requests.ConnectionError) as e:
+                # Network errors: retry with exponential backoff
+                backoff_sec = 2 ** attempt
+                logger.warning("CoinGecko request error: %s; backing off for %.1fs (attempt %d/%d)", e, backoff_sec, attempt + 1, max_retries)
+                if attempt < max_retries - 1:
+                    time.sleep(backoff_sec)
+                    continue
+                else:
+                    logger.error("CoinGecko request failed persistently after %d retries: %s", max_retries, e)
+                    return None
+            
+            except Exception as e:
+                logger.exception("Unexpected error during CoinGecko request")
+                return None
+        
+        logger.error("CoinGecko GET request exhausted all retries for %s", url)
+        return None
 
     def get_2h_ohlc(self, symbol: str, lookback_hours: int = 48, force_refresh: bool = False) -> DataFrame:
         """
@@ -223,9 +297,9 @@ class MarketDataClient:
             try:
                 logger.debug("Fetching CoinGecko coin list to resolve symbols")
                 url = f"{COINGECKO_API_BASE}/coins/list"
-                r = self.session.get(url, timeout=20)
-                if r.status_code != 200:
-                    logger.warning("Failed to fetch CoinGecko list: status %s", r.status_code)
+                r = self._coingecko_get(url, params=None, timeout=20)
+                if r is None:
+                    logger.warning("Failed to fetch CoinGecko list: request returned None")
                 else:
                     coins = r.json()
                     local_map = {}
@@ -269,7 +343,10 @@ class MarketDataClient:
         url = f"{COINGECKO_API_BASE}/coins/{coin_id}/market_chart"
         params = {"vs_currency": vs_currency, "days": days, "interval": "hourly"}
         logger.debug("Fetching CoinGecko market_chart for %s (days=%s vs=%s)", coin_id, days, vs_currency)
-        r = self.session.get(url, params=params, timeout=25)
+        r = self._coingecko_get(url, params=params, timeout=25)
+        if r is None:
+            logger.warning("CoinGecko API returned no response for market_chart for %s", coin_id)
+            raise RuntimeError(f"CoinGecko market_chart fetch failed for {coin_id}")
         if r.status_code != 200:
             logger.warning("CoinGecko API error status=%s content=%s", r.status_code, r.text)
             r.raise_for_status()

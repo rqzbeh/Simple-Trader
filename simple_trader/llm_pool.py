@@ -52,6 +52,7 @@ import requests
 
 from simple_trader.config import Config, LLMProviderConfig, CONFIG
 from simple_trader.db import AnalysisItem, Database, NewsItem, get_default_db, now_ts
+from simple_trader.metrics import time_llm_request
 
 logger = logging.getLogger("simple_trader.llm_pool")
 logger.addHandler(logging.NullHandler())
@@ -772,14 +773,37 @@ class LLMPool:
 
         deadline = time.time() + (timeout_seconds or 60)
         # Wait for futures to be done, collect results as they arrive
-        for future in as_completed(futures, timeout=timeout_seconds):
-            try:
-                client_results: List[Tuple[int, Optional[LLMSummary]]] = future.result()
-                # client_results is a list of (index, LLMSummary or None if failed)
-                for idx, summary in client_results:
-                    results_by_idx[idx] = summary
-            except Exception:
-                logger.exception("Error while collecting LLM future result")
+        try:
+            for future in as_completed(futures, timeout=timeout_seconds):
+                try:
+                    client_results: List[Tuple[int, Optional[LLMSummary]]] = future.result()
+                    # client_results is a list of (index, LLMSummary or None if failed)
+                    for idx, summary in client_results:
+                        results_by_idx[idx] = summary
+                except Exception:
+                    logger.exception("Error while collecting LLM future result")
+        except Exception as e:
+            # as_completed may raise concurrent.futures.TimeoutError if providers are slow.
+            # Collect any futures that already completed to preserve partial results, cancel the rest.
+            import concurrent.futures
+
+            if isinstance(e, concurrent.futures.TimeoutError):
+                logger.warning("LLM analyze_batch timeout after %ss; collecting partial results", timeout_seconds)
+                for future in futures:
+                    if future.done():
+                        try:
+                            client_results = future.result()
+                            for idx, summary in client_results:
+                                results_by_idx[idx] = summary
+                        except Exception:
+                            logger.exception("Error collecting partial LLM future result")
+                    else:
+                        try:
+                            future.cancel()
+                        except Exception:
+                            pass
+            else:
+                logger.exception("Unexpected exception while waiting for LLM futures: %s", e)
 
         # For any indices still None (not handled by assigned provider due to failures), we try fallback:
         remaining_indices = [i for i, v in results_by_idx.items() if v is None]
