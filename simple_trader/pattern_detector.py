@@ -367,6 +367,17 @@ class PatternDetector:
         except Exception:
             logger.exception("Failed to detect additional patterns")
 
+        # Deduplicate overlapping matches (e.g., TA-Lib + heuristic duplicates)
+        deduped: Dict[Tuple[str, str, int, int], PatternMatch] = {}
+        for m in matches:
+            key = (m.pattern_name, m.direction, m.start_idx, m.end_idx)
+            existing = deduped.get(key)
+            if existing is None or float(m.confidence or 0.0) > float(
+                existing.confidence or 0.0
+            ):
+                deduped[key] = m
+        matches = list(deduped.values())
+
         for m in matches:
             if m.confidence is None:
                 c = 0.0

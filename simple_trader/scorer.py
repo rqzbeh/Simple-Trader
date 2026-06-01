@@ -482,21 +482,26 @@ class SignalScorer:
             atr_norm = 0.0
         # Heuristic combination - weights chosen conservatively
         # More weight to LLM confidence and impact, moderate weight to RR, small weight to leverage/pos/volatility
+        # Weights sum to 1.0 to keep the score normalized.
         w_llm = 0.5
         w_impact = 0.2
         w_rr = 0.15
-        w_leverage = 0.08
+        w_leverage = 0.07
         w_pos = 0.04
+        w_atr = 0.04
         # rr_remap: rr -> soft saturation
         rr_score = math.tanh(rr / 3.0)
         leverage_score = 1.0 / (1.0 + math.log1p(max(0.0, leverage)))
         pos_score = 1.0 - min(1.0, pos_ratio * 2.0)
+        # Penalize high ATR (volatile / noisy environments) by mapping higher atr_norm to a lower score
+        atr_score = 1.0 / (1.0 + (atr_norm * 10.0)) if atr_norm is not None else 0.5
         raw = (
             w_llm * llm_conf
             + w_impact * impact_norm
             + w_rr * rr_score
             + w_leverage * leverage_score
             + w_pos * pos_score
+            + w_atr * atr_score
         )
         # Map to 0..1
         return float(max(0.0, min(1.0, raw)))
