@@ -55,12 +55,13 @@ def _escape_markdown_v2(text: str) -> str:
     # Order of replacement matters in some cases; keep it explicit
     # Avoid escaping dots in URLs: escape all MarkdownV2 special characters except '.' when the text looks like a URL
     text = text.replace("\\", "\\\\")
-    # Simple heuristic: do not escape dots when text looks like a URL (starts with http)
+    # Simple heuristic: do not escape dots in plain text (avoid \"5\.3%\" artifacts)
+    # and avoid escaping dots in URLs for link targets.
     if isinstance(text, str) and text.startswith("http"):
         # escape everything except '.' and ':' and '/'
         chars_to_escape = "_*[]()~`>#+-=|{}!"
     else:
-        chars_to_escape = "_*[]()~`>#+-=|{}.!"
+        chars_to_escape = "_*[]()~`>#+-=|{}!"
     for ch in chars_to_escape:
         text = text.replace(ch, f"\\{ch}")
     return text

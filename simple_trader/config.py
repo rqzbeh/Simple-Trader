@@ -395,13 +395,13 @@ def from_env() -> Config:
     timezone = os.getenv("TIMEZONE", "UTC")
 
     # Account & risk
-    account_balance_usd = _getenv_float("ACCOUNT_BALANCE_USD", 100000.0)
-    risk_per_trade_pct = _getenv_float("RISK_PER_TRADE_PCT", 0.01)
+    account_balance_usd = _getenv_float("ACCOUNT_BALANCE_USD", 200000.0)
+    risk_per_trade_pct = _getenv_float("RISK_PER_TRADE_PCT", 0.005)
     min_rr = _getenv_float("MIN_RISK_REWARD_RATIO", 3.0)
     stop_loss_slippage_pct = _getenv_float("STOP_LOSS_SLIPPAGE_PCT", 0.001)
 
-    max_leverage_crypto = _getenv_int("MAX_LEVERAGE_CRYPTO", 10)
-    max_leverage_forex = _getenv_int("MAX_LEVERAGE_FOREX", 30)
+    max_leverage_crypto = _getenv_int("MAX_LEVERAGE_CRYPTO", 5)
+    max_leverage_forex = _getenv_int("MAX_LEVERAGE_FOREX", 20)
 
     # Timeframes & trade duration
     timeframe_hours = _getenv_int("TIMEFRAME_HOURS", 2)
@@ -418,8 +418,8 @@ def from_env() -> Config:
 
     # LLMs
     llm_providers = _default_llm_provider_envs()
-    llm_global_concurrency = _getenv_int("LLM_GLOBAL_CONCURRENCY", 5)
-    llm_min_confidence = _getenv_float("LLM_MIN_CONFIDENCE", 0.6)
+    llm_global_concurrency = _getenv_int("LLM_GLOBAL_CONCURRENCY", 4)
+    llm_min_confidence = _getenv_float("LLM_MIN_CONFIDENCE", 0.7)
 
     # Signals / telegram
     telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -430,7 +430,7 @@ def from_env() -> Config:
     backtest_mode = _getenv_bool("BACKTEST_MODE", False)
     enable_telemetry = _getenv_bool("ENABLE_TELEMETRY", True)
 
-    min_pattern_confidence = _getenv_float("MIN_PATTERN_CONFIDENCE", 0.6)
+    min_pattern_confidence = _getenv_float("MIN_PATTERN_CONFIDENCE", 0.7)
 
     # SaaS safety overrides from env
     gold_allocation_pct = _getenv_float("GOLD_ALLOCATION_PCT", 0.10)

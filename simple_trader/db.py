@@ -138,6 +138,7 @@ class Database:
             self._configure()
             self._create_schema()
             self._migrate_schema_for_tenant_support()
+            self._migrate_runtime_params_key_format()
         logger.info("Database initialized: %s", self.db_path)
 
     def close(self) -> None:
@@ -390,7 +391,56 @@ class Database:
         return f"{scoped_prefix}{value}"
 
     def _runtime_key(self, key: str) -> str:
+        # New format: store key without tenant prefix (tenant isolation handled by column).
+        return key
+
+    def _runtime_key_legacy(self, key: str) -> str:
+        # Legacy format: key prefixed with tenant_id (kept for backward compatibility).
         return f"{self.tenant_id}:{key}"
+
+    def _migrate_runtime_params_key_format(self) -> None:
+        """
+        Optional migration: convert legacy runtime_params keys of the form
+        '{tenant_id}:{key}' into plain '{key}'. Keeps backward compatibility
+        by deleting legacy rows only when safe.
+        """
+        try:
+            prefix = f"{self.tenant_id}:"
+            rows = self._execute(
+                "SELECT key, value FROM runtime_params WHERE tenant_id = ? AND key LIKE ?",
+                (self.tenant_id, f"{prefix}%"),
+            ).fetchall()
+            for r in rows:
+                legacy_key = r["key"]
+                if not isinstance(legacy_key, str) or not legacy_key.startswith(prefix):
+                    continue
+                new_key = legacy_key[len(prefix):]
+                if not new_key:
+                    continue
+                existing = self._execute(
+                    "SELECT value FROM runtime_params WHERE tenant_id = ? AND key = ?",
+                    (self.tenant_id, new_key),
+                ).fetchone()
+                if existing:
+                    if existing["value"] == r["value"]:
+                        self._execute(
+                            "DELETE FROM runtime_params WHERE tenant_id = ? AND key = ?",
+                            (self.tenant_id, legacy_key),
+                        )
+                    else:
+                        logger.warning(
+                            "runtime_params key conflict during migration: legacy=%s new=%s; keeping both",
+                            legacy_key,
+                            new_key,
+                        )
+                    continue
+                self._execute(
+                    "UPDATE runtime_params SET key = ? WHERE tenant_id = ? AND key = ?",
+                    (new_key, self.tenant_id, legacy_key),
+                )
+            self.conn.commit()
+        except Exception:
+            logger.exception("Failed to migrate runtime_params key format")
 
     # ----------------------
     # News methods
@@ -407,7 +457,7 @@ class Database:
                 + "|"
                 + (news.title or "")
                 + "|"
-                + str(news.published_at)
+                + str(news.published_at or "")
             )
             import hashlib
 
@@ -888,6 +938,15 @@ class Database:
             (self.tenant_id, scoped_key),
         )
         row = cur.fetchone()
+        if row:
+            return row["value"]
+        # fallback to legacy prefixed key if needed
+        legacy_key = self._runtime_key_legacy(key)
+        cur = self._execute(
+            "SELECT value FROM runtime_params WHERE tenant_id = ? AND key = ? LIMIT 1",
+            (self.tenant_id, legacy_key),
+        )
+        row = cur.fetchone()
         return row["value"] if row else None
 
     def get_runtime_param_dict(self, prefix: Optional[str] = None) -> Dict[str, str]:
@@ -922,6 +981,11 @@ class Database:
         self._execute(
             "DELETE FROM runtime_params WHERE tenant_id = ? AND key = ?;",
             (self.tenant_id, scoped_key),
+        )
+        legacy_key = self._runtime_key_legacy(key)
+        self._execute(
+            "DELETE FROM runtime_params WHERE tenant_id = ? AND key = ?;",
+            (self.tenant_id, legacy_key),
         )
         self.conn.commit()
 

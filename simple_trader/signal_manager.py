@@ -1203,10 +1203,11 @@ class SignalManager:
             # Update tuner with a best-effort set of metadata for learning
             try:
                 rows = self.db.execute_custom(
-                    "SELECT symbol, rr, analysis_ids FROM signals WHERE id = ? LIMIT 1",
+                    "SELECT symbol, rr, analysis_ids, pattern_name FROM signals WHERE id = ? LIMIT 1",
                     (int(signal_id),),
                 )
                 symbol = rows[0]["symbol"] if rows else None
+                pattern_name = rows[0]["pattern_name"] if rows else None
                 rr_val = None
                 if rows and rows[0].get("rr") is not None:
                     try:
@@ -1218,9 +1219,8 @@ class SignalManager:
                     if exit_at_ts and executed_at_ts
                     else None
                 )
-                # pattern name is not stored on the signal; we use 'unknown' for now
                 self.tuner.update_from_trade(
-                    "unknown",
+                    pattern_name or "unknown",
                     symbol,
                     True if outcome == "win" else False,
                     rr_val,
@@ -1288,41 +1288,40 @@ class SignalManager:
             # 1) Process actual executed trades and update tuners based on outcomes
             # ---------------------------------------------------------------------
             trade_rows = self.db.execute_custom(
-                "SELECT trades.*, signals.symbol, signals.analysis_ids, signals.side, signals.created_at FROM trades JOIN signals ON trades.signal_id = signals.id WHERE trades.created_at >= datetime('now', ?)",
+                "SELECT trades.*, signals.symbol, signals.analysis_ids, signals.side, signals.created_at, signals.pattern_name FROM trades JOIN signals ON trades.signal_id = signals.id WHERE trades.created_at >= datetime('now', ?)",
                 (f"-{int(since_seconds)} seconds",),
             )
             for row in trade_rows:
                 try:
+                    row_dict = dict(row) if not isinstance(row, dict) else row
                     # compute hold duration in seconds
-                    executed_at = row["executed_at"]
-                    exit_at = row["exit_at"]
+                    executed_at = row_dict.get("executed_at")
+                    exit_at = row_dict.get("exit_at")
                     if executed_at and exit_at:
                         t1 = int(datetime.fromisoformat(executed_at).timestamp())
                         t2 = int(datetime.fromisoformat(exit_at).timestamp())
                         hold_seconds = max(0.0, float(t2 - t1))
                     else:
                         hold_seconds = None
-                    outcome = (
-                        row.get("outcome") if isinstance(row, dict) else row["outcome"]
-                    )
+                    outcome = row_dict.get("outcome")
                     win = True if outcome == "win" else False
-                    # perform update
-                    # Try to extract pattern name from analysis_ids or signal meta if available; fallback to "unknown"
-                    pattern_name = "unknown"
+                    # Use stored pattern_name when present; fallback to "unknown"
+                    pattern_name = row_dict.get("pattern_name") or "unknown"
+                    symbol = row_dict.get("symbol")
                     # call tuner update using pnl for rr if available
                     rr_val = None
                     try:
                         rr_val = (
-                            float(row["pnl"]) if row.get("pnl") is not None else None
+                            float(row_dict["pnl"]) if row_dict.get("pnl") is not None else None
                         )
                     except Exception:
                         rr_val = None
                     self.tuner.update_from_trade(
-                        pattern_name, row["symbol"], win, rr_val, hold_seconds
+                        pattern_name, symbol, win, rr_val, hold_seconds
                     )
                 except Exception:
                     logger.exception(
-                        "Failed to update tuning for trade id %s", row.get("id")
+                        "Failed to update tuning for trade id %s", row_dict.get("id") if isinstance(row_dict, dict) else None
                     )
 
             # ---------------------------------------------------------------------
@@ -1335,16 +1334,17 @@ class SignalManager:
             )
             for s in closed_signal_rows:
                 try:
-                    symbol = s["symbol"] if "symbol" in s.keys() else None
-                    outcome = s.get("outcome") if isinstance(s, dict) else s["outcome"]
+                    s_dict = dict(s) if not isinstance(s, dict) else s
+                    symbol = s_dict.get("symbol")
+                    outcome = s_dict.get("outcome")
                     # For signals closed without trades (timeouts/cancelled) we count them as not successful (loss) for tuning.
                     win = True if outcome == "win" else False
-                    pattern_name = "unknown"
+                    pattern_name = s_dict.get("pattern_name") or "unknown"
                     # rr and hold_seconds are unknown here; pass None.
                     self.tuner.update_from_trade(pattern_name, symbol, win, None, None)
                 except Exception:
                     logger.exception(
-                        "Failed to update tuning for closed signal id %s", s.get("id")
+                        "Failed to update tuning for closed signal id %s", s_dict.get("id") if isinstance(s_dict, dict) else None
                     )
         except Exception:
             logger.exception("Failed to monitor trades and update tuner")

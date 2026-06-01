@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
@@ -106,6 +107,7 @@ class MarketDataClient:
         self.coingecko_rate_limit_per_min = getattr(self.config, "coingecko_rate_limit_per_min", 50)
         self._last_coingecko_call = 0.0
         self._coingecko_min_interval = 60.0 / max(1.0, float(self.coingecko_rate_limit_per_min))
+        self._coingecko_lock = threading.Lock()
         self.alphavantage_key = self.config.alphavantage_api_key
         # Basic validation
         if pd is None:
@@ -120,17 +122,17 @@ class MarketDataClient:
         """
         max_retries = 4
         for attempt in range(max_retries):
-            # Enforce rate limit via minimum interval between requests
-            now = time.time()
-            elapsed = now - self._last_coingecko_call
-            if elapsed < self._coingecko_min_interval:
-                sleep_time = self._coingecko_min_interval - elapsed
-                logger.debug("Rate limit: sleeping %.2fs before CoinGecko request", sleep_time)
-                time.sleep(sleep_time)
-            
             try:
-                self._last_coingecko_call = time.time()
-                r = self.session.get(url, params=params, timeout=timeout)
+                # Enforce rate limit via minimum interval between requests (thread-safe)
+                with self._coingecko_lock:
+                    now = time.time()
+                    elapsed = now - self._last_coingecko_call
+                    if elapsed < self._coingecko_min_interval:
+                        sleep_time = self._coingecko_min_interval - elapsed
+                        logger.debug("Rate limit: sleeping %.2fs before CoinGecko request", sleep_time)
+                        time.sleep(sleep_time)
+                    self._last_coingecko_call = time.time()
+                    r = self.session.get(url, params=params, timeout=timeout)
                 
                 # Handle 429 (too many requests) with backoff
                 if r.status_code == 429:
@@ -365,7 +367,7 @@ class MarketDataClient:
         price_df = pd.DataFrame({"price": vals}, index=pd.DatetimeIndex(idx))
         price_df = price_df.sort_index()
         # Convert prices sampled to regular frequency by resampling to hourly; interpolate misses
-        price_df = price_df.resample("1H").ffill()
+        price_df = price_df.resample("1h").ffill()
 
         # Volume: align on hourly index
         vol_dict = {}
@@ -373,16 +375,16 @@ class MarketDataClient:
             for ts, vol in volumes:
                 vol_dict[datetime.fromtimestamp(ts / 1000.0, tz=timezone.utc)] = vol
             vol_df = pd.DataFrame({"volume": list(vol_dict.values())}, index=pd.DatetimeIndex(list(vol_dict.keys())))
-            vol_df = vol_df.resample("1H").ffill()
+            vol_df = vol_df.resample("1h").ffill()
             price_df["volume"] = vol_df.reindex(price_df.index)["volume"].ffill()
         else:
             price_df["volume"] = None
 
         # Build ohlc on 1H frequency by taking ohlc on price
-        ohlc_1h = price_df["price"].resample("1H").ohlc()
+        ohlc_1h = price_df["price"].resample("1h").ohlc()
         # attach volume:
         if "volume" in price_df.columns:
-            ohlc_1h["volume"] = price_df["volume"].resample("1H").sum().reindex(ohlc_1h.index)
+            ohlc_1h["volume"] = price_df["volume"].resample("1h").sum().reindex(ohlc_1h.index)
         ohlc_1h.columns = ["open", "high", "low", "close", "volume"] if "volume" in ohlc_1h.columns else ["open", "high", "low", "close"]
 
         # We now have hourly candles; return them to be resampled to 2H
@@ -458,7 +460,7 @@ class MarketDataClient:
         df = pd.DataFrame({"open": opens, "high": highs, "low": lows, "close": closes, "volume": volumes}, index=pd.DatetimeIndex(datetimes))
         df = df.sort_index()
         # We may only have a 60min frequency; ensure it by resampling to 1H (filling missings)
-        df = df.resample("1H").agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+        df = df.resample("1h").agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
         # Filter for lookback window
         cutoff_dt = datetime.now(timezone.utc) - timedelta(hours=lookback_hours)
         df = df[df.index >= cutoff_dt]
@@ -473,7 +475,7 @@ class MarketDataClient:
         """
         if df is None or df.empty:
             return pd.DataFrame()
-        rule = f"{hours}H"
+        rule = f"{hours}h"
         df = df.copy()
         # Ensure index is timezone-aware and in UTC
         if df.index.tzinfo is None or df.index.tz is None:
