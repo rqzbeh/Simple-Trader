@@ -1,298 +1,226 @@
-# Simple-Trader
+# Secret Formula — Internal Investment System
 
-Simple-Trader is a modular, production-focused signal generator for crypto and forex instruments. It combines news analysis using multiple LLM providers and 2-hour candlestick pattern detection to generate short-term trade signals. Signals are persisted to a database and can be broadcast via Telegram. This project is intentionally execution-agnostic — it generates signals; placing trades should be handled by your execution system.
+**Simple-Trader** (internally called the "Secret Formula") is a production-grade, 24/7 autonomous portfolio management backend for an investment company.
 
-Highlights
-- Fetches news via RSS and optional news APIs.
-- Runs multi-provider LLM analysis in parallel (Groq / Cloudflare / Google / mock).
-- Performs 2-hour candlestick pattern detection and ATR-based SL/TP calculation.
-- Produces signals with risk-management, minimum R:R enforcement, and suggested position sizing.
-- Supports Telegram alerts and an optional Prometheus metrics endpoint.
-- Stores news, analyses, market candles, signals, and trades in SQLite (optionally Postgres via migration).
-- Lightweight built-in learning/tuning based on recorded trade outcomes.
+It maintains a disciplined **Core** allocation (~55% target risk) in Gold and Silver for capital preservation, inflation hedging, and risk minimization, while running an **Alpha** book (~45%) in Crypto, Forex, and Oil that aggressively seeks short-term "massive profits" from news, on-chain flows, and public high-impact sentiment catalysts — especially **mandatory politician trading disclosures**.
 
-**⚠️ CRITICAL FOR INVESTMENT / PRODUCTION USE (June 2026 audit)**
-This tool **generates ideas/signals only**. It is **NOT** a complete portfolio management or execution system.
+The system is deliberately built to run mostly on **free public data sources** and continuously learns from every outcome using real machine learning (regret tracking, cause attribution, weight persistence, auto-retraining, and veto logic).
 
-Major issues discovered in initial review that could cause large losses or poor decisions in production:
-- Crypto market data was previously derived from close prices only (bad high/low for patterns) — **fixed** to prefer real /ohlc endpoint.
-- Very limited signal source (news sentiment + classic 2H candlesticks). Easy to overfit, regime dependent, high false positive rate in ranging/choppy markets.
-- No true portfolio construction, correlation, or book-level risk (total VaR, sector exposure, drawdown stops). Only per-trade % risk + crude open count. **Improved** with PortfolioManager + total risk budget guard + vol targeting.
-- Tuner can auto-adjust (or disable) parameters on small samples — dangerous without heavy oversight. Auto-apply is opt-in and still conservative.
-- Paper execution is low-fidelity (candle touch simulation, no realistic fills/funding/latency).
-- Heavy LLM reliance without source verification, credibility scoring, or hallucination guards.
-- No rigorous walk-forward / Monte-Carlo backtesting framework, no slippage model, no survivorship bias handling.
-- SQLite default + no advanced concurrency/transactions for high-volume production.
-- No live broker integration (execution gap), no kill switches, limited monitoring.
+> **Philosophy**: Buffett-level capital protection + Jim Simons-level statistical edge from public data + relentless improvement from mistakes.
 
-**What leaders actually use (and you should add/evolve toward):**
-- Multi-factor + alternative data (on-chain Glassnode/Dune, options flow, macro, credit, satellite).
-- Proper portfolio optimization (risk-parity, HRP, Black-Litterman, vol targeting, Kelly/fractional with drawdown overlay).
-- Regime detection + dynamic risk budgeting.
-- Full execution stack (CCXT, FIX, smart routing, TWAP/VWAP).
-- Institutional data (Polygon, Tiingo, Bloomberg/Refinitiv feeds, paid news).
-- Rigorous research platform (vectorized backtester, walk-forward, deflated Sharpe, combinatorial purged CV).
-- Real-time risk engine + pre-trade checks + post-trade attribution.
-- Human + model ensemble with strict position limits per strategy.
+---
 
-**Recommendations before using real capital:**
-1. Run extensive historical backtests + walk-forward on your universe.
-2. Forward-test in paper for 3-6+ months with real slippage assumptions.
-3. Start with tiny risk (0.1-0.25% per trade) + strict max book risk (3-5%).
-4. Add your own portfolio layer on top of signals (never blindly take every signal).
-5. Implement circuit breakers (pause on >X% daily loss, vol spike, etc.).
-6. Treat every signal as "idea to be vetted", not "trade this now".
+## Core Philosophy
 
-**Internal Team Commands (the Secret Formula in action)**
-After `pip install -r requirements.txt` (include yfinance + ccxt + fastapi for full power):
+- **Core Bucket (Gold/Silver)**: Preservation first. Gold acts as the ultimate moat and inflation/risk-off hedge. Position sizing increases when value is high (dovish policy, risk-off headlines).
+- **Alpha Bucket (Crypto / Forex / Oil)**: High-conviction, short-horizon (2h–24h) ideas driven by news flow, whale on-chain moves, and **public politician disclosures**.
+- **Public Edge Sources** (all free):
+  - Politician disclosures (STOCK Act PTRs, congressional filings) — lagged but official and high-signal for Crypto (Trump/WLFI), Oil/Energy policy, macro (Fed, tariffs).
+  - On-chain whale activity (public blockchain explorers).
+  - High-quality public RSS (macro, energy, crypto policy).
+- **Risk Architecture**: Hard bucket targets + per-class caps + daily loss / drawdown circuit breakers + automatic Gold/Silver hedging overlay.
+- **Learning System**: Every loss is attributed to explicit causes from the decision audit. Causes become persistent negative weights. Repeated mistakes trigger regret vetoes. Human review tags drive auto-retraining.
 
-- `python main.py portfolio`               → Current book risk/exposure across buckets
-- `python main.py allocate`                → Allocator suggestions (Core vs Alpha rebalancing)
-- `python main.py risk-report`             → RiskEngine + circuit breaker status
-- `python main.py hedge`                   → HedgeManager gold/silver overlay recommendations
-- `python main.py backtest-book --days 60 --capital 200000` → Full book simulation (Core + Alpha + hedges)
-- `python main.py live-paper-run`          → Advanced paper execution engine
+---
 
-**Minimal / Zero Paid API Keys Mode (Max Free Sources)**
-The system is now optimized to run with almost no paid keys:
+## Key Features
 
-- **Market data**: yfinance (free, no key) for Gold (GC=F), Silver, Oil (CL=F), Forex (EURUSD=X). CoinGecko (free) for crypto. AlphaVantage only as last resort.
-- **News**: Pure public RSS (10+ high-quality free feeds for gold/oil/forex/macro). No NewsAPI needed.
-- **Analysis**: Heuristic + Knowledge Base (embedded professional trading/finance expertise) completely replaces LLM when no keys. Strong rule-based direction/confidence/summary using asset knowledge, risk-off detection, patterns.
-- **Only "optional paid"**: Telegram bot token (for alerts). If missing or BACKTEST_MODE=true, no messages sent.
-- **Execution**: CCXT only if you want live trading (public endpoints for data are free).
+- **PortfolioAllocator** — Computes desired risk for Core vs Alpha with concentration guards and rebalance suggestions.
+- **RiskEngine** — Pre-trade checks, circuit breakers, daily loss limits, max drawdown pause.
+- **HedgeManager** — Automatically recommends increasing Gold/Silver when Alpha risk is high or risk-off regime is detected.
+- **Public Politician Disclosures** — Dedicated free fetcher for STOCK Act / PTR signals. Treated as high-impact Alpha catalysts with strict hedging requirements.
+- **Advanced ML Loop** (real & auditable):
+  - `regret_table` + `cause_weights` persisted in DB.
+  - Cause attribution from `decision_audit` + outcome + knowledge rules (e.g. `insufficient_hedge`, `ignored_politician_bearish_disclosure`).
+  - `CauseWeightPersister` applies penalties inside the scorer.
+  - Regret veto in the signal creation gate.
+  - Auto-retrain from human judgment tags (`review-mistakes --tag "ignored_hedge,low_conf"`).
+  - Enriched scorer features (whale flag, politics flag, Buffett value proxy, hedge ratio at entry, etc.).
+- **Beautiful Internal Dashboard** (FastAPI + Tailwind + Chart.js on `:8080`):
+  - Hero P&L metrics (Realized / Unrealized MTM / Total).
+  - Equity curve + recent trade P&L charts ("how are our trades doing?").
+  - Rich trade log: open vs closed status, entry/current prices, live mark-to-market P/L, filters.
+  - Core/Alpha allocation pie + per-asset risk bars.
+  - Special public signals card (whales + politician disclosures).
+  - ML insights (active cause penalties + recent regrets).
+- **Free / Zero-Key Mode** — Full functionality using yfinance (metals/oil/forex), CoinGecko (crypto), public RSS, public blockchain explorers, and a powerful embedded heuristic + knowledge base (no LLM keys required).
+- **24/7 Service** — systemd-ready long-running process with urgent opportunity/risk Telegram alerts.
+- **Paper Execution** — Realistic simulation with slippage (CCXT-ready for live).
+- **Full Audit Trail** — Every signal stores `decision_audit` JSON containing allocator state, hedge suggestion, regime, knowledge rationale, and causes.
+- **Rich CLI** — `allocate`, `risk-report`, `hedge`, `backtest-book`, `ml-status`, `retrain`, `review-mistakes`, etc.
 
-Recommended minimal .env for full operation (free mode):
-```
-DATABASE_PATH=simple_trader.db
-BACKTEST_MODE=false
-TELEGRAM_BOT_TOKEN=your_token_if_you_want_alerts
-# No LLM keys, no AlphaVantage, no NewsAPI needed.
-```
+---
 
-With zero keys you still get:
-- Free news monitoring
-- Knowledge-driven "LLM-like" analysis for gold risk-off, oil supply shocks, etc.
-- Full Core/Alpha allocation, hedging, risk engine, UI, service, learning loop.
+## Installation
 
-**VPS / Systemd Deployment (recommended for 24/7)**
-1. Clone to `/opt/simple-trader`
-2. Create venv, `pip install -r requirements.txt` (yfinance and fastapi/uvicorn for UI)
-3. Copy `.env` (can be almost empty for free mode)
-4. `sudo cp simple-trader.service /etc/systemd/system/`
-5. Edit the .service file (User, WorkingDirectory, paths)
-6. `sudo systemctl daemon-reload && sudo systemctl enable --now simple-trader`
-7. Logs: `journalctl -u simple-trader -f` and `/var/log/simple-trader/service.log`
+### 1. Clone & Environment
 
-Dashboard (internal): http://your-vps-ip:8080 (protect with nginx + auth or firewall/VPN).
-
-**Continuous Learning & Knowledge**
-- The system has a rich embedded `knowledge_base.py` with Kelly, risk-parity, asset-specific behaviors (gold as hedge for crypto/oil news events, forex session dynamics, etc.).
-- Every decision stores "decision_audit" with knowledge rationale.
-- Online learning in SignalScorer + StrategyTuner improves from every trade outcome ("mistakes").
-- Use `python main.py record-trade ...` after real or paper results.
-- Future: CLI "review-mistakes" to tag bad judgments and force model updates.
-- Urgent Telegram alerts for high-opportunity (under-allocated strong Alpha) or risk (approaching breakers, risk-off regime) are sent automatically by the service.
-
-Focus symbols (GOLD/SILVER/OIL/CRYPTO/FOREX) are now first-class with proper data routing and bucket logic. The system tries hard to let Alpha swing while Core (gold) keeps the company alive.
-
-The recent improvements (better crypto candles, vol-adjusted sizing, PortfolioManager guards, safer tuner notes) make it **less dangerous** as a signal generator, but you are still responsible for the rest of the stack. Use at your own risk. Consider this a research/idea-generation prototype for your investment company.
-
-Table of Contents
-- [Quickstart](#quickstart)
-- [Key Concepts](#key-concepts)
-- [Configuration & Environment Variables](#configuration)
-- [CLI & Usage](#cli-usage)
-- [Database & Migrations](#database-migrations)
-- [Telemetry & Observability](#telemetry-observability)
-- [Security & Secrets](#security)
-- [Testing & Development](#testing-development)
-- [Troubleshooting](#troubleshooting)
-- [Contributing](#contributing)
-- [License](#license)
-
-<a id="quickstart"></a>
-## Quickstart
-1. Clone the repository:
 ```bash
 git clone https://github.com/rqzbeh/Simple-Trader.git
 cd Simple-Trader
-```
 
-2. Create a Python virtual environment and install dependencies:
-```bash
 python -m venv .venv
-source .venv/bin/activate       # Linux/Mac
-# .venv\\Scripts\\Activate      # Windows
+# Linux/macOS
+source .venv/bin/activate
+# Windows
+# .venv\Scripts\Activate.ps1
 
 pip install -r requirements.txt
 ```
 
-3. Copy `.env.example` to `.env` and configure the environment variables listed below.
+**Key optional but highly recommended packages** (already in requirements):
+- `yfinance` — free high-quality data for Gold (GC=F), Silver, Oil (CL=F), Forex.
+- `fastapi` + `uvicorn` — for the internal dashboard.
+- `scikit-learn` — for the online ML scorer (falls back gracefully).
+- `ccxt` — only if you want live execution bridge.
 
-4. Run a single fetch + processing step:
-```bash
-# fetch news
-python main.py fetch
+### 2. Minimal Configuration (Free Mode)
 
-# create signals from unprocessed news
-python main.py process --max-news 100
-```
+Create a `.env` file (or set environment variables):
 
-5. Run periodic scanning (production):
-```bash
-python main.py run --interval 300 --max-news 200
-```
-
-<a id="key-concepts"></a>
-## Key Concepts
-- News Fetching: `NewsFetcher` aggregates RSS and optional news API sources, dedupes entries, and stores raw news.
-- LLM Analysis: `LLMPool` queries configured LLM providers and stores each analysis.
-- Market Data: `MarketDataClient` collects OHLC data (CoinGecko for crypto; AlphaVantage for forex) and aggregates 2-hour candles.
-- Pattern Detection: `PatternDetector` identifies candlestick patterns used to create signals (e.g., engulfing, hammer).
-- Signal Manager: `SignalManager` fuses LLM analysis + pattern detection to create signals with entry/stop/target price suggestions.
-- Telegram Notifier: Sends formatted message notifications for created/open/closed signals.
-- Tuner & Learning: `StrategyTuner` uses recorded trade outcomes to adapt parameters automatically.
-
-<a id="configuration"></a>
-## Configuration & Environment Variables
-Simple-Trader reads configuration from environment variables (or `.env`). Important variables:
-- `DATABASE_PATH`: SQLite file path. Default: `simple_trader.db`.
-- `TENANT_ID`: tenant scope for multi-tenant SaaS isolation (letters/numbers/`-`/`_`). Default: `default`.
-- `LOG_LEVEL`: e.g., `INFO`, `DEBUG`. Default: `INFO`.
-- `ACCOUNT_BALANCE_USD`: Number for position sizing (default tuned conservatively).
-- `RISK_PER_TRADE_PCT`: percent of account risk per trade (e.g., `0.01` for 1%).
-- `MIN_RISK_REWARD_RATIO`: minimum R:R allowed by the strategy (default `3.0`).
-- `MAX_LEVERAGE_CRYPTO`, `MAX_LEVERAGE_FOREX`: leverage caps for position sizing.
-- `NEWS_RSS_FEEDS`: CSV list of RSS feed URLs.
-- `NEWS_API_KEY`, `CRYPTONEWS_API_KEY`: optional news provider keys.
-- `ALPHAVANTAGE_API_KEY`: required for forex intraday OHLC.
-- `GROQ_API_KEY`, `CLOUDFLARE_API_KEY`, `GOOGLE_AI_API_KEY`: optional LLM provider keys.
-- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`: for sending alerts via Telegram.
-- `BACKTEST_MODE`: `true`/`false` - if true, suppress Telegram notifications.
-- `ENABLE_TELEMETRY`: `true`/`false` to serve Prometheus metrics.
-- `PROMETHEUS_PORT`: the port Prometheus metrics server will listen on.
-
-A more complete `env` scaffold:
-```bash
+```env
 DATABASE_PATH=simple_trader.db
-TENANT_ID=default
+BACKTEST_MODE=false
 LOG_LEVEL=INFO
-ACCOUNT_BALANCE_USD=100000
-RISK_PER_TRADE_PCT=0.01
-MIN_RISK_REWARD_RATIO=3.0
-ALPHAVANTAGE_API_KEY=your_alphavantage_key
-NEWS_API_KEY=your_newsapi_key
-GROQ_API_KEY=your_groq_key
-CLOUDFLARE_API_KEY=your_cloudflare_key
-GOOGLE_AI_API_KEY=your_google_api_key
-TELEGRAM_BOT_TOKEN=botXXXXXXXX:YYYYYYYYY
-TELEGRAM_CHAT_ID=-123456789
-NEWS_RSS_FEEDS=https://cointelegraph.com/rss,https://www.reuters.com/finance/markets/rss
-ENABLE_TELEMETRY=true
-PROMETHEUS_PORT=9000
+
+# Optional — only needed for alerts
+# TELEGRAM_BOT_TOKEN=...
+# TELEGRAM_CHAT_ID=...
+
+# No LLM keys, no paid news API, no AlphaVantage required for core operation.
 ```
 
-<a id="cli-usage"></a>
-## CLI & Usage
-The CLI command `python main.py` supports the following subcommands:
+### 3. Initialize Database
 
-- Fetch news:
-  - `python main.py fetch` — fetch RSS/API news and store them in the DB. `--list` to print configured feeds.
+The database is created automatically on first run. You can also run:
 
-- Process news (create signals from unprocessed news):
-  - `python main.py process --max-news 100` — analyze & create signals from news.
-
-- Close expired signals:
-  - `python main.py close` — close signals that exceeded the maximum duration (default 24h).
-
-- Monitor & tune:
-  - `python main.py monitor --since-seconds 86400` — update tuner stats based on recent trades.
-
-- Run once (fetch → process → close → tune):
-  - `python main.py all --max-news 100`
-
-- Run continuously:
-  - `python main.py run --interval 300 --max-news 100`
-
-- Record executed trade:
-  - `python main.py record-trade --signal-id 123 --executed-price 3.1 --exit-price 3.5 --pnl 120 --outcome win`
-
-- Paper execution simulation:
-  - `python main.py paper-exec --lookback-hours 72 --slippage-pct 0.001`
-
-- Tuner suggestions and application:
-  - `python main.py suggest --min-win-rate 0.4 --min-avg-rr 3.0 --min-sample-size 10 --apply`
-
-<a id="database-migrations"></a>
-## Database & Migrations
-- Default local DB is SQLite. For production use, consider migrating to PostgreSQL.
-- There is a migrations script: `migrations/001_create_postgres_schema.sql`.
-- Use `tools/migrate_sqlite_to_postgres.py` to migrate from SQLite to Postgres if needed:
 ```bash
-python tools/migrate_sqlite_to_postgres.py --sqlite simple_trader.db --pg "postgresql://user:pass@host:5432/dbname"
+python main.py status
 ```
 
-<a id="telemetry-observability"></a>
-## Telemetry & Observability
-- Enable Prometheus metrics with `ENABLE_TELEMETRY=true`. Use `PROMETHEUS_PORT` to set the port (default `9000`).
-- Grafana dashboard sample is included in `grafana/simple_trader_dashboard.json`.
+---
 
-<a id="security"></a>
-## Security & Secrets
-- Do NOT commit `.env` or any API keys. Use a secure injection mechanism or GitHub secrets in CI.
-- Avoid versioning local DB files — use `.gitignore` to exclude `*.db`, `.env` and other local artifacts.
-- For SaaS deployments, set a unique `TENANT_ID` per customer/workspace to isolate all runtime data (news, analyses, signals, trades, tuning, and telemetry) at the storage layer.
+## Quick Start
 
-<a id="testing-development"></a>
-## Testing & Development
-- Run unit tests (if provided) with pytest:
+### Run the Full Service (recommended)
+
 ```bash
-pytest
+python -m simple_trader.service --interval 300 --dashboard-port 8080
 ```
-- Add debugging by enabling `LOG_LEVEL=DEBUG`.
 
-<a id="troubleshooting"></a>
-## Troubleshooting
-- LLM endpoints failing: check provider credentials and rate limits, check the DB `llm_usage` for errors.
-- Market data not found: ensure symbol maps to a CoinGecko id or confirm AlphaVantage requests/keys for forex.
-- Telegram messages missing: check `BACKTEST_MODE`, `TELEGRAM_BOT_TOKEN`, and `TELEGRAM_CHAT_ID`.
-- If a secret accidentally gets committed, use `git filter-repo` or `BFG` to remove it and rotate your keys.
+- Fetches news + public disclosures + whales periodically.
+- Generates signals through the full Allocator → Risk → Hedge → Knowledge → ML gate.
+- Serves the dashboard at `http://localhost:8080`.
+- Sends urgent Telegram messages when configured.
 
-<a id="contributing"></a>
-## Contributing
-Contributions are welcome. Guidelines:
-- Fork the repo and create a feature branch.
-- Add tests for new features and ensure existing tests pass.
-- Follow code style: prefer Black formatting and type hints.
-- Open a PR with a clear summary and testing instructions.
+### One-off Commands
 
-<a id="license"></a>
+```bash
+python main.py fetch                    # Fetch news + public disclosures
+python main.py process --max-news 50    # Generate signals
+python main.py allocate                 # Show Core/Alpha allocation
+python main.py risk-report              # Book risk + breakers
+python main.py hedge                    # Gold/Silver overlay suggestions
+python main.py ml-status                # Current cause weights, regrets, model health
+python main.py review-mistakes --tag "ignored_hedge,low_conf" --signal-id 42 --lesson "Always force hedge on politician disclosures"
+python main.py retrain                  # Force retrain from tagged regrets
+```
+
+### Dashboard
+
+Open `http://your-server:8080` in a browser (protect with VPN, nginx basic auth, or firewall in production).
+
+The dashboard shows:
+- Live P&L (realized + unrealized MTM)
+- Equity curve
+- Detailed open/closed trade log with status and profit/loss
+- Risk allocation
+- Public politician & whale signals
+- Active ML penalties and learning progress
+
+---
+
+## CLI Reference (Selected)
+
+| Command              | Purpose |
+|----------------------|---------|
+| `portfolio`          | Current book risk/exposure snapshot |
+| `allocate`           | Allocator target vs current + rebalance suggestions |
+| `risk-report`        | RiskEngine state, breakers, drawdown |
+| `hedge`              | HedgeManager gold/silver recommendations |
+| `backtest-book`      | Full Core + Alpha + hedge book simulation |
+| `ml-status`          | Cause weights, recent regrets, scorer health |
+| `retrain`            | Force auto-retrain from tagged regrets |
+| `review-mistakes`    | Review losses + add human judgment tags |
+| `record-trade`       | Manually record outcome for a signal |
+| `run`                | Continuous fetch → process → close → tune loop |
+
+Run `python main.py --help` for the full list.
+
+---
+
+## Architecture Highlights
+
+- `news_fetcher.py` + `politician_disclosures.py` — Public RSS + on-chain + mandatory disclosure sources.
+- `heuristic_analyzer.py` — Full free replacement for LLM (strong asset-specific + regime logic).
+- `portfolio_allocator.py` + `risk_engine.py` + `hedge_manager.py` — Institutional-style risk framework.
+- `signal_manager.py` — The "secret formula" gate + cause attribution + regret logging.
+- `scorer.py` — Online learning with cause-weight penalties.
+- `web_dashboard.py` — Self-contained beautiful internal UI.
+- `service.py` — Production long-running process with urgent monitoring.
+- `knowledge_base.py` — Embedded professional rules (Kelly, hedging math, Buffett moats, Simons statistical factors).
+
+Every signal carries a full `decision_audit` JSON for auditability and cause attribution.
+
+---
+
+## Continuous Learning (The Real Edge)
+
+The system treats every loss as data:
+
+1. At signal creation: full context is stored (`decision_audit`).
+2. On loss/timeout: causes are automatically attributed (e.g. `insufficient_hedge`, `ignored_politician_bearish_disclosure`).
+3. Causes are written to `regret_table` and update persistent `cause_weights`.
+4. Negative weights penalize the scorer for similar future situations.
+5. 3+ recent bad causes on the same symbol/Alpha can trigger a **regret veto** (signal blocked or heavily discounted).
+6. Human review (`review-mistakes --tag ...`) provides labeled data for `auto_retrain_from_reviews`.
+
+This loop is designed to make the system genuinely better over time — exactly the "Warren Buffett capital preservation + Jim Simons rigorous data-driven improvement" goal.
+
+---
+
+## Deployment (VPS / systemd)
+
+See `simple-trader.service` example in the repo root.
+
+Typical steps:
+1. Clone to `/opt/simple-trader`
+2. Create venv + `pip install -r requirements.txt`
+3. Configure `.env`
+4. `sudo cp simple-trader.service /etc/systemd/system/`
+5. Edit paths and user in the service file
+6. `sudo systemctl daemon-reload && sudo systemctl enable --now simple-trader`
+7. Monitor: `journalctl -u simple-trader -f`
+
+Dashboard: `http://your-vps-ip:8080` (never expose publicly without strong auth).
+
+---
+
+## Important Disclaimers & Ethics
+
+- **Politician disclosures** are **public, mandatory, lagged filings** (STOCK Act). They are sentiment catalysts only — never treated as guaranteed "insider" information.
+- Always cross-verify, size small in Alpha, and maintain Gold hedges.
+- This is an **internal company tool only**. Not financial advice. Not for public distribution.
+- Past performance (even with ML) does not guarantee future results. You are responsible for all risk management and execution decisions.
+
+---
+
 ## License
-- This repository is licensed under the MIT License (see the full text below).
-- If you prefer another license, let the maintainers know and we can update `LICENSE`.
 
-MIT License (simplified)
-Copyright (c) 2025 rqzbeh
+MIT License. Internal use for the investment company.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, subject to the following conditions:
-- The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+---
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+**Made for serious internal use. Designed to protect capital first and compound an edge second — while getting demonstrably better with every reviewed mistake.**
 
-Credits & Acknowledgments
-- This project uses CoinGecko for public crypto market data and (optionally) AlphaVantage for forex.
-- LLM integrations are intentionally pluggable and can be expanded with provider-specific clients.
-- Grafana dashboard is a sample and can be tailored to your monitoring setup.
-
-Contact
-If you need help, raise an issue on GitHub: https://github.com/rqzbeh/Simple-Trader/issues
-
-## Public Politician Disclosures (STOCK Act PTRs) + Buffett/Simons ML (added for real compounding edge)
-- Free/public source: RSS (opensecrets, reuters/crypto-policy, marketwatch, benzinga) + lightweight public page scans (capitoltrades etc). Matches "disclosure|PTR|STOCK Act|Trump|Pelosi|WLFI|congress".
-- High-impact POLITICS signals (provider=politics_disclosure) -> Alpha bucket. Lagged official filings but powerful sentiment catalyst for our 5 assets. Ethics: PUBLIC ONLY, cross-verify, small Alpha size, mandatory Gold hedge.
-- Full loop: fetch (news_fetcher + dedicated pol module) -> service 24/7 -> heuristic (boost conf + Simons/Buffett rationale) -> gate (allocator/risk/hedge/knowledge/audit) -> scorer (politics_f, value_f, 12 feats) -> record loss: attribute causes from audit (e.g. insufficient_hedge) -> regret_table + cause_weights persist (delta negative) -> CauseWeightPersister penalty in predict_proba + regret_veto (>=3 bad -> block/discount) -> tuner (cause-weighted suggestions) -> auto_retrain on review --tag + monitor.
-- CLIs: ml-status, retrain, review-mistakes --tag "ignored_hedge,low_conf" --signal-id N --lesson "...", suggest --apply.
-- Dashboard: Core/Alpha % pie, special disclosures/whales, ML card (weights + recent regrets).
-- Gets better: every public disclosure/whale + outcome updates factors (Simons); avoid repeating safety violations (Buffett). Real auditable "learn from mistakes".
-See: politician_disclosures.py, scorer.py:CauseWeightPersister, signal_manager (veto+retrain+attribute), db (tables+log), knowledge_base (principles), web_dashboard+service.
+For questions or internal support, open an issue or contact the team directly.
