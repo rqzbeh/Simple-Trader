@@ -197,6 +197,8 @@ class Config:
         "OIL": ["CL=F", "USOIL", "WTI", "OILUSD"],       # WTI Crude
         "CRYPTO": ["BTC", "ETH", "BTCUSDT", "ETHUSDT"], # Major coins only for now
         "FOREX": ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD"],  # Liquid majors
+        # Iranian market (Tehran Stock Exchange / Iran Fara Bourse)
+        "IRAN": ["فولاد", "شستا", "وبملت", "خودرو", "ETF", "اوراق", "صندوق"],  # examples; user extends with actual tickers/codes
     })
 
     # Asset class to bucket mapping
@@ -208,6 +210,12 @@ class Config:
         "OIL": "ALPHA",
         "WHALE": "ALPHA",      # on-chain whale moves feed crypto alpha
         "POLITICS": "ALPHA",   # politician/policy headlines as sentiment alpha
+        # Iranian Bourse (Tehran Stock Exchange / Fara Bourse)
+        "IRAN_STOCK": "ALPHA",      # individual stocks - news/vol driven alpha
+        "IRAN_ETF": "ALPHA",        # ETFs (index, sector) - can be alpha or balanced
+        "IRAN_BOND": "CORE",        # corporate/gov bonds - preservation
+        "IRAN_FIXED_INCOME": "CORE", # fixed income funds - low risk, inflation hedge in local terms
+        "IRAN_TREASURY": "CORE",    # Islamic Treasury Bonds (Sukuk-like) - gov debt, sharia compliant, stable income
     })
 
     # Regime / news impact (for future regime detection)
@@ -226,6 +234,23 @@ class Config:
 
     # Politicians: names/keywords for parsing disclosures or news (Trump family crypto, Pelosi trades, congress energy/crypto bills)
     monitor_politicians: List[str] = field(default_factory=lambda: ["Trump", "Pelosi", "congress", "senate", "disclosure", "WLFI"])
+
+    # Iranian market specific (free/public sources focus)
+    # RSS/news for Eghtesad News, Codal reports (company disclosures like EDGAR), bourse news
+    iran_rss_feeds: List[str] = field(default_factory=lambda: [
+        "https://www.eghtesadnews.com/rss",  # Eghtesad News RSS (economic, bourse, policy)
+        "https://www.eghtesadnews.com/category/bourse/rss",  # bourse section if available
+        # Codal: official disclosures; often no direct RSS, use news that cover Codal filings or manual search
+        # Add more Persian economic RSS as needed (e.g. from other free sites)
+    ])
+    iran_keywords: List[str] = field(default_factory=lambda: [
+        "بورس", "سهام", "اوراق", "صندوق", "خزانه", "اسلامی", "درآمد ثابت", "ETF", "فولاد", "شستا", "وبملت", "خودرو",
+        "codal", "کدال", "گزارش", "افشا", "مجمع", "سود", "تورم", "نرخ بهره", "ریال", "دلار", "تحریم"
+    ])
+    # Trading sessions (local Tehran time, approximate; Sunday-Thursday)
+    iran_trading_sessions: Dict[str, List[str]] = field(default_factory=lambda: {
+        "TEHRAN": ["09:00-12:30"],  # main session; adjust for pre/after if any
+    })
 
     def as_dict(self) -> Dict:
         return asdict(self)

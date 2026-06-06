@@ -140,12 +140,19 @@ PROFESSIONAL_RULES = [
     "Whale trades and politician disclosures are PUBLIC sentiment/on-chain signals only — never treat as guaranteed 'insider' alpha. Always cross with multiple sources, volume, and strict risk management.",
     "Large exchange inflows from whales often precede short-term selling pressure in crypto; accumulation in cold wallets can be bullish but confirm with other data.",
     "Politician trades (e.g. Trump family crypto, Pelosi disclosures) create headlines and volatility — use for timing alpha entries in CRYPTO/OIL/FOREX but size small and hedge with GOLD.",
+    # Iranian market (new)
+    "Iran Bourse (TSE/IFB): Stocks/ETFs highly sensitive to oil prices (Iran is major producer), international sanctions, rial volatility, and Codal disclosures (like EDGAR filings). Use Eghtesad News + Codal reports for signals. High event risk — cross with global oil data.",
+    "Iran Fixed Income / Islamic Treasury Bonds (اوراق خزانه اسلامی): Government Sukuk-like instruments. Act as local inflation/rate hedge in high-inflation environment. News on budget, central bank policy, or Codal gov reports drive moves. Lower vol than stocks — suitable for CORE-like allocation.",
+    "Iran Fixed Income Funds (صندوق درآمد ثابت): Stable vehicles for capital preservation in local market. Sensitive to interest rate changes and liquidity news. Monitor via Eghtesad/Codal for fund performance and inflows.",
+    "Always hedge Iranian Alpha exposure with international GOLD or local fixed income during sanction/oil shock headlines. Free sources (Codal, Eghtesad RSS) are primary — limited real-time OHLC available publicly.",
     # Buffett level: Long-term value, margin of safety, economic moats/fundamentals
     "Buffett: Buy quality assets (strong 'moat' like gold as inflation hedge or oil with supply constraints) at margin of safety (when fear high, e.g. risk-off for gold). Ignore short-term noise; focus on intrinsic value drivers (real rates for gold, geopolitics for oil).",
     "Buffett: Economic indicators (Fed policy, inflation, USD strength) as primary; use for Core bucket sizing (increase gold when value high).",
     # Simons level: Data-driven quant, patterns in noise, ML edges, statistical rigor
     "Simons: Find small edges in vast data (whale flows + politician sentiment + news sequences + price patterns); many weak signals compound. Use ML to detect non-obvious correlations (e.g., whale buy + low hedge -> higher loss prob).",
     "Simons: Avoid overfitting with out-of-sample (backtests), regime awareness, position sizing based on edge confidence. Online learning from every outcome (win/loss causes). High frequency of small decisions, but here adapted to 2H-24H with strict risk.",
+    # Iranian extension
+    "For Iranian assets: Codal filings are primary 'disclosure' source (company financials, major events). Combine with Eghtesad News for sentiment. Iranian stocks/ETFs behave like high-beta oil plays + macro (rial, sanctions). Fixed income/treasury more stable but sensitive to local policy. Always size small in Alpha, use international Gold hedge for cross-border risk.",
     "Regime-adaptive indicators: In high-vol/risk-off regimes (detected via ATR + Gold strength), de-emphasize pure momentum (MACD/RSI) for Alpha assets; boost mean-reversion (Bollinger) + automatic Gold hedge. Store regime + indicator weights in every decision_audit so the regret system can learn regime-specific failure modes.",
     "New indicators (RSI, MACD, Bollinger, confluence, vol_regime) + meta (politician_impact, whale_velocity, cross_asset_regime, event_velocity) are computed per signal and fed to scorer + audit. Indicator-aware sizing reduces size on low confluence or high meta-penalty (e.g. repeated politician disclosure failures).",
 ]

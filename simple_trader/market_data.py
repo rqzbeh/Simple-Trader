@@ -88,7 +88,7 @@ def _symbol_is_forex(symbol: str) -> bool:
     return False
 
 def _get_asset_class(symbol: str) -> str:
-    """Classify into GOLD/SILVER/OIL/CRYPTO/FOREX for our focused universe."""
+    """Classify into our focused universe (international + Iranian Bourse)."""
     s = symbol.upper().replace("/", "").replace("-", "").replace("=F", "").replace("=X", "")
     if s in ("XAUUSD", "XAU", "GC", "GOLD"):
         return "GOLD"
@@ -100,6 +100,16 @@ def _get_asset_class(symbol: str) -> str:
         return "CRYPTO"
     if _symbol_is_forex(symbol):
         return "FOREX"
+    # Iranian market (Tehran Stock Exchange / Fara Bourse / Codal filings)
+    # Supports Persian tickers and English keywords
+    if any(k in s for k in ("IRAN", "فولاد", "شستا", "وبملت", "خودرو", "بورس", "کدال", "CODAL", "ETF", "اوراق", "صندوق", "خزانه")):
+        if any(k in s for k in ("اوراق", "خزانه", "TREASURY", "BOND")):
+            return "IRAN_TREASURY" if "خزانه" in s or "TREASURY" in s else "IRAN_BOND"
+        if any(k in s for k in ("صندوق", "FUND", "FIXED_INCOME", "درآمد ثابت")):
+            return "IRAN_FIXED_INCOME"
+        if "ETF" in s:
+            return "IRAN_ETF"
+        return "IRAN_STOCK"
     return "OTHER"
 
 
@@ -159,6 +169,14 @@ class MarketDataClient:
 
         # If we have no cached data or we need force refresh, call provider
         asset_cls = _get_asset_class(symbol)
+
+        # Iranian assets: limited free OHLC; prefer news/heuristic signals
+        if asset_cls.startswith("IRAN"):
+            iran_df = self.get_iran_ohlc(symbol, lookback_days=max(1, lookback_hours // 24))
+            if iran_df is not None and not iran_df.empty:
+                return self._resample_df_to_hours(iran_df, 2)
+            # No reliable free candles -> return None so system uses pure news signals (still powerful for IRAN)
+            return None
 
         # Prefer yfinance for Gold/Silver/Oil/Forex (much better data quality for our universe)
         df = None
@@ -600,6 +618,24 @@ class MarketDataClient:
         if df is None or df.empty:
             return None
         return float(df["close"].iloc[-1])
+
+    def get_iran_ohlc(self, symbol: str, lookback_days: int = 30) -> Optional[pd.DataFrame]:
+        """
+        SEPARATE chart sources for Iran (dedicated module because decoupled from global).
+        Uses IranMarketData from iran.py with hooks for tsetmc.com, ifb.ir, codal public data.
+        Returns None -> Iran-specific news algorithms (Codal/Eghtesad local view) take over.
+        This is intentional: Iranian market often moves on domestic narratives even when global markets are stressed.
+        """
+        try:
+            from .iran import IranMarketData
+            client = IranMarketData()
+            data = client.get_ohlc(symbol)
+            if data and isinstance(data, pd.DataFrame) and not data.empty:
+                return data
+        except Exception:
+            pass
+        logger.debug("Dedicated Iran chart source returned no OHLC for %s - using separate Iran news/algorithm path.", symbol)
+        return None
 
 
 # Example / debug entrypoint for the module

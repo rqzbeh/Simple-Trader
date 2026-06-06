@@ -78,32 +78,49 @@ class HeuristicAnalyzer:
             # Buffett: always consider hedge moat
             summary_parts.append("Public politician disclosure (lagged PTR): high sentiment for Alpha bucket; size small + Gold hedge per knowledge.")
 
-        # NEW: Technical indicator confluence (RSI/MACD/BB/ATR) for better direction + confidence
+        # NEW: Technical indicator confluence + SEPARATE Iran algorithms (different world view)
         try:
-            # If we have access to recent OHLC (via market_client on analyzer or patterns), use it
-            inds = None
-            if hasattr(self, 'market_client') and self.market_client and asset:
-                try:
-                    ohlc = self.market_client.get_2h_ohlc(asset, lookback_hours=48)
-                    if ohlc is not None and len(ohlc) >= 25:
-                        inds = ind_mod.compute_all_indicators(ohlc)
-                except Exception:
-                    pass
-            if inds is None and patterns:
-                # Fallback: use pattern meta if available for rough vol signal
-                inds = {"indicator_confluence": 0.55, "regime_label": "unknown"}
+            if ac.startswith("IRAN"):
+                # Dedicated Iran module - separate algorithms because market can grow despite war/sanctions
+                from .iran import get_iran_indicator_features
+                iran_feats = get_iran_indicator_features(text, news_item.title or "")
+                codal_str = iran_feats.get("iran_codal_strength", 0.0)
+                resilience = iran_feats.get("iran_sanctions_resilience", 0.0)
+                oil_beta = iran_feats.get("iran_oil_beta", 0.2)
 
-            if inds:
-                conf = float(inds.get("indicator_confluence", 0.5))
-                regime = inds.get("regime_label", "")
-                # Boost confidence with good confluence, adjust direction bias lightly
-                if conf > 0.65:
-                    confidence = min(0.9, confidence + (conf - 0.5) * 0.2)
-                if "high_vol" in regime and ac not in ("GOLD", "SILVER"):
-                    confidence = max(0.4, confidence - 0.08)  # caution in high vol for alpha
-                summary_parts.append(f"Indicator confluence {conf:.2f} (regime: {regime}).")
+                if codal_str > 0.6:
+                    confidence = min(0.88, confidence + 0.15)
+                    if "سود" in text_lower or "رشد" in text_lower:
+                        direction = "long"
+                if resilience > 0.3:
+                    confidence = min(0.85, confidence + 0.1)
+                    summary_parts.append("Iran sanctions-resilience (local view: market often diverges positively from global bad news).")
+                if oil_beta > 0.5:
+                    summary_parts.append(f"Iran oil beta {oil_beta:.1f} (producer but isolated - local dynamic).")
+                summary_parts.append("Iran dedicated algorithm (separate news/algos from global - Codal/Eghtesad perspective).")
+            else:
+                # Global technical indicators
+                inds = None
+                if hasattr(self, 'market_client') and self.market_client and asset:
+                    try:
+                        ohlc = self.market_client.get_2h_ohlc(asset, lookback_hours=48)
+                        if ohlc is not None and len(ohlc) >= 25:
+                            inds = ind_mod.compute_all_indicators(ohlc)
+                    except Exception:
+                        pass
+                if inds is None and patterns:
+                    inds = {"indicator_confluence": 0.55, "regime_label": "unknown"}
+
+                if inds:
+                    conf = float(inds.get("indicator_confluence", 0.5))
+                    regime = inds.get("regime_label", "")
+                    if conf > 0.65:
+                        confidence = min(0.9, confidence + (conf - 0.5) * 0.2)
+                    if "high_vol" in regime and ac not in ("GOLD", "SILVER"):
+                        confidence = max(0.4, confidence - 0.08)
+                    summary_parts.append(f"Indicator confluence {conf:.2f} (regime: {regime}).")
         except Exception:
-            pass  # graceful, keep previous heuristic only
+            pass  # graceful
 
         k = ASSET_KNOWLEDGE.get(ac, {})
 
@@ -220,6 +237,22 @@ class HeuristicAnalyzer:
             direction = 'long'
             confidence = 0.78
 
+        # NEW: Iranian Bourse overrides (Codal filings, Eghtesad news, oil/sanctions/rial impact)
+        if ac.startswith("IRAN"):
+            # Bonds/funds/treasury: more stable, inflation hedge in high-inflation Iran context
+            if ac in ("IRAN_BOND", "IRAN_FIXED_INCOME", "IRAN_TREASURY"):
+                if any(k in text_lower for k in ["تورم", "inflation", "نرخ بهره", "interest", "اوراق", "خزانه", "صندوق درآمد"]):
+                    direction = "long"
+                    confidence = min(0.82, confidence + 0.12)
+                    summary_parts.append("Iran fixed income / treasury: potential hedge vs local inflation / rate changes (Codal/Eghtesad coverage).")
+            else:
+                # Stocks/ETFs: alpha, sensitive to oil (Iran producer), sanctions, macro policy
+                if any(k in text_lower for k in ["نفت", "oil", "تحریم", "sanction", "دلار", "ریال", "codal", "کدال", "مجمع", "سود"]):
+                    confidence = min(0.8, confidence + 0.08)
+                    summary_parts.append("Iran stock/ETF: news/Codal driven (oil, policy, disclosures). High event risk - cross with global oil & hedge.")
+            # Always note free source limitation
+            summary_parts.append("Iranian assets: primarily news/Codal-driven (limited free OHLC).")
+
         # Buffett value overlay (margin of safety, fundamentals for Core)
         if ac in ("GOLD", "SILVER"):
             # Simple: high value when risk-off or dovish (real rates low)
@@ -272,4 +305,13 @@ class HeuristicAnalyzer:
             return 'CRYPTO'
         if len(s) >= 6 and s[:3].isalpha() and s[3:6].isalpha():
             return 'FOREX'
+        # Iranian Bourse support (Codal filings, stocks, ETFs, bonds, fixed income, treasury)
+        if any(k in s for k in ('IRAN', 'فولاد', 'شستا', 'بورس', 'کدال', 'CODAL', 'ETF', 'اوراق', 'صندوق', 'خزانه')):
+            if any(k in s for k in ('اوراق', 'خزانه', 'TREASURY', 'BOND')):
+                return 'IRAN_TREASURY' if 'خزانه' in s or 'TREASURY' in s else 'IRAN_BOND'
+            if any(k in s for k in ('صندوق', 'FUND', 'FIXED_INCOME')):
+                return 'IRAN_FIXED_INCOME'
+            if 'ETF' in s:
+                return 'IRAN_ETF'
+            return 'IRAN_STOCK'
         return 'OTHER'
