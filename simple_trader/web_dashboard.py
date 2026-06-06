@@ -313,6 +313,13 @@ DASHBOARD_HTML = """
                 <div id="ml-list" class="text-xs bg-slate-950 p-3 rounded-2xl font-mono max-h-[148px] overflow-auto"></div>
                 <div class="text-[10px] text-emerald-400/70 mt-2">Every loss attributes causes → negative weight → future signals penalized + veto possible. Review with tags to retrain.</div>
             </div>
+
+            <!-- NEW: System Health Indicators -->
+            <div class="card rounded-3xl p-5">
+                <div class="section-title mb-2">SYSTEM HEALTH INDICATORS</div>
+                <div id="health-list" class="text-xs font-mono"></div>
+                <div class="text-[10px] text-slate-500 mt-1">Signal rate, cause trends, regret-veto pressure. Rising 'insufficient_hedge' or high veto = tune hedge rules.</div>
+            </div>
         </div>
 
         <div class="mt-6 flex items-center justify-between text-[10px] text-slate-500">
@@ -392,6 +399,7 @@ async function refreshAll() {
         updateUrgent(urgent);
         updateSpecial();
         updateML();
+        updateHealth();
 
     } catch (e) {
         console.error('Dashboard refresh error', e);
@@ -619,6 +627,22 @@ async function updateML() {
         el.innerHTML = html || '<span class="text-slate-500">No mistakes logged yet — system learning from every outcome.</span>';
     } catch(e) {
         console.debug('ml optional', e);
+    }
+}
+
+async function updateHealth() {
+    try {
+        const h = await fetchJSON('/api/system_health');
+        const el = document.getElementById('health-list');
+        if (!el) return;
+        let html = `24h signals: ${h.signals_24h || 0} (Alpha ${h.alpha_signals_24h || 0})<br>`;
+        if (h.top_cause_trends) {
+            html += `Top causes: ${JSON.stringify(h.top_cause_trends)}<br>`;
+        }
+        html += `Veto pressure: ${h.regret_veto_pressure || 0}`;
+        el.innerHTML = html;
+    } catch(e) {
+        console.debug('health optional', e);
     }
 }
 
@@ -922,6 +946,44 @@ async def api_run_allocate():
 @app.get("/health")
 async def health():
     return {"status": "ok", "time": datetime.now(timezone.utc).isoformat()}
+
+@app.get("/api/system_health")
+async def api_system_health():
+    """Lightweight system health 'indicators' for ops/monitoring (signal rate, cause trends, veto pressure)."""
+    try:
+        # Recent signals
+        sigs = db.execute_custom("SELECT created_at, bucket FROM signals WHERE created_at > datetime('now', '-24 hours')") or []
+        alpha_24h = sum(1 for s in sigs if (s.get("bucket") or "").upper() == "ALPHA")
+        core_24h = len(sigs) - alpha_24h
+
+        # Cause trends from regrets
+        regrets = db.get_regrets(limit=50) if hasattr(db, "get_regrets") else []
+        cause_trend = {}
+        veto_pressure = 0
+        for r in regrets:
+            try:
+                cs = json.loads(r.get("causes", "[]") or "[]")
+                for c in cs:
+                    cause_trend[c] = cause_trend.get(c, 0) + 1
+                if len(cs) >= 2:
+                    veto_pressure += 1
+            except:
+                pass
+
+        # Rough veto rate
+        total_recent = len(regrets)
+        veto_rate = (veto_pressure / max(1, total_recent)) if total_recent else 0.0
+
+        return {
+            "signals_24h": len(sigs),
+            "alpha_signals_24h": alpha_24h,
+            "core_signals_24h": core_24h,
+            "top_cause_trends": dict(sorted(cause_trend.items(), key=lambda x: -x[1])[:5]),
+            "regret_veto_pressure": round(veto_rate, 3),
+            "note": "High veto_pressure or rising 'insufficient_hedge' trend = review sizing / hedge rules.",
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     # For direct run: uvicorn simple_trader.web_dashboard:app --host 0.0.0.0 --port 8080

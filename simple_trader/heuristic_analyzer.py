@@ -18,6 +18,7 @@ from typing import Optional
 from .config import CONFIG, Config
 from .db import NewsItem
 from .knowledge_base import ASSET_KNOWLEDGE, PROFESSIONAL_RULES, is_risk_off_regime, get_knowledge_for_prompt
+from . import indicators as ind_mod  # NEW technical + meta indicators for better confluence
 
 # Lazy import to keep heuristic usable even if pandas not installed (pure free mode)
 try:
@@ -76,6 +77,33 @@ class HeuristicAnalyzer:
             confidence = max(confidence, 0.68)  # public disclosure -> solid alpha timing catalyst (cross with other data)
             # Buffett: always consider hedge moat
             summary_parts.append("Public politician disclosure (lagged PTR): high sentiment for Alpha bucket; size small + Gold hedge per knowledge.")
+
+        # NEW: Technical indicator confluence (RSI/MACD/BB/ATR) for better direction + confidence
+        try:
+            # If we have access to recent OHLC (via market_client on analyzer or patterns), use it
+            inds = None
+            if hasattr(self, 'market_client') and self.market_client and asset:
+                try:
+                    ohlc = self.market_client.get_2h_ohlc(asset, lookback_hours=48)
+                    if ohlc is not None and len(ohlc) >= 25:
+                        inds = ind_mod.compute_all_indicators(ohlc)
+                except Exception:
+                    pass
+            if inds is None and patterns:
+                # Fallback: use pattern meta if available for rough vol signal
+                inds = {"indicator_confluence": 0.55, "regime_label": "unknown"}
+
+            if inds:
+                conf = float(inds.get("indicator_confluence", 0.5))
+                regime = inds.get("regime_label", "")
+                # Boost confidence with good confluence, adjust direction bias lightly
+                if conf > 0.65:
+                    confidence = min(0.9, confidence + (conf - 0.5) * 0.2)
+                if "high_vol" in regime and ac not in ("GOLD", "SILVER"):
+                    confidence = max(0.4, confidence - 0.08)  # caution in high vol for alpha
+                summary_parts.append(f"Indicator confluence {conf:.2f} (regime: {regime}).")
+        except Exception:
+            pass  # graceful, keep previous heuristic only
 
         k = ASSET_KNOWLEDGE.get(ac, {})
 

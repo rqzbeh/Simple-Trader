@@ -53,6 +53,7 @@ except Exception:
 
 from simple_trader.config import CONFIG, Config
 from simple_trader.db import Database, get_default_db
+from . import indicators as ind_mod  # new technical + meta indicators
 
 logger = logging.getLogger("simple_trader.scorer")
 logger.addHandler(logging.NullHandler())
@@ -521,7 +522,57 @@ class SignalScorer:
         politics_f = 1.0 if "politics" in str(signal_row.get("provider", "")).lower() or "trump" in str(signal_row.get("decision_audit", "")).lower() or "pelosi" in str(signal_row.get("decision_audit", "")).lower() else 0.0
         value_f = 1.0 if (signal_row.get("asset_class") in ("GOLD", "OIL") and risk_off_f > 0) else 0.5  # Buffett value when fear high
 
-        # Basic + rich feature vector (12 features)
+        # === NEW: Technical + Meta Indicators (Simons multi-factor edge) ===
+        ind_confluence = 0.5
+        ind_rsi_norm = 0.0
+        ind_macd_norm = 0.0
+        ind_bb_norm = 0.0
+        ind_vol_regime = 0.0
+        ind_atr_pct = atr_norm  # reuse existing
+        ind_rel_volume = 1.0
+        # Regret frequency meta-feature (ML feedback - how "burned" is this symbol recently?)
+        regret_freq = 0.0
+        try:
+            if self.db and hasattr(self.db, "get_regrets"):
+                regs = self.db.get_regrets(limit=20) or []
+                bad = sum(1 for r in regs if (r.get("symbol") or "").upper() == (symbol or "").upper() and (r.get("pnl") or 0) < 0)
+                regret_freq = min(1.0, bad / 5.0)
+        except:
+            pass
+
+        try:
+            # Prefer pre-computed in signal_row/audit if available (from process path)
+            audit = {}
+            if signal_row.get("decision_audit"):
+                try:
+                    audit = json.loads(signal_row["decision_audit"]) if isinstance(signal_row["decision_audit"], str) else signal_row["decision_audit"]
+                except Exception:
+                    pass
+            if "indicators" in audit:
+                inds = audit["indicators"]
+                ind_confluence = float(inds.get("indicator_confluence", 0.5))
+                ind_rsi_norm = float(inds.get("rsi_norm", (inds.get("rsi", 50) - 50) / 50.0))
+                ind_macd_norm = float(inds.get("macd_norm", 0.0))
+                ind_bb_norm = float(inds.get("bb_norm", 0.0))
+                ind_vol_regime = float(inds.get("vol_regime", 0.0))
+                ind_atr_pct = float(inds.get("atr_pct", atr_norm))
+                ind_rel_volume = float(inds.get("rel_volume", 1.0))
+            elif self.market_client and symbol:
+                # Fallback: compute live (small cost, cached in future)
+                ohlc = self.market_client.get_2h_ohlc(symbol, lookback_hours=60)
+                if ohlc is not None and not ohlc.empty and len(ohlc) >= 30:
+                    feats = ind_mod.get_indicator_features_for_signal(ohlc)
+                    ind_confluence = feats.get("ind_confluence", 0.5)
+                    ind_rsi_norm = feats.get("ind_rsi_norm", 0.0)
+                    ind_macd_norm = feats.get("ind_macd_norm", 0.0)
+                    ind_bb_norm = feats.get("ind_bb_norm", 0.0)
+                    ind_vol_regime = feats.get("ind_vol_regime", 0.0)
+                    ind_atr_pct = feats.get("ind_atr_pct", atr_norm)
+                    ind_rel_volume = feats.get("ind_rel_volume", 1.0)
+        except Exception:
+            logger.debug("Indicator feature extraction graceful fallback")
+
+        # Basic + rich feature vector (now ~20 features with indicators + regret_freq)
         features = np.array(
             [
                 llm_confidence,
@@ -536,6 +587,15 @@ class SignalScorer:
                 whale_f,
                 politics_f,
                 value_f,
+                # NEW indicator features
+                ind_confluence,
+                ind_rsi_norm,
+                ind_macd_norm,
+                ind_bb_norm,
+                ind_vol_regime,
+                ind_atr_pct,
+                ind_rel_volume,
+                regret_freq,  # NEW: recent loss frequency for this symbol (from regret_table)
             ],
             dtype=float,
         ).reshape(1, -1)

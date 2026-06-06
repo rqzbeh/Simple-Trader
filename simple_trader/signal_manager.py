@@ -28,6 +28,8 @@ try:
 except Exception:
     np = None
     NUMPY_AVAILABLE = False
+
+from . import indicators as ind_mod  # meta-indicators + technical for audit/features
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -848,9 +850,9 @@ class SignalManager:
                     position_asset_units = risk_usd / price_diff
                     position_value_usd = position_asset_units * entry_price
 
-                    # Professional enhancement: volatility targeting using ATR (if available in pattern meta or recompute)
+                    # Professional enhancement: volatility targeting using ATR + NEW indicators (confluence / regime / meta)
                     # Many quant funds size so that expected daily vol * position ~ target risk budget.
-                    # We scale down if current ATR (vol) is high.
+                    # We scale down if current ATR (vol) is high, or low confluence, or high politician/whale regret penalty.
                     try:
                         atr_val = getattr(p, "meta", {}).get("atr") if getattr(p, "meta", None) else None
                         if atr_val is None or atr_val <= 0:
@@ -859,10 +861,30 @@ class SignalManager:
                         if atr_val and atr_val > 0:
                             # Target risk in price units ~ risk_pct * price (rough daily vol budget)
                             target_risk_units = (risk_usd * 0.8) / atr_val   # conservative 80% of fixed risk budget for vol
+
+                            # NEW: indicator-aware adjustment
+                            ind_adj = 1.0
+                            try:
+                                # pull from recent decision or compute quick
+                                inds = ind_mod.compute_all_indicators(df_2h.tail(40)) if 'df_2h' in locals() and df_2h is not None else {}
+                                conf = float(inds.get("indicator_confluence", 0.5))
+                                if conf < 0.55:
+                                    ind_adj *= 0.85
+                                if inds.get("vol_regime", 0) > 0.5:
+                                    ind_adj *= 0.9
+                                # meta penalty (politician impact etc)
+                                meta = ind_mod.attach_meta_indicators({"symbol": asset_symbol}, db=self.db)
+                                pol_pen = abs(meta.get("meta_indicators", {}).get("politician_impact", 0))
+                                if pol_pen > 0.05:
+                                    ind_adj *= (1 - min(0.4, pol_pen * 3))
+                            except Exception:
+                                pass
+
+                            target_risk_units *= ind_adj
                             if target_risk_units < position_asset_units:
                                 position_asset_units = target_risk_units
                                 position_value_usd = position_asset_units * entry_price
-                                logger.debug("Vol-targeted position size for %s: reduced to %.4f units (ATR=%.4f)", asset_symbol, position_asset_units, atr_val)
+                                logger.debug("Indicator+vol-targeted size for %s: reduced (ATR+conf+meta adj=%.2f)", asset_symbol, ind_adj)
                     except Exception:
                         pass  # fall back to pure % risk sizing on error
 
@@ -1079,6 +1101,17 @@ class SignalManager:
                         "knowledge_rationale": rationale[:300],
                         "timestamp": now_ts(),
                     }
+
+                    # Attach meta-indicators (public data edge + ML feedback)
+                    try:
+                        recent_whales = []  # could be populated from news fetcher in real flow
+                        ind_mod.attach_meta_indicators(signal_row={"symbol": asset_symbol, "asset_class": ac}, db=self.db, recent_whales=recent_whales)
+                        # Store the computed ones if attach mutated (simple version just returns)
+                        meta = ind_mod.attach_meta_indicators({"symbol": asset_symbol, "asset_class": ac}, db=self.db)
+                        if meta.get("meta_indicators"):
+                            decision_audit["meta_indicators"] = meta["meta_indicators"]
+                    except Exception:
+                        pass
 
                     signal_obj = SignalDataclass(
                         news_id=news_rowid,
