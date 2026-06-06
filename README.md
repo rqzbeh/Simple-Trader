@@ -35,7 +35,8 @@ The system is deliberately built to run mostly on **free public data sources** a
   - `CauseWeightPersister` applies penalties inside the scorer.
   - Regret veto in the signal creation gate.
   - Auto-retrain from human judgment tags (`review-mistakes --tag "ignored_hedge,low_conf"`).
-  - Enriched scorer features (whale flag, politics flag, Buffett value proxy, hedge ratio at entry, etc.).
+  - Enriched scorer features (whale flag, politics flag, Buffett value proxy, hedge ratio at entry, **new technical indicators: RSI/MACD/Bollinger/confluence/vol_regime + meta-indicators (politician_impact, whale_velocity, cross_asset, event_velocity), regret frequency**).
+- **Expanded Indicators Layer** (`indicators.py`): RSI, MACD, Bollinger, enhanced ATR + regime, volume metrics, confluence score + public meta-indicators. Regime-adaptive (high-vol/risk-off de-emphasizes momentum). Indicator-aware sizing in Alpha. Cached for performance. Exposed in dashboard + audit.
 - **Beautiful Internal Dashboard** (FastAPI + Tailwind + Chart.js on `:8080`):
   - Hero P&L metrics (Realized / Unrealized MTM / Total).
   - Equity curve + recent trade P&L charts ("how are our trades doing?").

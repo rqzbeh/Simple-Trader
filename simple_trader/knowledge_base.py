@@ -146,6 +146,8 @@ PROFESSIONAL_RULES = [
     # Simons level: Data-driven quant, patterns in noise, ML edges, statistical rigor
     "Simons: Find small edges in vast data (whale flows + politician sentiment + news sequences + price patterns); many weak signals compound. Use ML to detect non-obvious correlations (e.g., whale buy + low hedge -> higher loss prob).",
     "Simons: Avoid overfitting with out-of-sample (backtests), regime awareness, position sizing based on edge confidence. Online learning from every outcome (win/loss causes). High frequency of small decisions, but here adapted to 2H-24H with strict risk.",
+    "Regime-adaptive indicators: In high-vol/risk-off regimes (detected via ATR + Gold strength), de-emphasize pure momentum (MACD/RSI) for Alpha assets; boost mean-reversion (Bollinger) + automatic Gold hedge. Store regime + indicator weights in every decision_audit so the regret system can learn regime-specific failure modes.",
+    "New indicators (RSI, MACD, Bollinger, confluence, vol_regime) + meta (politician_impact, whale_velocity, cross_asset_regime, event_velocity) are computed per signal and fed to scorer + audit. Indicator-aware sizing reduces size on low confluence or high meta-penalty (e.g. repeated politician disclosure failures).",
 ]
 
 def get_knowledge_for_prompt(asset_classes: list[str] = None) -> str:
