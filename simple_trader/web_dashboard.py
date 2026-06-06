@@ -7,14 +7,14 @@ Major sections:
 - Hero P&L metrics: Realized, Unrealized (MTM via live prices), Total est, Win Rate, Open positions + risk
 - How trades are doing: Full equity / cumulative P&L line chart + recent trades P&L bars
 - Rich trade log: Latest trades/positions with OPEN/CLOSED badges, entry, current/exit price, colored P/L, filterable (All/Open/Closed + symbol search)
-- Risk allocation pie + per-asset bars (Core vs Alpha emphasis)
+- Risk allocation pie + per-asset bars (Core vs Alpha emphasis; includes IRAN stocks/ETFs/bonds/funds/treasury)
 - Book risk + breaker status
-- Urgent alerts + Whale/Politician (public disclosures) signals
+- Urgent alerts + Whale/Politician (public disclosures) + Iranian Bourse (Codal/Eghtesad news for stocks, ETFs, Islamic Treasury Bonds, fixed income funds)
 - ML learnings (cause weights + regrets) showing the system is getting better
 
 Self-contained HTML (Tailwind + Chart.js). Dark modern finance aesthetic. Auto-refresh. Action buttons.
 
-Internal only. Perfect for VPS team access.
+Internal only. Perfect for VPS team access. Iranian assets supported via free public RSS/Codal keywords (news-driven; limited free OHLC).
 """
 
 from __future__ import annotations
@@ -599,7 +599,7 @@ async function updateSpecial() {
         const el = document.getElementById('special-list');
         if (!el) return;
         if (!specials || !specials.length) {
-            el.innerHTML = '<div class="text-slate-500 text-xs">No recent public whale or politician disclosure signals.</div>';
+            el.innerHTML = '<div class="text-slate-500 text-xs">No recent public whale, politician disclosure, or Iranian Bourse (Codal/Eghtesad) signals.</div>';
             return;
         }
         el.innerHTML = specials.map(s => {
@@ -767,10 +767,11 @@ async def api_urgent():
 
 @app.get("/api/special")
 async def api_special():
-    """Recent whale and politics signals (free on-chain + public disclosures)."""
+    """Recent whale, politics, and Iranian Bourse signals (free on-chain + public disclosures + Codal/Eghtesad).
+    Iranian signals use SEPARATE dedicated algorithms/news from iran.py module (local view that can diverge from global markets)."""
     rows = db.execute_custom(
         "SELECT title, content, asset, provider, created_at FROM news "
-        "WHERE provider IN ('whale', 'whale_btc', 'whale_eth', 'politics', 'politics_disclosure', 'politician_disclosure_public') "
+        "WHERE provider IN ('whale', 'whale_btc', 'whale_eth', 'politics', 'politics_disclosure', 'politician_disclosure_public', 'iran_bourse', 'iran_codal') "
         "AND created_at > datetime('now', '-48 hours') ORDER BY created_at DESC LIMIT 10"
     )
     specials = []

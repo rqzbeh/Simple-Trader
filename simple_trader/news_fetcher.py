@@ -155,6 +155,21 @@ class NewsFetcher:
         except Exception as e:
             logger.debug("Politician disclosures fetch skipped (public sources): %s", e)
 
+        # NEW: Iranian Bourse support - SEPARATE algorithms & news input
+        # Uses dedicated IranNewsProcessor from iran.py for local "different world view"
+        # (Codal as primary disclosure alpha, sanctions-resilience narratives, oil beta despite isolation).
+        # Still integrated into unified portfolio but processed with Iran-specific logic.
+        try:
+            from .iran import fetch_iran_dedicated_news
+            iran_items = fetch_iran_dedicated_news(self.config)
+            for item in iran_items:
+                inserted = self._insert_news_item(item)
+                results.append(FetchResult("iran_dedicated", item, inserted))
+            if iran_items:
+                logger.info("Added %d dedicated Iranian signals (separate Iran module: Codal/Eghtesad local view)", len(iran_items))
+        except Exception as e:
+            logger.debug("Dedicated Iran news skipped (free/public, separate module): %s", e)
+
         logger.debug("Total news fetched (new inserts / deduped): %s", len(results))
         return results
 
@@ -624,6 +639,97 @@ class NewsFetcher:
                     logger.info("Politics signal detected from RSS: %s", title[:60])
         except Exception as e:
             logger.debug("Politics scan error (uses existing RSS): %s", e)
+
+        return results
+
+    # --- NEW: Iranian Bourse (free/public: Eghtesad News RSS + Codal keyword coverage) ---
+    def fetch_iran_news(self) -> List[FetchResult]:
+        """
+        Fetch Iranian market news from free/public sources:
+        - Eghtesad News RSS (bourse, stocks, funds, policy, Codal reports coverage).
+        - Keyword scan for Codal (کدال) filings, stocks (e.g. فولاد), ETFs, Islamic Treasury Bonds (اوراق خزانه اسلامی),
+          fixed income funds (صندوق درآمد ثابت).
+        Returns NewsItems mapped to IRAN_STOCK / IRAN_ETF / IRAN_BOND / IRAN_FIXED_INCOME / IRAN_TREASURY.
+        No paid API. Persian + English keywords. Deduped via normal path.
+        """
+        results: List[FetchResult] = []
+        now = now_ts()
+        cfg = self.config
+
+        feeds = getattr(cfg, "iran_rss_feeds", []) or []
+        keywords = [k.lower() for k in getattr(cfg, "iran_keywords", [])]
+
+        for feed_url in feeds:
+            try:
+                resp = self.session.get(feed_url, timeout=15)
+                if resp.status_code != 200:
+                    continue
+                try:
+                    import feedparser
+                    feed = feedparser.parse(resp.text)
+                    entries = feed.entries[:15]
+                except Exception:
+                    entries = self._basic_rss_parse(resp.text)  # reuse from whale/politics
+
+                for entry in entries:
+                    title = (entry.get("title") or getattr(entry, "title", "") or "").strip()
+                    link = entry.get("link") or getattr(entry, "link", "")
+                    summary = (entry.get("summary") or getattr(entry, "summary", "") or title).strip()
+                    text = (title + " " + summary).lower()
+
+                    if not any(kw in text for kw in keywords + ["بورس", "سهام", "اوراق", "صندوق", "کدال", "codal"]):
+                        continue
+
+                    # Map to Iranian asset class
+                    asset = "IRAN_STOCK"
+                    if any(k in text for k in ["اوراق", "خزانه", "treasury", "bond", "سخاب"]):
+                        asset = "IRAN_TREASURY" if "خزانه" in text or "treasury" in text else "IRAN_BOND"
+                    elif any(k in text for k in ["صندوق", "درآمد ثابت", "fixed income", "fund"]):
+                        asset = "IRAN_FIXED_INCOME"
+                    elif "etf" in text or "صندوق etf" in text:
+                        asset = "IRAN_ETF"
+
+                    item = NewsItem(
+                        provider="iran_bourse",
+                        url=link,
+                        title=f"IRAN: {title[:70]}",
+                        content=summary[:350] + " (Free public source: Eghtesad/Codal coverage)",
+                        published_at=now,
+                        asset=asset,
+                        raw_json={"source": feed_url, "keywords_matched": [k for k in keywords if k in text]},
+                        fetched_at=now,
+                    )
+                    inserted = self._insert_news_item(item)
+                    results.append(FetchResult("iran", item, inserted))
+                    logger.info("Iran Bourse signal: %s -> %s", title[:50], asset)
+            except Exception as e:
+                logger.debug("Iran RSS error for %s: %s (free source, graceful)", feed_url, e)
+
+        # Bonus: scan recent unprocessed general news for Codal/Iran keywords (if other RSS already fetched)
+        try:
+            recent = self.get_unprocessed_news(limit=30)
+            for row in recent:
+                text = (row.get("title", "") + " " + row.get("content", "")).lower()
+                if any(kw in text for kw in keywords + ["کدال", "codal", "بورس تهران", "اوراق خزانه"]):
+                    asset = "IRAN_STOCK"
+                    if any(k in text for k in ["اوراق", "خزانه"]):
+                        asset = "IRAN_TREASURY"
+                    elif "صندوق" in text and "درآمد" in text:
+                        asset = "IRAN_FIXED_INCOME"
+                    item = NewsItem(
+                        provider="iran_codal",
+                        url=row.get("url", ""),
+                        title=f"IRAN/CODAL: {row.get('title', '')[:70]}",
+                        content=(row.get("content", "") + " (Codal filing or Iran bourse news)"),
+                        published_at=row.get("published_at"),
+                        asset=asset,
+                        raw_json={"source": "general_rss_codal_scan"},
+                        fetched_at=now,
+                    )
+                    inserted = self._insert_news_item(item)
+                    results.append(FetchResult("iran_codal", item, inserted))
+        except Exception as e:
+            logger.debug("Iran secondary Codal scan skipped: %s", e)
 
         return results
 

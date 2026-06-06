@@ -1104,12 +1104,28 @@ class SignalManager:
 
                     # Attach meta-indicators (public data edge + ML feedback)
                     try:
-                        recent_whales = []  # could be populated from news fetcher in real flow
+                        recent_whales = []
                         ind_mod.attach_meta_indicators(signal_row={"symbol": asset_symbol, "asset_class": ac}, db=self.db, recent_whales=recent_whales)
-                        # Store the computed ones if attach mutated (simple version just returns)
                         meta = ind_mod.attach_meta_indicators({"symbol": asset_symbol, "asset_class": ac}, db=self.db)
                         if meta.get("meta_indicators"):
                             decision_audit["meta_indicators"] = meta["meta_indicators"]
+
+                        # SEPARATE Iran algorithms: pull dedicated features if IRAN asset
+                        if ac.startswith("IRAN"):
+                            try:
+                                from .iran import get_iran_indicator_features
+                                # Use the news content that triggered this signal for Iran-specific scoring
+                                news_text = ""
+                                if news_rowid:
+                                    news_row = self.db.execute_custom("SELECT title, content FROM news WHERE id = ?", (news_rowid,))
+                                    if news_row:
+                                        nr = dict(news_row[0])
+                                        news_text = (nr.get("title","") + " " + nr.get("content",""))
+                                iran_feats = get_iran_indicator_features(news_text)
+                                decision_audit["iran_dedicated_features"] = iran_feats
+                                # These feed the scorer and cause attribution for "Iran can grow despite sanctions" edge
+                            except Exception:
+                                pass
                     except Exception:
                         pass
 
