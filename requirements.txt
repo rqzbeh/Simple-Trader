@@ -23,8 +23,16 @@ scikit-learn>=1.3.0
 # to be installed on the system. If your environment doesn't support the C dependency,
 # remove this line or use a fallback (e.g., pandas-based heuristics).
 TA-Lib>=0.4.24
-# If you want to get market data directly from exchanges (optional)
-# ccxt>=3.0.0
+# yfinance - highly recommended for Gold (GC=F), Silver, Oil (CL=F), Forex historical data
+yfinance>=0.2.0
+# ccxt - for live execution bridge (crypto, forex, some metals/oil brokers)
+ccxt>=3.0.0
+
+# Web UI (internal dashboard only)
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+jinja2>=3.1.0  # for templates if wanted, or pure HTML
+python-multipart>=0.0.9
 
 # Optional: Common crypto/market utilities (uncomment if used)
 # python-binance>=1.0.16

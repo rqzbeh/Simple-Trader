@@ -185,3 +185,24 @@ htmlcov/
 # NOTE:
 # - Ensure you do not commit API keys, tokens, certificate files, or DB files.
 # - If you have a `.env` with secrets, keep it locally and add an example: `.env.example` or `.env.sample`.
+# Model artifacts (scorer persistence)
+*.pkl
+*.joblib
+scorer*.pkl*
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+.simple_trader.db
+
+# Local service files
+simple-trader.service
+
+# Additional
+.env
+.env.*
+.venv/
+venv/
+__pycache__/
+*.py[cod]

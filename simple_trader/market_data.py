@@ -41,6 +41,13 @@ except Exception:  # pragma: no cover - environment specific
     pd = None  # type: ignore
     DataFrame = None  # type: ignore
 
+# Optional yfinance for excellent coverage of Gold (GC=F), Silver (SI=F), Oil (CL=F), Forex (EURUSD=X)
+try:
+    import yfinance as yf  # type: ignore
+    HAS_YFINANCE = True
+except Exception:
+    HAS_YFINANCE = False
+
 from simple_trader.config import Config, CONFIG
 from simple_trader.db import Database, get_default_db, now_ts
 
@@ -69,19 +76,31 @@ def _normalize_symbol(symbol: str) -> str:
 
 def _symbol_is_forex(symbol: str) -> bool:
     """
-    Determine if symbol refers to forex pair: either "EURUSD", "EUR/USD" or "EUR-USD".
-    Heuristic: if two 3-letter codes separated by slash/dash or concatenated -> forex.
+    Determine if symbol refers to forex pair.
     """
-    s = symbol.upper().replace("-", "").replace("/", "")
+    s = symbol.upper().replace("-", "").replace("/", "").replace("=X", "")
     if len(s) == 6 and s.isalpha():
-        # crude check; could be "BTCUSD" though; we prefer to detect common fiat currencies
-        fiats = {"USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF"}
+        fiats = {"USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "CHF"}
         base = s[0:3]
         quote = s[3:6]
-        # treat as forex only if both are fiat currencies recognized
         if base in fiats and quote in fiats:
             return True
     return False
+
+def _get_asset_class(symbol: str) -> str:
+    """Classify into GOLD/SILVER/OIL/CRYPTO/FOREX for our focused universe."""
+    s = symbol.upper().replace("/", "").replace("-", "").replace("=F", "").replace("=X", "")
+    if s in ("XAUUSD", "XAU", "GC", "GOLD"):
+        return "GOLD"
+    if s in ("XAGUSD", "XAG", "SI", "SILVER"):
+        return "SILVER"
+    if s in ("CL", "USOIL", "WTI", "OIL", "CRUDE"):
+        return "OIL"
+    if any(c in s for c in ("BTC", "ETH", "SOL", "XRP")) or s.startswith("CRYPTO"):
+        return "CRYPTO"
+    if _symbol_is_forex(symbol):
+        return "FOREX"
+    return "OTHER"
 
 
 class MarketDataClient:
@@ -106,6 +125,9 @@ class MarketDataClient:
         # Basic validation
         if pd is None:
             raise RuntimeError("pandas is required for market data processing. Please `pip install pandas`")
+        # yfinance is strongly preferred for free coverage of GOLD/SILVER/OIL/FOREX
+        if not HAS_YFINANCE:
+            logger.warning("yfinance not installed. Install with `pip install yfinance` for best free market data on metals, oil, forex.")
 
     # Public API ----------------------------------------------------
 
@@ -136,10 +158,18 @@ class MarketDataClient:
                     return cached_df[cached_df.index >= cutoff]
 
         # If we have no cached data or we need force refresh, call provider
-        if _symbol_is_forex(symbol):
-            df = self._get_forex_ohlc(symbol, lookback_hours)
-        else:
-            df = self._get_crypto_ohlc(symbol, lookback_hours)
+        asset_cls = _get_asset_class(symbol)
+
+        # Prefer yfinance for Gold/Silver/Oil/Forex (much better data quality for our universe)
+        df = None
+        if asset_cls in ("GOLD", "SILVER", "OIL", "FOREX") and HAS_YFINANCE:
+            df = self._get_yfinance_ohlc(symbol, lookback_hours)
+
+        if df is None or df.empty:
+            if _symbol_is_forex(symbol) or asset_cls in ("GOLD", "SILVER", "OIL", "FOREX"):
+                df = self._get_forex_ohlc(symbol, lookback_hours)
+            else:
+                df = self._get_crypto_ohlc(symbol, lookback_hours)
 
         # Resample to 2H
         df_resampled = self._resample_df_to_hours(df, 2)
@@ -183,11 +213,17 @@ class MarketDataClient:
                     cutoff = datetime.fromtimestamp(start_epoch, tz=timezone.utc)
                     return cached_df[cached_df.index >= cutoff]
 
-        # No suitable cache: fetch raw hourly data from provider and resample
-        if _symbol_is_forex(symbol):
-            raw_df = self._get_forex_ohlc(symbol, lookback_hours)
-        else:
-            raw_df = self._get_crypto_ohlc(symbol, lookback_hours)
+        asset_cls = _get_asset_class(symbol)
+
+        raw_df = None
+        if asset_cls in ("GOLD", "SILVER", "OIL", "FOREX") and HAS_YFINANCE:
+            raw_df = self._get_yfinance_ohlc(symbol, lookback_hours)
+
+        if raw_df is None or raw_df.empty:
+            if _symbol_is_forex(symbol) or asset_cls in ("GOLD", "SILVER", "OIL", "FOREX"):
+                raw_df = self._get_forex_ohlc(symbol, lookback_hours)
+            else:
+                raw_df = self._get_crypto_ohlc(symbol, lookback_hours)
 
         if raw_df is None or raw_df.empty:
             logger.debug("No raw market data returned for %s (timeframe %s)", symbol, tframe)
@@ -250,10 +286,10 @@ class MarketDataClient:
 
     def _get_crypto_ohlc(self, symbol: str, lookback_hours: int = 48) -> DataFrame:
         """
-        Return an hourly (or minute) sample converted to a DataFrame of raw price entries,
-        then resampling happens later. We prefer using `market_chart` endpoint with `days`.
+        Return proper OHLCV using CoinGecko /ohlc endpoint (preferred for real candles)
+        + volumes from market_chart if available. Much better for candlestick pattern detection
+        than deriving OHLC from a price series.
         """
-        # Determine vs currency: default to USD. If symbol is of the form BTC/USDT or BTC/USDT, parse it.
         base_symbol = symbol.split("/")[0] if "/" in symbol else symbol.split("-")[0] if "-" in symbol else symbol
         vs_currency = "usd"
         if "/" in symbol:
@@ -264,11 +300,57 @@ class MarketDataClient:
         if not coin_id:
             raise RuntimeError(f"Unable to map crypto symbol to CoinGecko id: {symbol}")
 
-        # CoinGecko market_chart supports integer days; compute days = ceil(lookback / 24)
+        days = max(1, math.ceil(lookback_hours / 24))
+
+        # Preferred: real OHLC from /ohlc
+        ohlc_url = f"{COINGECKO_API_BASE}/coins/{coin_id}/ohlc"
+        params = {"vs_currency": vs_currency, "days": days, "precision": "2"}
+        logger.debug("Fetching CoinGecko /ohlc for %s (days=%s)", coin_id, days)
+        try:
+            r = self.session.get(ohlc_url, params=params, timeout=25)
+            if r.status_code == 200:
+                ohlc_data = r.json()  # list of [timestamp_ms, open, high, low, close]
+                if ohlc_data:
+                    idx = []
+                    opens, highs, lows, closes = [], [], [], []
+                    for row in ohlc_data:
+                        if len(row) >= 5:
+                            dt = datetime.fromtimestamp(row[0] / 1000.0, tz=timezone.utc)
+                            idx.append(dt)
+                            opens.append(float(row[1]))
+                            highs.append(float(row[2]))
+                            lows.append(float(row[3]))
+                            closes.append(float(row[4]))
+                    if idx:
+                        df = pd.DataFrame({
+                            "open": opens, "high": highs, "low": lows, "close": closes
+                        }, index=pd.DatetimeIndex(idx))
+                        df = df.sort_index()
+                        # Try to attach volume from market_chart (best effort)
+                        try:
+                            vol_url = f"{COINGECKO_API_BASE}/coins/{coin_id}/market_chart"
+                            vr = self.session.get(vol_url, params={"vs_currency": vs_currency, "days": days}, timeout=20)
+                            if vr.status_code == 200:
+                                vpayload = vr.json()
+                                volumes = vpayload.get("total_volumes", [])
+                                if volumes:
+                                    vdict = {datetime.fromtimestamp(v[0]/1000.0, tz=timezone.utc): float(v[1]) for v in volumes}
+                                    vseries = pd.Series(vdict).sort_index()
+                                    vseries = vseries.resample("1H").sum().reindex(df.index, method="nearest")
+                                    df["volume"] = vseries
+                        except Exception:
+                            df["volume"] = None
+                        if "volume" not in df.columns:
+                            df["volume"] = None
+                        return df
+        except Exception as e:
+            logger.warning("CoinGecko /ohlc fetch failed for %s, falling back: %s", coin_id, e)
+
+        # Fallback: old market_chart price series (poor quality for H/L)
+        logger.warning("Falling back to low-quality price-derived candles for %s", symbol)
         days = max(1, math.ceil(lookback_hours / 24))
         url = f"{COINGECKO_API_BASE}/coins/{coin_id}/market_chart"
         params = {"vs_currency": vs_currency, "days": days, "interval": "hourly"}
-        logger.debug("Fetching CoinGecko market_chart for %s (days=%s vs=%s)", coin_id, days, vs_currency)
         r = self.session.get(url, params=params, timeout=25)
         if r.status_code != 200:
             logger.warning("CoinGecko API error status=%s content=%s", r.status_code, r.text)
@@ -277,7 +359,6 @@ class MarketDataClient:
         prices = payload.get("prices", [])
         volumes = payload.get("total_volumes", [])
 
-        # Build pandas DataFrame from `prices`: list of [timestamp_ms, price]
         if not prices:
             raise RuntimeError(f"No price data returned from CoinGecko for {coin_id}")
         idx = []
@@ -287,10 +368,8 @@ class MarketDataClient:
             vals.append(price)
         price_df = pd.DataFrame({"price": vals}, index=pd.DatetimeIndex(idx))
         price_df = price_df.sort_index()
-        # Convert prices sampled to regular frequency by resampling to hourly; interpolate misses
         price_df = price_df.resample("1H").ffill()
 
-        # Volume: align on hourly index
         vol_dict = {}
         if volumes:
             for ts, vol in volumes:
@@ -301,25 +380,61 @@ class MarketDataClient:
         else:
             price_df["volume"] = None
 
-        # Build ohlc on 1H frequency by taking ohlc on price
         ohlc_1h = price_df["price"].resample("1H").ohlc()
-        # attach volume:
         if "volume" in price_df.columns:
             ohlc_1h["volume"] = price_df["volume"].resample("1H").sum().reindex(ohlc_1h.index)
         ohlc_1h.columns = ["open", "high", "low", "close", "volume"] if "volume" in ohlc_1h.columns else ["open", "high", "low", "close"]
-
-        # We now have hourly candles; return them to be resampled to 2H
         return ohlc_1h
+
+    def _get_yfinance_ohlc(self, symbol: str, lookback_hours: int = 48) -> Optional[DataFrame]:
+        """Use yfinance for Gold/Silver/Oil/Forex when available. Excellent for our focused assets."""
+        if not HAS_YFINANCE or pd is None:
+            return None
+
+        yf_symbol = symbol
+        # Common mappings for futures/spot
+        mappings = {
+            "XAUUSD": "GC=F", "GOLD": "GC=F", "XAU": "GC=F",
+            "XAGUSD": "SI=F", "SILVER": "SI=F",
+            "CL": "CL=F", "OIL": "CL=F", "USOIL": "CL=F", "WTI": "CL=F",
+            "EURUSD": "EURUSD=X", "GBPUSD": "GBPUSD=X", "USDJPY": "USDJPY=X",
+        }
+        for k, v in mappings.items():
+            if k in symbol.upper():
+                yf_symbol = v
+                break
+
+        try:
+            period = "5d" if lookback_hours <= 120 else "1mo"
+            ticker = yf.Ticker(yf_symbol)
+            df = ticker.history(period=period, interval="1h")
+            if df is None or df.empty:
+                return None
+            df = df.rename(columns={"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume"})
+            df = df[["open", "high", "low", "close", "volume"]].dropna(subset=["open"])
+            df.index = pd.to_datetime(df.index).tz_localize("UTC") if df.index.tz is None else df.index.tz_convert("UTC")
+            logger.debug("yfinance succeeded for %s as %s", symbol, yf_symbol)
+            return df
+        except Exception as e:
+            logger.debug("yfinance failed for %s: %s", symbol, e)
+            return None
 
     # AlphaVantage forex impl -------------------------------------
 
     def _get_forex_ohlc(self, symbol: str, lookback_hours: int = 48) -> DataFrame:
         """
-        Fetch forex intraday candles using AlphaVantage (60min) and build a DataFrame of hourly candles.
-        The symbol is either "EURUSD", "EUR/USD", etc. We parse it to base/quote.
+        Fetch forex intraday candles. 
+        Priority: yfinance (free, no key) > AlphaVantage (if key present).
         """
+        # Always try yfinance first for free coverage (EURUSD=X etc.)
+        if HAS_YFINANCE:
+            df = self._get_yfinance_ohlc(symbol, lookback_hours)
+            if df is not None and not df.empty:
+                return df
+
         if not self.alphavantage_key:
-            raise RuntimeError("AlphaVantage API key is required for forex data. Set ALPHAVANTAGE_API_KEY in the environment.")
+            logger.warning("No AlphaVantage key and yfinance failed or not available for %s. Returning empty data.", symbol)
+            return pd.DataFrame() if pd else None
 
         # Parse symbol into from_symbol/to_symbol
         s = symbol.upper().replace("-", "").replace("/", "")

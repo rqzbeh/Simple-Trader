@@ -89,6 +89,11 @@ class Signal:
     expires_at: Optional[int] = None
     status: str = "open"  # 'open', 'closed', 'cancelled'
     analysis_ids: Optional[List[int]] = None
+    # Full system fields
+    asset_class: Optional[str] = None
+    bucket: Optional[str] = None
+    hedge_of: Optional[int] = None
+    decision_audit: Optional[str] = None
 
 
 @dataclass
@@ -236,11 +241,17 @@ class Database:
                     closed_at TEXT,
                     close_reason TEXT,
                     outcome TEXT,
-                    pnl REAL
+                    pnl REAL,
+                    -- Full system columns (added for company secret formula)
+                    asset_class TEXT,
+                    bucket TEXT,           -- CORE or ALPHA
+                    hedge_of INTEGER,      -- signal id this hedge protects
+                    decision_audit TEXT    -- JSON of why we sized/hedged/rejected
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_signals_tenant_status ON signals(tenant_id, status);
                 CREATE INDEX IF NOT EXISTS idx_signals_tenant_symbol ON signals(tenant_id, symbol);
+                CREATE INDEX IF NOT EXISTS idx_signals_bucket ON signals(tenant_id, bucket);
 
                 CREATE TABLE IF NOT EXISTS trades (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -310,6 +321,36 @@ class Database:
                 CREATE INDEX IF NOT EXISTS idx_tuning_history_pattern ON tuning_history(pattern_name);
                 CREATE INDEX IF NOT EXISTS idx_tuning_history_symbol ON tuning_history(symbol);
 
+                -- Regret table for post-mortem analysis (Buffett/Simons style: learn from every mistake explicitly)
+                CREATE TABLE IF NOT EXISTS regret_table (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
+                    signal_id INTEGER,
+                    trade_id INTEGER,
+                    symbol TEXT,
+                    outcome TEXT,
+                    pnl REAL,
+                    causes TEXT,  -- JSON list of attributed causes
+                    tags TEXT,    -- user judgment tags from review (e.g. "ignored_hedge,low_conf")
+                    lesson TEXT,  -- human or auto lesson
+                    created_at TEXT DEFAULT (datetime('now'))
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_regret_tenant ON regret_table(tenant_id, symbol);
+
+                -- Small cause -> weight mapping persisted for ML (Simons: factors from labeled outcomes; Buffett: avoid repeating margin-of-safety violations)
+                CREATE TABLE IF NOT EXISTS cause_weights (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tenant_id TEXT NOT NULL DEFAULT 'default',
+                    cause TEXT NOT NULL,
+                    weight REAL NOT NULL DEFAULT 0.0,
+                    count_bad INTEGER DEFAULT 0,
+                    last_updated TEXT DEFAULT (datetime('now')),
+                    UNIQUE(tenant_id, cause)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_cause_weights_tenant ON cause_weights(tenant_id, cause);
+
                 COMMIT;
                 """
             )
@@ -345,6 +386,26 @@ class Database:
                 (DEFAULT_TENANT_ID,),
             )
         self.conn.commit()
+
+        # New full-system columns for asset classification, buckets, hedging, audit
+        self._migrate_full_system_columns()
+
+    def _migrate_full_system_columns(self) -> None:
+        """Add asset_class, bucket, hedge_of, decision_audit to signals if missing."""
+        try:
+            info = self._execute("PRAGMA table_info(signals)").fetchall()
+            cols = {r["name"] for r in info}
+            if "asset_class" not in cols:
+                self._execute("ALTER TABLE signals ADD COLUMN asset_class TEXT")
+            if "bucket" not in cols:
+                self._execute("ALTER TABLE signals ADD COLUMN bucket TEXT")
+            if "hedge_of" not in cols:
+                self._execute("ALTER TABLE signals ADD COLUMN hedge_of INTEGER")
+            if "decision_audit" not in cols:
+                self._execute("ALTER TABLE signals ADD COLUMN decision_audit TEXT")
+            self.conn.commit()
+        except Exception:
+            logger.exception("Full system column migration had issues (non-fatal)")
 
     def _execute(
         self, query: str, params: Optional[Iterable[Any]] = None
@@ -551,8 +612,13 @@ class Database:
     # ----------------------
     def create_signal(self, signal: Signal) -> int:
         query = """
-            INSERT INTO signals (tenant_id, news_id, symbol, side, entry_price, stop_loss, take_profit, leverage, position_size, risk_amount, rr, timeframe_hours, status, analysis_ids, created_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO signals (
+                tenant_id, news_id, symbol, side, entry_price, stop_loss, take_profit,
+                leverage, position_size, risk_amount, rr, timeframe_hours, status,
+                analysis_ids, created_at, expires_at,
+                asset_class, bucket, hedge_of, decision_audit
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         params = (
             self.tenant_id,
@@ -568,11 +634,13 @@ class Database:
             signal.rr,
             signal.timeframe_hours,
             signal.status,
-            json.dumps(signal.analysis_ids)
-            if signal.analysis_ids is not None
-            else None,
+            json.dumps(signal.analysis_ids) if signal.analysis_ids is not None else None,
             ensure_iso(signal.created_at or now_ts()),
             ensure_iso(signal.expires_at) if signal.expires_at else None,
+            signal.asset_class,
+            signal.bucket,
+            signal.hedge_of,
+            signal.decision_audit,
         )
         cur = self._execute(query, params)
         self.conn.commit()
@@ -798,6 +866,65 @@ class Database:
 
         rows = cur.fetchall()
         return list(rows)
+
+    # ----------------------
+    # Regret table for ML post-mortems (explicit learning from mistakes)
+    # ----------------------
+    def log_regret(self, signal_id: int, trade_id: int, symbol: str, outcome: str, pnl: float, causes: list, tags: list = None, lesson: str = None):
+        """Log a regret entry for analysis and feedback. Also updates cause_weights delta (negative for losses)."""
+        causes_json = json.dumps(causes) if causes else "[]"
+        tags_json = json.dumps(tags) if tags else "[]"
+        self._execute(
+            "INSERT INTO regret_table (tenant_id, signal_id, trade_id, symbol, outcome, pnl, causes, tags, lesson) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (self.tenant_id, signal_id, trade_id, symbol, outcome, pnl, causes_json, tags_json, lesson)
+        )
+        self.conn.commit()
+        # Immediately persist cause->weight mapping (Simons online update)
+        is_bad = (pnl or 0) < 0 or outcome in ("loss", "timeout")
+        delta = -0.12 if is_bad else 0.03  # stronger penalty for mistakes
+        for c in (causes or []):
+            try:
+                self.update_cause_weight(c, delta, is_bad=is_bad)
+            except Exception:
+                pass
+
+    def get_regrets(self, symbol: str = None, limit: int = 50) -> List[Dict]:
+        """Query regrets for review and ML feedback."""
+        if symbol:
+            cur = self._execute("SELECT * FROM regret_table WHERE tenant_id = ? AND symbol = ? ORDER BY created_at DESC LIMIT ?", (self.tenant_id, symbol, limit))
+        else:
+            cur = self._execute("SELECT * FROM regret_table WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?", (self.tenant_id, limit))
+        return [dict(r) for r in cur.fetchall()]
+
+    # ----------------------
+    # Cause weights table (persist small cause -> weight for ML feedback loop)
+    # ----------------------
+    def update_cause_weight(self, cause: str, delta: float, is_bad: bool = True):
+        """Update or insert cause weight. Delta typically negative for bad outcomes (e.g. -0.1)."""
+        cur = self._execute(
+            "INSERT INTO cause_weights (tenant_id, cause, weight, count_bad, last_updated) "
+            "VALUES (?, ?, ?, ?, datetime('now')) "
+            "ON CONFLICT(tenant_id, cause) DO UPDATE SET "
+            "weight = weight + ?, count_bad = count_bad + ?, last_updated = datetime('now')",
+            (self.tenant_id, cause, delta, 1 if is_bad else 0, delta, 1 if is_bad else 0)
+        )
+        self.conn.commit()
+        return True
+
+    def get_cause_weights(self) -> Dict[str, float]:
+        """Return dict cause -> current weight (for scorer/tuner bias)."""
+        cur = self._execute(
+            "SELECT cause, weight, count_bad FROM cause_weights WHERE tenant_id = ?",
+            (self.tenant_id,)
+        )
+        res = {}
+        for r in cur.fetchall():
+            res[r["cause"]] = float(r["weight"])
+        return res
+
+    def get_cause_weight(self, cause: str) -> float:
+        w = self.get_cause_weights().get(cause, 0.0)
+        return w
 
     # ----------------------
     # LLM usage logging

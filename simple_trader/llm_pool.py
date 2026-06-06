@@ -52,6 +52,8 @@ import requests
 
 from simple_trader.config import Config, LLMProviderConfig, CONFIG
 from simple_trader.db import AnalysisItem, Database, NewsItem, get_default_db, now_ts
+from simple_trader.heuristic_analyzer import HeuristicAnalyzer
+from simple_trader.knowledge_base import get_knowledge_for_prompt
 
 logger = logging.getLogger("simple_trader.llm_pool")
 logger.addHandler(logging.NullHandler())
@@ -747,9 +749,34 @@ class LLMPool:
         Analyze a list of `NewsItem` objects, returning a `LLMSummary` for each item
         in the same order. If a provider fails for an item, try other providers as
         a fallback until successful (or all providers exhausted).
+
+        If no API keys are configured at all, falls back to pure HeuristicAnalyzer
+        (knowledge-driven, completely free, no external calls).
         """
         if not news_items:
             return []
+
+        # === FREE MODE: No real LLM keys → use heuristic + knowledge base ===
+        enabled_real = [c for c in self.clients if getattr(c, 'provider_cfg', None) and getattr(c.provider_cfg, 'api_key', None)]
+        if not enabled_real:
+            logger.info("Running in FREE heuristic mode (no LLM API keys). Using knowledge_base + patterns.")
+            heuristic = getattr(self, 'heuristic', HeuristicAnalyzer(config=self.config))
+            results = []
+            for item in news_items:
+                # We don't have patterns here easily, so pass empty. Signal manager will blend anyway.
+                h = heuristic.analyze_news(item, patterns=[])
+                results.append(LLMSummary(
+                    provider="heuristic_knowledge",
+                    news_id=item.news_id if hasattr(item, 'news_id') else None,
+                    direction=h.get("direction", "neutral"),
+                    impact_score=h.get("impact_score", 0.0),
+                    confidence=h.get("confidence", 0.55),
+                    summary=h.get("summary", "Heuristic analysis from embedded finance knowledge."),
+                    asset=h.get("asset"),
+                    recommended_leverage=h.get("recommended_leverage"),
+                    raw=h.get("raw")
+                ))
+            return results
 
         # Prepare a structure to keep results in original order
         results_by_idx: Dict[int, Optional[LLMSummary]] = {i: None for i in range(len(news_items))}
