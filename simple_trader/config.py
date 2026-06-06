@@ -100,7 +100,7 @@ class Config:
     # Account / risk management (tuned for hedge fund / production usage)
     # - Slightly larger default account balance for example deployments and a more conservative risk per trade.
     account_balance_usd: float = 200_000.0
-    risk_per_trade_pct: float = 0.005  # 0.5% of account by default per trade (safer by default)
+    risk_per_trade_pct: float = 0.005  # 0.5% of account by default per trade (safer by default for production)
     min_risk_reward_ratio: float = 3.0  # Minimum risk-reward ratio; keep the policy at 3.0 minimum
     stop_loss_slippage_pct: float = 0.001  # 0.1% slippage assumed for entry/exit
     # Lower crypto leverage by default; hedge funds commonly reduce lever when automated signals are used.
@@ -149,6 +149,84 @@ class Config:
     # Misc monitoring
     enable_telemetry: bool = True
 
+    # ============================================================
+    # FULL INVESTING SYSTEM - Company Secret Formula Config
+    # Focus: GOLD, SILVER, CRYPTO, FOREX, OIL only.
+    # Philosophy: Alpha (news + short-term high-conviction) for profit,
+    #             Core (Gold/Silver) for capital preservation + hedging.
+    # ============================================================
+
+    # Asset universe we trade (internal classification)
+    # Supported: 'GOLD', 'SILVER', 'CRYPTO', 'FOREX', 'OIL'
+    allowed_asset_classes: List[str] = field(default_factory=lambda: ["GOLD", "SILVER", "CRYPTO", "FOREX", "OIL"])
+
+    # Bucket allocation (percent of account risk budget)
+    # Core = defensive, preservation, hedge (Gold + Silver)
+    # Alpha = aggressive short-term news/pattern trades (Crypto + Forex + Oil)
+    core_bucket_target_pct: float = 0.55   # 55% defensive
+    alpha_bucket_target_pct: float = 0.45  # 45% aggressive
+
+    # Per asset-class hard exposure limits (of total account)
+    max_exposure_gold: float = 0.40
+    max_exposure_silver: float = 0.15
+    max_exposure_crypto: float = 0.25
+    max_exposure_forex: float = 0.20
+    max_exposure_oil: float = 0.15
+
+    # Book-level risk controls (circuit breakers)
+    max_book_risk_pct: float = 0.08          # Max total risk across all open positions
+    max_daily_loss_pct: float = 0.03         # Pause new alpha if daily loss > this
+    max_drawdown_pause_pct: float = 0.08     # Global kill switch / pause on drawdown from peak
+    circuit_breaker_cooldown_hours: int = 24 # How long to pause after breaker
+
+    # Hedge configuration (use Gold/Silver to protect Alpha)
+    enable_auto_hedge: bool = True
+    hedge_ratio: float = 0.4                 # For every $1 aggressive risk, hedge ~$0.4 in gold/silver
+    hedge_rebalance_threshold: float = 0.15  # Re-hedge when net exposure drifts >15%
+
+    # Advanced sizing
+    use_vol_targeting: bool = True
+    target_vol_pct: float = 0.012            # Target ~1.2% daily vol for alpha positions (adjustable)
+    fractional_kelly_factor: float = 0.25    # Use only 25% of Kelly to be conservative
+
+    # Focused symbols (expand as needed). These are the instruments we actually trade.
+    # Format: internal name -> data provider symbol(s)
+    focused_symbols: Dict[str, List[str]] = field(default_factory=lambda: {
+        "GOLD": ["XAUUSD", "GC=F", "XAU/USD"],           # Gold spot / futures
+        "SILVER": ["XAGUSD", "SI=F", "XAG/USD"],
+        "OIL": ["CL=F", "USOIL", "WTI", "OILUSD"],       # WTI Crude
+        "CRYPTO": ["BTC", "ETH", "BTCUSDT", "ETHUSDT"], # Major coins only for now
+        "FOREX": ["EURUSD", "GBPUSD", "USDJPY", "AUDUSD", "USDCAD"],  # Liquid majors
+    })
+
+    # Asset class to bucket mapping
+    asset_class_to_bucket: Dict[str, str] = field(default_factory=lambda: {
+        "GOLD": "CORE",
+        "SILVER": "CORE",
+        "CRYPTO": "ALPHA",
+        "FOREX": "ALPHA",
+        "OIL": "ALPHA",
+        "WHALE": "ALPHA",      # on-chain whale moves feed crypto alpha
+        "POLITICS": "ALPHA",   # politician/policy headlines as sentiment alpha
+    })
+
+    # Regime / news impact (for future regime detection)
+    news_impact_boost_alpha: float = 1.5     # Multiply signal strength on high-impact news for alpha assets
+    gold_hedge_on_risk_off: bool = True      # Auto increase gold hedge on "risk-off" news (LLM flagged)
+
+    # Whale & Politician special signals (free/public data focus, zero extra keys)
+    # Whale addresses: public on-chain wallets to monitor for large moves (user populates with known public ones)
+    # BTC queries via free blockchain.info; ETH via public explorers (rate limited, no key for basic)
+    whale_addresses: Dict[str, List[str]] = field(default_factory=lambda: {
+        "BTC": [],  # e.g. add public Trump-related or known whale BTC addresses
+        "ETH": [],  # public ETH addresses
+    })
+    whale_min_size_btc: float = 100.0
+    whale_min_size_eth: float = 1000.0
+
+    # Politicians: names/keywords for parsing disclosures or news (Trump family crypto, Pelosi trades, congress energy/crypto bills)
+    monitor_politicians: List[str] = field(default_factory=lambda: ["Trump", "Pelosi", "congress", "senate", "disclosure", "WLFI"])
+
     def as_dict(self) -> Dict:
         return asdict(self)
 
@@ -175,6 +253,18 @@ class Config:
             raise ValueError("open_positions_limit must be > 0")
         if not (0.0 < self.llm_min_confidence <= 1.0):
             raise ValueError("llm_min_confidence must be in (0.0, 1.0]")
+
+        # Full system validations
+        if abs(self.core_bucket_target_pct + self.alpha_bucket_target_pct - 1.0) > 0.01:
+            raise ValueError("core_bucket_target_pct + alpha_bucket_target_pct must be ~1.0")
+        for pct in [self.max_exposure_gold, self.max_exposure_silver, self.max_exposure_crypto,
+                    self.max_exposure_forex, self.max_exposure_oil]:
+            if not (0 <= pct <= 0.6):
+                raise ValueError("Per-asset max exposure must be between 0 and 60%")
+        if self.max_book_risk_pct > 0.15:
+            raise ValueError("max_book_risk_pct > 15% is insane for a serious investment company")
+        if self.max_daily_loss_pct <= 0 or self.max_daily_loss_pct > 0.1:
+            raise ValueError("max_daily_loss_pct must be positive and reasonable (<=10%)")
 
     @property
     def sqlite_connection_string(self) -> str:
@@ -241,20 +331,31 @@ def _currency_to_sessions_defaults() -> Dict[str, List[str]]:
 
 def get_default_rss_feeds() -> List[str]:
     """
-    Return a set of sensible default RSS feeds for crypto & forex/news. These are
-    a starting point; users should override or add more feeds to match their preferred sources.
+    Maximum free public RSS for our focused universe (GOLD/SILVER/OIL/FOREX/CRYPTO).
+    Zero API keys. Prioritizes commodity and macro sources.
     """
     return [
-        # Crypto
-        "https://cointelegraph.com/rss",
-        "https://www.coindesk.com/arc/outboundfeeds/rss/",
-        "https://cryptonews.com/news/feed/",
-        "https://www.reddit.com/r/CryptoCurrency/.rss",
-        # Forex / macro / equities
+        # Gold / Silver / Metals (excellent free sources)
+        "https://www.kitco.com/rss/",
+        "https://news.goldseek.com/goldseek.rss",
+        # Oil / Energy / Commodities
+        "https://oilprice.com/rss",
+        "https://www.reuters.com/markets/commodities/rss",
+        # Forex + Macro (risk sentiment, rates)
         "https://www.reuters.com/finance/markets/rss",
-        "https://www.reuters.com/business/finance/rss",
         "https://www.investing.com/rss/news.rss",
         "https://feeds.marketwatch.com/marketwatch/topstories/",
+        # Crypto (for sentiment cross-asset)
+        "https://cointelegraph.com/rss",
+        "https://cryptonews.com/news/feed/",
+        # Quality macro
+        "https://www.ft.com/markets?format=rss",
+        # Whale & on-chain sentiment (free RSS aggregators)
+        "https://cryptoslate.com/feed/",
+        "https://www.theblock.co/rss",
+        # Politician / policy trades & crypto policy (headlines often move markets)
+        "https://www.reuters.com/markets/cryptocurrencies/rss",
+        "https://www.bloomberg.com/feeds/markets.rss",
     ]
 
 
@@ -390,7 +491,7 @@ def from_env() -> Config:
 
     # Account & risk
     account_balance_usd = _getenv_float("ACCOUNT_BALANCE_USD", 100000.0)
-    risk_per_trade_pct = _getenv_float("RISK_PER_TRADE_PCT", 0.01)
+    risk_per_trade_pct = _getenv_float("RISK_PER_TRADE_PCT", 0.005)  # default to conservative 0.5%
     min_rr = _getenv_float("MIN_RISK_REWARD_RATIO", 3.0)
     stop_loss_slippage_pct = _getenv_float("STOP_LOSS_SLIPPAGE_PCT", 0.001)
 
@@ -430,6 +531,32 @@ def from_env() -> Config:
     session_map = _session_defaults()
     currency_session_map = _currency_to_sessions_defaults()
 
+    # === Full Investing System (Secret Formula) env overrides ===
+    core_bucket_target_pct = _getenv_float("CORE_BUCKET_TARGET_PCT", 0.55)
+    alpha_bucket_target_pct = _getenv_float("ALPHA_BUCKET_TARGET_PCT", 0.45)
+
+    max_exposure_gold = _getenv_float("MAX_EXPOSURE_GOLD", 0.40)
+    max_exposure_silver = _getenv_float("MAX_EXPOSURE_SILVER", 0.15)
+    max_exposure_crypto = _getenv_float("MAX_EXPOSURE_CRYPTO", 0.25)
+    max_exposure_forex = _getenv_float("MAX_EXPOSURE_FOREX", 0.20)
+    max_exposure_oil = _getenv_float("MAX_EXPOSURE_OIL", 0.15)
+
+    max_book_risk_pct = _getenv_float("MAX_BOOK_RISK_PCT", 0.08)
+    max_daily_loss_pct = _getenv_float("MAX_DAILY_LOSS_PCT", 0.03)
+    max_drawdown_pause_pct = _getenv_float("MAX_DRAWDOWN_PAUSE_PCT", 0.08)
+    circuit_breaker_cooldown_hours = _getenv_int("CIRCUIT_BREAKER_COOLDOWN_HOURS", 24)
+
+    enable_auto_hedge = _getenv_bool("ENABLE_AUTO_HEDGE", True)
+    hedge_ratio = _getenv_float("HEDGE_RATIO", 0.4)
+    hedge_rebalance_threshold = _getenv_float("HEDGE_REBALANCE_THRESHOLD", 0.15)
+
+    use_vol_targeting = _getenv_bool("USE_VOL_TARGETING", True)
+    target_vol_pct = _getenv_float("TARGET_VOL_PCT", 0.012)
+    fractional_kelly_factor = _getenv_float("FRACTIONAL_KELLY_FACTOR", 0.25)
+
+    news_impact_boost_alpha = _getenv_float("NEWS_IMPACT_BOOST_ALPHA", 1.5)
+    gold_hedge_on_risk_off = _getenv_bool("GOLD_HEDGE_ON_RISK_OFF", True)
+
     cfg = Config(
         database_path=database_path,
         tenant_id=tenant_id,
@@ -459,6 +586,27 @@ def from_env() -> Config:
         min_pattern_confidence=min_pattern_confidence,
         session_map=session_map,
         currency_session_map=currency_session_map,
+
+        # Full system
+        core_bucket_target_pct=core_bucket_target_pct,
+        alpha_bucket_target_pct=alpha_bucket_target_pct,
+        max_exposure_gold=max_exposure_gold,
+        max_exposure_silver=max_exposure_silver,
+        max_exposure_crypto=max_exposure_crypto,
+        max_exposure_forex=max_exposure_forex,
+        max_exposure_oil=max_exposure_oil,
+        max_book_risk_pct=max_book_risk_pct,
+        max_daily_loss_pct=max_daily_loss_pct,
+        max_drawdown_pause_pct=max_drawdown_pause_pct,
+        circuit_breaker_cooldown_hours=circuit_breaker_cooldown_hours,
+        enable_auto_hedge=enable_auto_hedge,
+        hedge_ratio=hedge_ratio,
+        hedge_rebalance_threshold=hedge_rebalance_threshold,
+        use_vol_targeting=use_vol_targeting,
+        target_vol_pct=target_vol_pct,
+        fractional_kelly_factor=fractional_kelly_factor,
+        news_impact_boost_alpha=news_impact_boost_alpha,
+        gold_hedge_on_risk_off=gold_hedge_on_risk_off,
     )
 
     # Validate sanity of config

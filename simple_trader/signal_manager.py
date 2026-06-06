@@ -18,9 +18,16 @@ Key classes:
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import time
+try:
+    import numpy as np  # for auto-retrain features (optional, graceful if missing)
+    NUMPY_AVAILABLE = True
+except Exception:
+    np = None
+    NUMPY_AVAILABLE = False
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -50,9 +57,16 @@ from .pattern_detector import (
     PatternDetector,
     PatternMatch,
     detect_patterns_and_suggest_trades,
+    compute_atr,
 )
 from .scorer import SignalScorer
 from .telegram import TelegramNotifier
+from .portfolio import PortfolioManager, get_portfolio_manager
+from .portfolio_allocator import PortfolioAllocator
+from .risk_engine import RiskEngine
+from .hedge_manager import HedgeManager
+from .execution_engine import ExecutionEngine
+from .knowledge_base import get_decision_rationale, get_knowledge_for_prompt, is_risk_off_regime
 
 logger = logging.getLogger("simple_trader.signal_manager")
 logger.addHandler(logging.NullHandler())
@@ -98,6 +112,21 @@ class StrategyTuner:
         min_avg_rr: float = 3.0,
         min_sample_size: int = 10,
     ) -> List[Dict[str, Any]]:
+        # Pull recent regrets to weight suggestions by cause frequency (stronger ML)
+        try:
+            regrets = self.db.get_regrets(limit=100) if hasattr(self.db, 'get_regrets') else []
+            cause_weights = {}
+            for r in regrets:
+                try:
+                    cs = json.loads(r.get('causes', '[]')) if r.get('causes') else []
+                    for c in cs:
+                        cause_weights[c] = cause_weights.get(c, 0) + 1
+                except:
+                    pass
+            # Store for use in suggestions
+            self._recent_cause_weights = cause_weights
+        except:
+            self._recent_cause_weights = {}
         """
         Generate operational suggestions based on aggregated `tuning_stats` stored in DB.
 
@@ -233,6 +262,26 @@ class StrategyTuner:
                     )
         except Exception:
             logger.exception("Error while computing suggestions from tuning_stats")
+
+        # Integrate causes from regrets (stronger ML feedback)
+        try:
+            cause_weights = getattr(self, '_recent_cause_weights', {})
+            for s in suggestions:
+                cause = None
+                # Map common issues to causes
+                if s.get("issue") == "low_win_rate":
+                    cause = "low_conviction_trade"
+                elif s.get("issue") == "low_avg_rr":
+                    cause = "poor_rr_or_high_lev"
+                if cause and cause in cause_weights:
+                    weight = cause_weights[cause]
+                    s["cause_weight"] = weight
+                    s["message"] += f" (Cause frequency: {weight}; consider direct hedge or conf boost.)"
+                    # Auto bias the suggestion
+                    if "min_conf" in s.get("message", "").lower():
+                        s["suggested_adjust"] = "increase_min_conf_by_cause"
+        except:
+            pass
         return suggestions
 
     def apply_adjustments(
@@ -514,6 +563,12 @@ class SignalManager:
             db=self.db, config=self.config, market_client=self.market
         )
 
+        # Full system layers (Secret Formula)
+        self.allocator = PortfolioAllocator(config=self.config, db=self.db)
+        self.risk_engine = RiskEngine(config=self.config, db=self.db)
+        self.hedge_manager = HedgeManager(config=self.config, db=self.db)
+        self.executor = ExecutionEngine(config=self.config, db=self.db, paper_mode=True)
+
     def process_unprocessed_news(self, limit: int = 100) -> List[int]:
         """
         Main entry: fetch unprocessed news from DB (default limit), analyze them via LLMs,
@@ -789,21 +844,46 @@ class SignalManager:
                         )
                         continue
 
+                    # Base units from fixed % risk
                     position_asset_units = risk_usd / price_diff
                     position_value_usd = position_asset_units * entry_price
 
+                    # Professional enhancement: volatility targeting using ATR (if available in pattern meta or recompute)
+                    # Many quant funds size so that expected daily vol * position ~ target risk budget.
+                    # We scale down if current ATR (vol) is high.
+                    try:
+                        atr_val = getattr(p, "meta", {}).get("atr") if getattr(p, "meta", None) else None
+                        if atr_val is None or atr_val <= 0:
+                            # recompute quick ATR from recent df if we have access (best effort)
+                            atr_val = compute_atr(df_2h.tail(50)) if 'df_2h' in locals() and df_2h is not None else price_diff * 0.5
+                        if atr_val and atr_val > 0:
+                            # Target risk in price units ~ risk_pct * price (rough daily vol budget)
+                            target_risk_units = (risk_usd * 0.8) / atr_val   # conservative 80% of fixed risk budget for vol
+                            if target_risk_units < position_asset_units:
+                                position_asset_units = target_risk_units
+                                position_value_usd = position_asset_units * entry_price
+                                logger.debug("Vol-targeted position size for %s: reduced to %.4f units (ATR=%.4f)", asset_symbol, position_asset_units, atr_val)
+                    except Exception:
+                        pass  # fall back to pure % risk sizing on error
+
                     # Scoring check: compute signal score using SignalScorer if available.
-                    # Build a candidate signal-like row for scoring (this mirrors fields used in the scorer)
+                    # Enrich with full system state for better ML (bucket allocation, regime, hedge)
+                    book = getattr(self, 'risk_engine', None) and self.risk_engine.compute_book_risk() or None
+                    current_hedge = sum(r for s,r in (getattr(book,'per_class_risk',{}) or {}).items() if self.allocator.classify_symbol(s)[0] in ("GOLD","SILVER")) if book else 0
+
                     candidate_signal_row = {
                         "news_id": news_rowid,
                         "symbol": asset_symbol,
-                        "analysis_ids": [analysis_id]
-                        if analysis_id is not None
-                        else None,
+                        "analysis_ids": [analysis_id] if analysis_id is not None else None,
                         "rr": rr,
                         "leverage": leverage,
                         "position_size": position_asset_units,
                         "entry_price": entry_price,
+                        # New rich features for learning from mistakes
+                        "current_alpha_bucket_risk": (book.total_risk_usd - current_hedge) if book else 0,
+                        "current_hedge_risk": current_hedge,
+                        "risk_off": is_risk_off_regime(),
+                        "asset_class": self.allocator.classify_symbol(asset_symbol)[0],
                     }
                     # runtime-configurable threshold for minimum signal score; default 0.6
                     score_threshold = float(
@@ -837,6 +917,70 @@ class SignalManager:
                         )
                         # Skip generating this signal candidate if under threshold
                         continue
+
+                    # === REGRET VETO (Buffett/Simons: do not repeat known mistakes; margin of safety) ===
+                    # If high count of bad causes for similar (e.g. insufficient_hedge on ALPHA/politician disclosure), block or force higher bar.
+                    try:
+                        recent_regrets = self.db.get_regrets(limit=30) if hasattr(self.db, "get_regrets") else []
+                        bad_causes_for_symbol = 0
+                        for r in recent_regrets:
+                            if r.get("symbol") and r.get("symbol") in (asset_symbol, ac):
+                                try:
+                                    cs = json.loads(r.get("causes", "[]") or "[]")
+                                    if any(c in ("insufficient_hedge", "ignored_risk_off_regime", "low_conviction_trade", "ignored_politician_bearish_disclosure") for c in cs):
+                                        bad_causes_for_symbol += 1
+                                except:
+                                    pass
+                        if bad_causes_for_symbol >= 3:
+                            # Strong veto: recent pattern of repeating this mistake
+                            veto_score = score * 0.6  # heavy discount
+                            if hasattr(self, 'scorer') and self.scorer and hasattr(self.scorer, 'cause_persister'):
+                                pen = self.scorer.cause_persister.get_penalty(["insufficient_hedge", "ignored_risk_off_regime"])
+                                veto_score = max(0.1, veto_score + pen)
+                            if veto_score < score_threshold:
+                                logger.info("REGRET VETO: %s blocked due to %d recent bad causes (e.g. insufficient hedge on disclosure/whale). Learn from mistakes.", asset_symbol, bad_causes_for_symbol)
+                                continue
+                            else:
+                                score = veto_score  # still allow but discounted (margin of safety)
+                                logger.info("REGRET VETO applied discount to %s (causes=%d)", asset_symbol, bad_causes_for_symbol)
+                    except Exception:
+                        logger.debug("Regret veto check skipped (graceful)")
+
+                    # === FULL SYSTEM GATE: Allocator + Risk Engine + Hedge awareness ===
+                    # This is the heart of "massive profits with secured assets"
+                    try:
+                        # Get current book state
+                        book = self.risk_engine.compute_book_risk()
+                        current_risks = book.per_class_risk  # rough proxy
+
+                        # Allocator decides how much risk we can actually take for this idea
+                        allowed_risk, alloc_reason = self.allocator.compute_desired_risk(
+                            asset_symbol, risk_usd, current_risks, book.total_risk_usd
+                        )
+                        if allowed_risk < risk_usd * 0.4:
+                            logger.info("Allocator throttled %s: %s (allowed %.0f / proposed %.0f)",
+                                        asset_symbol, alloc_reason, allowed_risk, risk_usd)
+                            risk_usd = allowed_risk
+                            if risk_usd < 100:  # minimum meaningful size
+                                continue
+
+                        # Risk engine pre-trade check (circuit breakers etc)
+                        pre_ok, pre_reason = self.risk_engine.pre_trade_check(asset_symbol, risk_usd, book)
+                        if not pre_ok:
+                            logger.info("RiskEngine blocked %s: %s", asset_symbol, pre_reason)
+                            continue
+
+                        # Hedge suggestion (we don't auto-execute hedge here, but we can log and size accordingly)
+                        hedge_actions = self.hedge_manager.suggest_hedge_actions(current_risks)
+                        if hedge_actions:
+                            logger.info("HedgeManager suggests actions: %s", [h.action for h in hedge_actions])
+                            # In a fuller system we would submit hedge orders via executor here
+
+                        # Update risk_usd if allocator reduced it
+                        if risk_usd != locals().get('risk_usd', risk_usd):
+                            risk_usd = allowed_risk
+                    except Exception:
+                        logger.exception("Full system gate (allocator/risk/hedge) failed; proceeding with basic checks only")
 
                     # sanity: don't open a position bigger than account * leverage * 20 (just an extra guard)
                     max_notional_allowed = account_balance * (leverage) * 20
@@ -885,6 +1029,17 @@ class SignalManager:
                         )
                         continue
 
+                    # Portfolio-level risk guard (new for production safety)
+                    # Use the dedicated PortfolioManager for concentration + total book risk.
+                    try:
+                        pm = get_portfolio_manager(config=self.config, db=self.db)
+                        allowed, reason = pm.check_new_signal_allowed(asset_symbol, risk_usd, max_total_risk_pct=0.06)
+                        if not allowed:
+                            logger.info("PortfolioManager rejected signal for %s: %s", asset_symbol, reason)
+                            continue
+                    except Exception:
+                        logger.exception("PortfolioManager check failed; falling back to basic count limit only")
+
                     # Build Signal dataclass and insert
                     created_at = now_ts()
                     # Allow per-pattern max duration override if set in runtime params, and respect global max as upper bound
@@ -898,6 +1053,33 @@ class SignalManager:
                         min(per_pattern_max_hours, self.config.max_trade_duration_hours)
                     )
                     expires_at = created_at + int(per_pattern_max_hours * 3600)
+                    # Compute classification for full system
+                    from .market_data import _get_asset_class
+                    ac = _get_asset_class(asset_symbol)
+                    bucket = self.config.asset_class_to_bucket.get(ac, "ALPHA")
+
+                    # Enrich with deep knowledge
+                    risk_off = is_risk_off_regime()
+                    rationale = get_decision_rationale(
+                        asset_symbol, 
+                        current_risk_usd=book.total_risk_usd if 'book' in locals() else 0,
+                        proposed_risk=risk_usd,
+                        llm_conf=llm_conf,
+                        pattern_conf=pattern_conf,
+                        news_impact="high" if risk_off else "normal"
+                    )
+
+                    decision_audit = {
+                        "llm_conf": llm_conf,
+                        "pattern_conf": pattern_conf,
+                        "score": score,
+                        "alloc_allowed_risk": risk_usd,
+                        "reason": "full_system_gate_passed",
+                        "risk_off_regime": risk_off,
+                        "knowledge_rationale": rationale[:300],
+                        "timestamp": now_ts(),
+                    }
+
                     signal_obj = SignalDataclass(
                         news_id=news_rowid,
                         symbol=asset_symbol,
@@ -913,6 +1095,9 @@ class SignalManager:
                         created_at=created_at,
                         expires_at=expires_at,
                         analysis_ids=[analysis_id] if analysis_id is not None else None,
+                        asset_class=ac,
+                        bucket=bucket,
+                        decision_audit=json.dumps(decision_audit),
                     )
                     try:
                         signal_id = self.db.create_signal(signal_obj)
@@ -1225,10 +1410,228 @@ class SignalManager:
                     signal_id,
                 )
 
+            # === IMPROVED MISTAKE TRACKING & CAUSE ATTRIBUTION ===
+            # For losses/timeouts, use decision_audit + current features + knowledge to find causes.
+            # This makes the "learn from mistakes" legitimate and interpretable.
+            if outcome in ("loss", "timeout") and signal_rows:
+                try:
+                    causes = self._attribute_mistake_causes(signal_row, outcome, pnl, book_state_at_close=None)
+                    if causes:
+                        cause_str = "; ".join(causes)
+                        # Append to notes or store separately. For now enhance notes and log.
+                        enhanced_notes = (notes or "") + f" [CAUSES: {cause_str}]"
+                        # Update the trade notes with causes for future review
+                        self.db.execute_custom(
+                            "UPDATE trades SET notes = ? WHERE id = ?",
+                            (enhanced_notes, trade_id)
+                        )
+                        # Note: execute_custom is assumed to handle its own commits or connection is autocommit; skip explicit commit for compatibility
+                        logger.info("Attributed mistake causes for trade %s on signal %s: %s", trade_id, signal_id, cause_str)
+                        # Log to regret table for explicit ML post-mortem (Buffett/Simons style learning)
+                        try:
+                            self.db.log_regret(
+                                signal_id=int(signal_id),
+                                trade_id=trade_id,
+                                symbol=asset_symbol,
+                                outcome=outcome,
+                                pnl=pnl,
+                                causes=causes,
+                                tags=None,  # user can add via review
+                                lesson=f"Auto-attributed from decision_audit at creation + outcome. Review for tags."
+                            )
+                        except Exception:
+                            logger.debug("Regret log optional")
+                        # Optionally feed back to tuner with causes (extend tuner later)
+                except Exception:
+                    logger.exception("Failed to attribute mistake causes for signal %s", signal_id)
+
             return trade_id
         except Exception:
             logger.exception("Failed to record trade result for signal %s", signal_id)
             return None
+
+    def _attribute_mistake_causes(self, signal_row: dict, outcome: str, pnl: float, book_state_at_close: dict = None) -> list[str]:
+        """
+        Attribute likely causes for a bad outcome (loss or timeout) using:
+        - decision_audit from signal creation time (enriched features)
+        - current signal features
+        - knowledge base rules
+        - outcome details (pnl, hold time if available)
+        Returns list of cause strings like 'insufficient_hedge', 'low_conviction_in_riskoff'.
+        This makes learning from mistakes explicit and actionable.
+        """
+        causes = []
+        try:
+            audit = {}
+            if signal_row.get("decision_audit"):
+                try:
+                    audit = json.loads(signal_row["decision_audit"]) if isinstance(signal_row["decision_audit"], str) else signal_row["decision_audit"]
+                except:
+                    audit = {}
+
+            symbol = signal_row.get("symbol", "")
+            ac, bucket = self.allocator.classify_symbol(symbol) if hasattr(self, 'allocator') else ("OTHER", "ALPHA")
+            rr = float(signal_row.get("rr") or 0)
+            lev = float(signal_row.get("leverage") or 1)
+            alpha_at_creation = audit.get("alloc_allowed_risk", 0) or float(audit.get("current_alpha_bucket_risk", 0) or 0)
+            hedge_at_creation = float(audit.get("current_hedge_risk", 0) or 0)
+            was_risk_off = audit.get("risk_off", False) or audit.get("risk_off_regime", False)
+            llm_c = float(audit.get("llm_conf", 0) or 0)
+            patt_c = float(audit.get("pattern_conf", 0) or 0)
+            score = float(audit.get("score", 0) or 0)
+
+            # Cause 1: Insufficient hedge for alpha risk
+            if bucket == "ALPHA" and alpha_at_creation > 0 and hedge_at_creation < alpha_at_creation * 0.25:
+                causes.append("insufficient_hedge")
+
+            # Cause 2: Traded alpha in risk-off regime
+            if bucket == "ALPHA" and was_risk_off:
+                causes.append("ignored_risk_off_regime")
+
+            # Cause 3: Low conviction but taken anyway
+            if (llm_c < 0.6 or patt_c < 0.6) and score < 0.65:
+                causes.append("low_conviction_trade")
+
+            # Cause 4: Poor RR or high leverage on loss
+            if outcome == "loss" and (rr < 2.5 or lev > 5):
+                causes.append("poor_rr_or_high_lev")
+
+            # Cause 5: Timeout on what should have been quick alpha
+            if outcome == "timeout" and bucket == "ALPHA":
+                causes.append("alpha_timeout_no_exit")
+
+            # Use knowledge for more
+            if ac in ("GOLD", "SILVER") and outcome == "loss" and was_risk_off:
+                causes.append("core_hedge_failed_in_riskoff")  # unusual, investigate data
+
+            # Dedup and limit
+            causes = list(set(causes))[:5]
+            if not causes and outcome == "loss":
+                causes.append("unexplained_loss_review_manually")
+
+        except Exception as e:
+            logger.debug("Cause attribution partial failure: %s", e)
+            if not causes:
+                causes.append("attribution_error")
+
+        return causes
+
+    def get_mistake_analysis(self, lookback_days: int = 30, min_samples: int = 5) -> dict:
+        """
+        Scan recent losing trades and find patterns in causes.
+        This answers 'how does it track mistakes and find the cause'.
+        Returns stats like most common causes, win rate impact, suggestions.
+        Used by review CLI and monitor for continuous improvement.
+        """
+        try:
+            since = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).isoformat()
+            bad_trades = self.db.execute_custom(
+                "SELECT t.*, s.symbol, s.bucket, s.decision_audit, s.rr FROM trades t JOIN signals s ON t.signal_id = s.id "
+                "WHERE t.outcome IN ('loss','timeout') AND t.created_at >= ? ORDER BY t.created_at DESC",
+                (since,)
+            ) or []
+            if len(bad_trades) < min_samples:
+                return {"status": "insufficient_data", "num_bad_trades": len(bad_trades)}
+
+            cause_counts = {}
+            total_pnl_loss = 0.0
+            for t in bad_trades:
+                t = dict(t) if not isinstance(t, dict) else t
+                notes = t.get("notes", "") or ""
+                # Extract causes if we added them
+                if "[CAUSES:" in notes:
+                    causes_part = notes.split("[CAUSES:")[1].split("]")[0]
+                    for c in causes_part.split(";"):
+                        c = c.strip()
+                        if c:
+                            cause_counts[c] = cause_counts.get(c, 0) + 1
+                tt = dict(t) if not isinstance(t, dict) else t
+                total_pnl_loss += float(tt.get("pnl") or 0)
+
+            # Simple "learning": most frequent causes
+            sorted_causes = sorted(cause_counts.items(), key=lambda x: -x[1])[:5]
+            suggestions = []
+            for cause, cnt in sorted_causes:
+                if "hedge" in cause:
+                    suggestions.append("Increase default hedge_ratio or enforce in allocator for alpha signals.")
+                if "risk_off" in cause:
+                    suggestions.append("Strengthen risk-off detection in heuristic and boost gold allocation earlier.")
+                if "low_conviction" in cause:
+                    suggestions.append("Raise llm_min_confidence or pattern min_conf in runtime params.")
+                if "timeout" in cause:
+                    suggestions.append("Tighten max_trade_duration or add time-based exits for alpha.")
+
+            return {
+                "status": "ok",
+                "num_bad_trades": len(bad_trades),
+                "total_pnl_impact": round(total_pnl_loss, 2),
+                "top_causes": sorted_causes,
+                "improvement_suggestions": suggestions,
+                "note": "These are derived from decision_audit at signal time + outcome. Use review-mistakes CLI to tag more judgments and retrain."
+            }
+        except Exception as e:
+            logger.exception("Mistake analysis failed")
+            return {"status": "error", "error": str(e)}
+
+    def auto_retrain_from_reviews(self, min_tagged: int = 10) -> bool:
+        """
+        Auto-retrain scorer on tagged regrets from review (Simons style: learn from labeled data).
+        If sklearn, fit on historical + tags. Update cause weights.
+        """
+        if not hasattr(self, 'scorer') or not self.scorer:
+            return False
+        try:
+            regrets = self.db.get_regrets(limit=200) if hasattr(self.db, 'get_regrets') else []
+            tagged = [r for r in regrets if r.get('tags') and r.get('tags') != '[]']
+            if len(tagged) < min_tagged:
+                logger.debug("Not enough tagged regrets for auto-retrain (%d < %d)", len(tagged), min_tagged)
+                return False
+
+            # Build X,y from signal features + label from tags (e.g. if tag "bad_hedge" treat as lesson)
+            X_list = []
+            y_list = []
+            for r in tagged:
+                sig_rows = self.db.execute_custom("SELECT * FROM signals WHERE id = ? LIMIT 1", (r.get('signal_id'),))
+                if sig_rows:
+                    row = dict(sig_rows[0])
+                    X = self.scorer._extract_features_for_signal_row(row) if hasattr(self.scorer, '_extract_features_for_signal_row') else None
+                    if X is not None:
+                        X_list.append(X[0])
+                        # Label: win if no bad tags, or based on pnl
+                        is_good = float(r.get('pnl') or 0) > 0 and 'bad' not in (r.get('tags','').lower())
+                        y_list.append(1 if is_good else 0)
+
+            if X_list and hasattr(self.scorer, 'fit_initial'):
+                if NUMPY_AVAILABLE and np is not None:
+                    X = np.array(X_list)
+                    y = np.array(y_list)
+                else:
+                    # fallback list, scorer may handle or skip
+                    X = X_list
+                    y = y_list
+                self.scorer.fit_initial(X, y)
+                logger.info("Auto-retrained scorer on %d tagged regrets (Simons data-driven update)", len(X_list))
+                # Persist cause weights update
+                self._update_cause_weights_from_regrets(tagged)
+                return True
+        except Exception:
+            logger.exception("Auto-retrain failed")
+        return False
+
+    def _update_cause_weights_from_regrets(self, regrets: list):
+        """Persist cause -> weight mapping for tuner/scorer bias (simple dict in runtime)."""
+        cause_counts = {}
+        for r in regrets:
+            try:
+                cs = json.loads(r.get('causes', '[]'))
+                for c in cs:
+                    cause_counts[c] = cause_counts.get(c, 0) + (1 if float(r.get('pnl') or 0) < 0 else 0)
+            except:
+                pass
+        # Store as runtime param for persistence
+        if cause_counts:
+            self.db.set_runtime_param("ml_cause_weights", json.dumps(cause_counts), "Auto-updated from regrets for ML feedback")
+
 
     def monitor_and_tune(self, since_seconds: int = 3600 * 24):
         """
@@ -1341,6 +1744,11 @@ class SignalManager:
             if auto_apply and suggestions:
                 applied = self.tuner.apply_adjustments(suggestions, auto_apply=True)
                 logger.info("Auto-applied %s tuning adjustment(s)", len(applied))
+            # Auto-retrain from review tags for continuous Simons-style improvement
+            try:
+                self.auto_retrain_from_reviews(min_tagged=5)
+            except:
+                pass
         except Exception:
             logger.exception("Failed to auto-apply tuning suggestions")
 

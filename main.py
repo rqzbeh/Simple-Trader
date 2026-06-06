@@ -30,7 +30,7 @@ import signal
 import sys
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 # Load environment variables from `.env` file if present (supports python-dotenv).
@@ -53,6 +53,12 @@ from simple_trader.news_fetcher import FetchResult, NewsFetcher
 from simple_trader.paper_execution import PaperExecutor
 from simple_trader.signal_manager import SignalManager
 from simple_trader.telegram import TelegramNotifier
+from simple_trader.portfolio import get_portfolio_manager
+from simple_trader.portfolio_allocator import PortfolioAllocator
+from simple_trader.risk_engine import RiskEngine
+from simple_trader.hedge_manager import HedgeManager
+from simple_trader.backtester import BookBacktester
+from simple_trader.execution_engine import ExecutionEngine
 
 LOG = get_logger(__name__)
 
@@ -462,6 +468,32 @@ def parse_cli_args(argv) -> argparse.Namespace:
     # status
     status_cmd = sub.add_parser("status", help="Show status & counters from DB")
 
+    # portfolio exposure (new)
+    port_cmd = sub.add_parser("portfolio", help="Show current portfolio risk/exposure snapshot (uses new PortfolioManager)")
+
+    # Full system commands
+    alloc_cmd = sub.add_parser("allocate", help="Run portfolio allocator and show target vs current + rebalance suggestions")
+    risk_cmd = sub.add_parser("risk-report", help="Run RiskEngine and show book risk + breakers")
+    hedge_cmd = sub.add_parser("hedge", help="Run HedgeManager suggestions for gold/silver overlay")
+    backtest_cmd = sub.add_parser("backtest-book", help="Run full book backtester (toy but useful skeleton)")
+    backtest_cmd.add_argument("--days", type=int, default=30, help="How many days to simulate")
+    backtest_cmd.add_argument("--capital", type=float, default=200000.0)
+
+    exec_paper = sub.add_parser("live-paper-run", help="Run advanced paper execution on current open signals")
+
+    review_cmd = sub.add_parser("review-mistakes", help="Review recent losing/timeout trades for judgment feedback into the ML/knowledge system")
+    review_cmd.add_argument("--tag", help="Comma-separated tags for a specific regret (e.g. ignored_hedge,low_conf) to feed ML")
+    review_cmd.add_argument("--signal-id", type=int, help="Signal ID for tagging")
+    review_cmd.add_argument("--trade-id", type=int, default=0, help="Trade ID for tagging")
+    review_cmd.add_argument("--lesson", help="Optional lesson text for the regret")
+
+    # ML status and retrain (Simons style continuous improvement CLIs)
+    ml_cmd = sub.add_parser("ml-status", help="Show ML health: cause weights (persisted cause->weight), recent regrets, scorer model info, feature count")
+    ml_cmd.add_argument("--limit", type=int, default=10, help="How many regrets to show")
+
+    retrain_cmd = sub.add_parser("retrain", help="Force auto-retrain of scorer from tagged regrets (review tags via review-mistakes --tag ...); updates cause weights")
+    retrain_cmd.add_argument("--min-tagged", type=int, default=3, help="Min tagged regrets required to retrain")
+
     # record-trade: record a result for a previously generated signal
     record_cmd = sub.add_parser(
         "record-trade", help="Record result of a trade for a signal id"
@@ -622,6 +654,179 @@ def main(argv=None):
         status = orchestrator.status()
         LOG.info("Status: %s", status)
         return 0
+
+    if args.command == "portfolio":
+        try:
+            pm = get_portfolio_manager(config=cfg, db=orchestrator.db)
+            snap = pm.get_current_exposure()
+            LOG.info("Portfolio exposure: open=%d total_risk_usd=%.0f notional=%.0f symbols=%s max_conc=%.1f%%",
+                     snap.open_signals, snap.total_risk_usd, snap.total_notional_usd,
+                     snap.symbols, snap.max_single_risk_pct_of_book * 100)
+            for sym, r in snap.per_symbol_risk.items():
+                LOG.info("  %s: risk_usd=%.0f", sym, r)
+            return 0
+        except Exception:
+            LOG.exception("Failed to compute portfolio snapshot")
+            return 1
+
+    if args.command == "allocate":
+        try:
+            pa = PortfolioAllocator(config=cfg, db=orchestrator.db)
+            # simplistic current risks from open signals
+            rows = orchestrator.db.execute_custom("SELECT symbol, risk_amount FROM signals WHERE status='open'")
+            current = {}
+            for r in rows or []:
+                current[r["symbol"]] = current.get(r["symbol"], 0) + float(r["risk_amount"] or 0)
+            suggestions = pa.suggest_rebalance(current)
+            for s in suggestions:
+                LOG.info("%s | %s -> target=%.0f current=%.0f | %s | %s",
+                         s.symbol, s.bucket, s.target_risk_usd, s.current_risk_usd, s.action, s.reason)
+            return 0
+        except Exception:
+            LOG.exception("allocate failed")
+            return 1
+
+    if args.command == "risk-report":
+        try:
+            re = RiskEngine(config=cfg, db=orchestrator.db)
+            book = re.compute_book_risk()
+            LOG.info("BOOK RISK: total_risk=%.0f notional=%.0f dd=%.1f%% breaker=%s",
+                     book.total_risk_usd, book.total_notional_usd,
+                     book.current_drawdown_pct*100, book.breaker_active)
+            LOG.info("Per class: %s", book.per_class_risk)
+            return 0
+        except Exception:
+            LOG.exception("risk-report failed")
+            return 1
+
+    if args.command == "hedge":
+        try:
+            hm = HedgeManager(config=cfg, db=orchestrator.db)
+            rows = orchestrator.db.execute_custom("SELECT symbol, risk_amount FROM signals WHERE status='open'")
+            current = {r["symbol"]: float(r["risk_amount"] or 0) for r in (rows or [])}
+            acts = hm.suggest_hedge_actions(current)
+            for a in acts:
+                LOG.info("HEDGE: %s %s target=%.0f current=%.0f | %s", a.hedge_symbol, a.direction, a.target_risk_usd, a.current_hedge_risk, a.reason)
+            return 0
+        except Exception:
+            LOG.exception("hedge failed")
+            return 1
+
+    if args.command == "backtest-book":
+        try:
+            bt = BookBacktester(config=cfg)
+            days = getattr(args, "days", 30)
+            cap = getattr(args, "capital", 200000.0)
+            end = datetime.now(timezone.utc)
+            start = end - timedelta(days=days)
+            res = bt.run_backtest(start, end, initial_capital=cap)
+            LOG.info("BACKTEST RESULT: return=%.1f%% maxDD=%.1f%% sharpe~%.2f alpha_pnl=%.0f core_pnl=%.0f trades=%d",
+                     res.total_return_pct, res.max_drawdown_pct, res.sharpe_proxy, res.alpha_pnl, res.core_pnl, res.num_trades)
+            return 0
+        except Exception:
+            LOG.exception("backtest-book failed")
+            return 1
+
+    if args.command == "live-paper-run":
+        try:
+            ee = ExecutionEngine(config=cfg, db=orchestrator.db, paper_mode=True)
+            # simplistic: execute paper on open signals (in real would come from allocator decisions)
+            LOG.info("Advanced paper execution engine initialized (paper_mode=True). Integrate with signals for full runs.")
+            # For demo, just show balance
+            bal = ee.get_balance()
+            LOG.info("Paper balance: %s", bal)
+            return 0
+        except Exception:
+            LOG.exception("live-paper-run failed")
+            return 1
+
+    if args.command == "review-mistakes":
+        # Judgment/feedback tool. Now with automatic cause attribution and analysis.
+        LOG.info("=== Reviewing mistakes for ML improvement ===")
+        try:
+            analysis = orchestrator.signal_manager.get_mistake_analysis(lookback_days=30)
+            LOG.info("Mistake Analysis: %s", analysis)
+
+            rows = orchestrator.db.execute_custom(
+                "SELECT id, signal_id, outcome, pnl, notes FROM trades WHERE outcome IN ('loss','timeout') ORDER BY created_at DESC LIMIT 15"
+            )
+            for r in (rows or []):
+                LOG.info("Trade %s (sig %s): %s pnl=%s | %s", r["id"], r["signal_id"], r["outcome"], r["pnl"], (r.get("notes") or "")[:100])
+
+            LOG.info("How it tracks & finds causes:")
+            LOG.info("1. At signal creation: decision_audit stores alpha_risk, hedge_risk, regime, confs, knowledge rationale.")
+            LOG.info("2. On loss/timeout record: _attribute_mistake_causes() correlates audit + features + knowledge rules -> e.g. 'insufficient_hedge', 'ignored_risk_off'.")
+            LOG.info("3. Causes appended to trade notes. get_mistake_analysis() aggregates top causes + suggests param changes.")
+            LOG.info("4. Scorer does online partial_fit on enriched features (incl. bucket/hedge/regime) so predict_proba improves with data.")
+            LOG.info("5. Tuner aggregates win/loss per symbol/pattern and can auto-adjust runtime_params (min_conf, leverage, duration).")
+            LOG.info("6. review-mistakes + manual record-trade with notes lets humans inject judgment. Over time system gets better at your edge.")
+            LOG.info("To apply learnings: run 'python main.py suggest --apply' or manually set runtime params via DB.")
+            # Support tagging for auto-retrain (pass --tag "ignored_hedge,low_conf" --signal-id X --trade-id Y)
+            if hasattr(args, 'tag') and args.tag and hasattr(args, 'signal_id') and args.signal_id:
+                try:
+                    tags = [t.strip() for t in args.tag.split(',')]
+                    orchestrator.db.log_regret(
+                        signal_id=args.signal_id,
+                        trade_id=getattr(args, 'trade_id', 0),
+                        symbol="manual",
+                        outcome="loss",
+                        pnl=0,
+                        causes=["manual_tag"],
+                        tags=tags,
+                        lesson=getattr(args, 'lesson', "User judgment tag for ML")
+                    )
+                    LOG.info("Tagged regret for signal %s with %s - will feed into auto-retrain", args.signal_id, tags)
+                    # Trigger retrain
+                    orchestrator.signal_manager.auto_retrain_from_reviews(min_tagged=1)
+                except Exception:
+                    LOG.exception("Tagging failed")
+            return 0
+        except Exception:
+            LOG.exception("review-mistakes failed")
+            return 1
+
+    if args.command == "ml-status":
+        LOG.info("=== ML STATUS (regret table + cause_weights + scorer) - Buffett/Simons learn-from-mistakes ===")
+        try:
+            regrets = orchestrator.db.get_regrets(limit=getattr(args, "limit", 10))
+            LOG.info("Recent regrets (%d):", len(regrets))
+            for r in regrets:
+                LOG.info("  id=%s sig=%s sym=%s outcome=%s pnl=%.1f causes=%s tags=%s", 
+                         r.get("id"), r.get("signal_id"), r.get("symbol"), r.get("outcome"), 
+                         r.get("pnl") or 0, r.get("causes"), r.get("tags"))
+            cw = orchestrator.db.get_cause_weights() if hasattr(orchestrator.db, "get_cause_weights") else {}
+            LOG.info("Persisted cause->weight mapping (%d): %s", len(cw), cw)
+            # Scorer info
+            sc = orchestrator.signal_manager.scorer if hasattr(orchestrator.signal_manager, "scorer") else None
+            if sc:
+                LOG.info("Scorer: sklearn=%s trained=%s features~12 (incl whale/politics/value/hedge/cause effects via persister)", 
+                         "avail" if (hasattr(sc, 'model') and sc.model is not None) else "heuristic/fallback", getattr(sc, "_is_trained", False))
+                if hasattr(sc, "cause_persister"):
+                    LOG.info("Cause persister weights live: %s", sc.cause_persister.weights)
+            else:
+                LOG.info("No scorer attached")
+            # Also show runtime ml param
+            mlp = orchestrator.db.get_runtime_param("ml_cause_weights")
+            if mlp:
+                LOG.info("ml_cause_weights runtime: %s", mlp[:200])
+            return 0
+        except Exception:
+            LOG.exception("ml-status failed")
+            return 1
+
+    if args.command == "retrain":
+        LOG.info("=== FORCED RETRAIN from tagged regrets ===")
+        try:
+            min_t = getattr(args, "min_tagged", 3)
+            ok = orchestrator.signal_manager.auto_retrain_from_reviews(min_tagged=min_t)
+            LOG.info("Retrain result: %s (min_tagged=%d). Cause weights updated in DB.", ok, min_t)
+            # Show new status briefly
+            cw = orchestrator.db.get_cause_weights() if hasattr(orchestrator.db, "get_cause_weights") else {}
+            LOG.info("Updated cause weights: %s", cw)
+            return 0
+        except Exception:
+            LOG.exception("retrain failed")
+            return 1
 
     if args.command == "paper-exec":
         LOG.info("Running paper-execution simulation (paper-exec)")

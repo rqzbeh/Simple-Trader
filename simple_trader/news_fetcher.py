@@ -39,6 +39,7 @@ except Exception:  # pragma: no cover - fallback for minimal environments
 
 from simple_trader.config import Config, CONFIG
 from simple_trader.db import Database, NewsItem, get_default_db, now_ts
+from simple_trader.knowledge_base import ASSET_KNOWLEDGE  # for context
 
 logger = logging.getLogger("simple_trader.news_fetcher")
 logger.addHandler(logging.NullHandler())
@@ -110,6 +111,7 @@ class NewsFetcher:
     def fetch_all(self, rss_feeds: Optional[Iterable[str]] = None) -> List[FetchResult]:
         """
         Fetch news from the configured sources (RSS + News API if enabled).
+        Also fetches free/public whale on-chain moves and politician/policy signals.
         Returns a list of FetchResult for each inserted or deduplicated NewsItem.
         """
         results: List[FetchResult] = []
@@ -130,6 +132,28 @@ class NewsFetcher:
                 results.extend(self.fetch_newsapi())
             except Exception:
                 logger.exception("Error while fetching from NewsAPI")
+
+        # Free whale + politics (on-chain public for BTC/ETH whales, RSS keywords + disclosures for politicians)
+        # No extra keys; graceful if rate limited or no addresses configured.
+        try:
+            special = self.fetch_whale_and_politics()
+            results.extend(special)
+            if special:
+                logger.debug("Added %d free whale/politics signals", len(special))
+        except Exception:
+            logger.debug("Whale/politics special fetch skipped (free/public sources)")
+
+        # Dedicated public politician disclosures (lagged but official/public filings + news)
+        try:
+            from .politician_disclosures import fetch_and_process_politician_disclosures
+            pol_items = fetch_and_process_politician_disclosures(self.config, self.db)
+            if pol_items:
+                logger.info("Added %d public politician disclosure signals (free, official data)", len(pol_items))
+                # Convert to FetchResult for consistency (they are already inserted)
+                for item in pol_items:
+                    results.append(FetchResult("politics_disclosure", item, 0))  # id not critical here
+        except Exception as e:
+            logger.debug("Politician disclosures fetch skipped (public sources): %s", e)
 
         logger.debug("Total news fetched (new inserts / deduped): %s", len(results))
         return results
@@ -496,6 +520,112 @@ class NewsFetcher:
         for r in rows:
             parsed.append(dict(r))
         return parsed
+
+    # --- New: Whale trades & Politician disclosures (free/public data, zero extra keys) ---
+    def fetch_whale_and_politics(self) -> List[FetchResult]:
+        """
+        Fetch special 'whale' (on-chain large moves) and 'politics' (disclosures, announcements)
+        as high-impact signals for CRYPTO (and correlated OIL/FOREX/GOLD).
+        Designed for free operation:
+        - Whale: Query public blockchain explorers (blockchain.info for BTC - no key).
+        - ETH/other: Falls back to RSS/news if no free endpoint or rate limit.
+        - Politics: Relies on existing RSS + keyword detection (disclosures are public but lagged).
+        Results are turned into NewsItem with asset=CRYPTO or relevant, provider="whale" or "politics".
+        Inserted via normal dedup path.
+        """
+        results: List[FetchResult] = []
+        now = now_ts()
+
+        # 1. Whale monitoring (configurable public addresses)
+        whale_addrs = getattr(self.config, "whale_addresses", {}) or {}
+        for chain, addrs in whale_addrs.items():
+            for addr in addrs:
+                try:
+                    if chain.upper() == "BTC":
+                        # Free public API, no key
+                        url = f"https://blockchain.info/rawaddr/{addr}?limit=5"
+                        r = self.session.get(url, timeout=15)
+                        if r.status_code == 200:
+                            data = r.json()
+                            total_received = data.get("total_received", 0) / 1e8  # sat to BTC
+                            txs = data.get("txs", [])
+                            for tx in txs[:2]:  # recent
+                                # Simple: if large value in or out
+                                value = sum(o.get("value", 0) for o in tx.get("out", [])) / 1e8
+                                if value >= self.config.whale_min_size_btc:
+                                    title = f"WHALE: Large BTC move {value:.1f} BTC involving {addr[:8]}..."
+                                    content = f"On-chain whale activity detected. Possible accumulation or distribution. Cross with volume and news."
+                                    item = NewsItem(
+                                        provider="whale_btc",
+                                        url=f"https://blockchain.info/address/{addr}",
+                                        title=title,
+                                        content=content,
+                                        published_at=now,
+                                        asset="BTC",
+                                        raw_json={"chain": "BTC", "value": value, "addr": addr},
+                                        fetched_at=now,
+                                    )
+                                    inserted = self._insert_news_item(item)
+                                    results.append(FetchResult("whale", item, inserted))
+                                    logger.info("Whale BTC signal: %.1f BTC", value)
+                    elif chain.upper() == "ETH":
+                        # Public explorers (no key for basic; rate limited)
+                        # Use blockscout public API as example (free tier-ish)
+                        url = f"https://eth.blockscout.com/api/v2/addresses/{addr}/transactions?filter=from"
+                        r = self.session.get(url, timeout=15)
+                        if r.status_code == 200:
+                            data = r.json()
+                            items = data.get("items", [])[:1]
+                            for tx in items:
+                                value_eth = float(tx.get("value", "0")) / 1e18 if tx.get("value") else 0
+                                if value_eth >= self.config.whale_min_size_eth:
+                                    title = f"WHALE: Large ETH transfer {value_eth:.1f} from {addr[:8]}..."
+                                    content = "On-chain whale move in ETH. Monitor for exchange deposit (sell pressure) or accumulation."
+                                    item = NewsItem(
+                                        provider="whale_eth",
+                                        url=f"https://eth.blockscout.com/address/{addr}",
+                                        title=title,
+                                        content=content,
+                                        published_at=now,
+                                        asset="ETH",
+                                        raw_json={"chain": "ETH", "value": value_eth, "addr": addr},
+                                        fetched_at=now,
+                                    )
+                                    inserted = self._insert_news_item(item)
+                                    results.append(FetchResult("whale", item, inserted))
+                except Exception as e:
+                    logger.debug("Whale monitor error for %s %s: %s (free endpoint rate limit or parse)", chain, addr, e)
+
+        # 2. Politician / policy signals (public disclosures + announcements)
+        # Since real-time disclosures are lagged (US 45 days), we lean on RSS (already fetched) + special keyword scan.
+        # Here we can add a lightweight "recent disclosure" note if user configures, or just generate from knowledge.
+        # For demo: scan recent unprocessed for politician keywords and re-tag as high impact.
+        try:
+            recent = self.get_unprocessed_news(limit=20)
+            pol_keywords = [k.lower() for k in getattr(self.config, "monitor_politicians", [])]
+            for row in recent:
+                text = (row.get("title", "") + " " + row.get("content", "")).lower()
+                if any(kw in text for kw in pol_keywords + ["pelosi", "trump", "congress", "senate", "disclosure", "wlfi"]):
+                    asset = row.get("asset") or "CRYPTO"  # default to crypto for Trump-related
+                    title = f"POLITICS: {row.get('title', 'Policy/Disclosure signal')}"
+                    content = (row.get("content", "") + " Public politician or policy move - high headline impact for crypto/policy-sensitive assets. Cross with on-chain.")
+                    item = NewsItem(
+                        provider="politics",
+                        url=row.get("url", ""),
+                        title=title,
+                        content=content,
+                        published_at=row.get("published_at"),
+                        asset=asset,
+                        raw_json={"source": "disclosure_or_announcement", "keywords": [k for k in pol_keywords if k in text]},
+                        fetched_at=now,
+                    )
+                    inserted = self._insert_news_item(item)
+                    results.append(FetchResult("politics", item, inserted))
+                    logger.info("Politics signal detected from RSS: %s", title[:60])
+        except Exception as e:
+            logger.debug("Politics scan error (uses existing RSS): %s", e)
+
+        return results
 
 
 # Quick unit-like entrypoint to exercise the RSS / NewsAPI flows (intended for dev/testing)

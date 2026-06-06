@@ -11,6 +11,93 @@ Highlights
 - Stores news, analyses, market candles, signals, and trades in SQLite (optionally Postgres via migration).
 - Lightweight built-in learning/tuning based on recorded trade outcomes.
 
+**⚠️ CRITICAL FOR INVESTMENT / PRODUCTION USE (June 2026 audit)**
+This tool **generates ideas/signals only**. It is **NOT** a complete portfolio management or execution system.
+
+Major issues discovered in initial review that could cause large losses or poor decisions in production:
+- Crypto market data was previously derived from close prices only (bad high/low for patterns) — **fixed** to prefer real /ohlc endpoint.
+- Very limited signal source (news sentiment + classic 2H candlesticks). Easy to overfit, regime dependent, high false positive rate in ranging/choppy markets.
+- No true portfolio construction, correlation, or book-level risk (total VaR, sector exposure, drawdown stops). Only per-trade % risk + crude open count. **Improved** with PortfolioManager + total risk budget guard + vol targeting.
+- Tuner can auto-adjust (or disable) parameters on small samples — dangerous without heavy oversight. Auto-apply is opt-in and still conservative.
+- Paper execution is low-fidelity (candle touch simulation, no realistic fills/funding/latency).
+- Heavy LLM reliance without source verification, credibility scoring, or hallucination guards.
+- No rigorous walk-forward / Monte-Carlo backtesting framework, no slippage model, no survivorship bias handling.
+- SQLite default + no advanced concurrency/transactions for high-volume production.
+- No live broker integration (execution gap), no kill switches, limited monitoring.
+
+**What leaders actually use (and you should add/evolve toward):**
+- Multi-factor + alternative data (on-chain Glassnode/Dune, options flow, macro, credit, satellite).
+- Proper portfolio optimization (risk-parity, HRP, Black-Litterman, vol targeting, Kelly/fractional with drawdown overlay).
+- Regime detection + dynamic risk budgeting.
+- Full execution stack (CCXT, FIX, smart routing, TWAP/VWAP).
+- Institutional data (Polygon, Tiingo, Bloomberg/Refinitiv feeds, paid news).
+- Rigorous research platform (vectorized backtester, walk-forward, deflated Sharpe, combinatorial purged CV).
+- Real-time risk engine + pre-trade checks + post-trade attribution.
+- Human + model ensemble with strict position limits per strategy.
+
+**Recommendations before using real capital:**
+1. Run extensive historical backtests + walk-forward on your universe.
+2. Forward-test in paper for 3-6+ months with real slippage assumptions.
+3. Start with tiny risk (0.1-0.25% per trade) + strict max book risk (3-5%).
+4. Add your own portfolio layer on top of signals (never blindly take every signal).
+5. Implement circuit breakers (pause on >X% daily loss, vol spike, etc.).
+6. Treat every signal as "idea to be vetted", not "trade this now".
+
+**Internal Team Commands (the Secret Formula in action)**
+After `pip install -r requirements.txt` (include yfinance + ccxt + fastapi for full power):
+
+- `python main.py portfolio`               → Current book risk/exposure across buckets
+- `python main.py allocate`                → Allocator suggestions (Core vs Alpha rebalancing)
+- `python main.py risk-report`             → RiskEngine + circuit breaker status
+- `python main.py hedge`                   → HedgeManager gold/silver overlay recommendations
+- `python main.py backtest-book --days 60 --capital 200000` → Full book simulation (Core + Alpha + hedges)
+- `python main.py live-paper-run`          → Advanced paper execution engine
+
+**Minimal / Zero Paid API Keys Mode (Max Free Sources)**
+The system is now optimized to run with almost no paid keys:
+
+- **Market data**: yfinance (free, no key) for Gold (GC=F), Silver, Oil (CL=F), Forex (EURUSD=X). CoinGecko (free) for crypto. AlphaVantage only as last resort.
+- **News**: Pure public RSS (10+ high-quality free feeds for gold/oil/forex/macro). No NewsAPI needed.
+- **Analysis**: Heuristic + Knowledge Base (embedded professional trading/finance expertise) completely replaces LLM when no keys. Strong rule-based direction/confidence/summary using asset knowledge, risk-off detection, patterns.
+- **Only "optional paid"**: Telegram bot token (for alerts). If missing or BACKTEST_MODE=true, no messages sent.
+- **Execution**: CCXT only if you want live trading (public endpoints for data are free).
+
+Recommended minimal .env for full operation (free mode):
+```
+DATABASE_PATH=simple_trader.db
+BACKTEST_MODE=false
+TELEGRAM_BOT_TOKEN=your_token_if_you_want_alerts
+# No LLM keys, no AlphaVantage, no NewsAPI needed.
+```
+
+With zero keys you still get:
+- Free news monitoring
+- Knowledge-driven "LLM-like" analysis for gold risk-off, oil supply shocks, etc.
+- Full Core/Alpha allocation, hedging, risk engine, UI, service, learning loop.
+
+**VPS / Systemd Deployment (recommended for 24/7)**
+1. Clone to `/opt/simple-trader`
+2. Create venv, `pip install -r requirements.txt` (yfinance and fastapi/uvicorn for UI)
+3. Copy `.env` (can be almost empty for free mode)
+4. `sudo cp simple-trader.service /etc/systemd/system/`
+5. Edit the .service file (User, WorkingDirectory, paths)
+6. `sudo systemctl daemon-reload && sudo systemctl enable --now simple-trader`
+7. Logs: `journalctl -u simple-trader -f` and `/var/log/simple-trader/service.log`
+
+Dashboard (internal): http://your-vps-ip:8080 (protect with nginx + auth or firewall/VPN).
+
+**Continuous Learning & Knowledge**
+- The system has a rich embedded `knowledge_base.py` with Kelly, risk-parity, asset-specific behaviors (gold as hedge for crypto/oil news events, forex session dynamics, etc.).
+- Every decision stores "decision_audit" with knowledge rationale.
+- Online learning in SignalScorer + StrategyTuner improves from every trade outcome ("mistakes").
+- Use `python main.py record-trade ...` after real or paper results.
+- Future: CLI "review-mistakes" to tag bad judgments and force model updates.
+- Urgent Telegram alerts for high-opportunity (under-allocated strong Alpha) or risk (approaching breakers, risk-off regime) are sent automatically by the service.
+
+Focus symbols (GOLD/SILVER/OIL/CRYPTO/FOREX) are now first-class with proper data routing and bucket logic. The system tries hard to let Alpha swing while Core (gold) keeps the company alive.
+
+The recent improvements (better crypto candles, vol-adjusted sizing, PortfolioManager guards, safer tuner notes) make it **less dangerous** as a signal generator, but you are still responsible for the rest of the stack. Use at your own risk. Consider this a research/idea-generation prototype for your investment company.
+
 Table of Contents
 - [Quickstart](#quickstart)
 - [Key Concepts](#key-concepts)
@@ -200,3 +287,12 @@ Credits & Acknowledgments
 
 Contact
 If you need help, raise an issue on GitHub: https://github.com/rqzbeh/Simple-Trader/issues
+
+## Public Politician Disclosures (STOCK Act PTRs) + Buffett/Simons ML (added for real compounding edge)
+- Free/public source: RSS (opensecrets, reuters/crypto-policy, marketwatch, benzinga) + lightweight public page scans (capitoltrades etc). Matches "disclosure|PTR|STOCK Act|Trump|Pelosi|WLFI|congress".
+- High-impact POLITICS signals (provider=politics_disclosure) -> Alpha bucket. Lagged official filings but powerful sentiment catalyst for our 5 assets. Ethics: PUBLIC ONLY, cross-verify, small Alpha size, mandatory Gold hedge.
+- Full loop: fetch (news_fetcher + dedicated pol module) -> service 24/7 -> heuristic (boost conf + Simons/Buffett rationale) -> gate (allocator/risk/hedge/knowledge/audit) -> scorer (politics_f, value_f, 12 feats) -> record loss: attribute causes from audit (e.g. insufficient_hedge) -> regret_table + cause_weights persist (delta negative) -> CauseWeightPersister penalty in predict_proba + regret_veto (>=3 bad -> block/discount) -> tuner (cause-weighted suggestions) -> auto_retrain on review --tag + monitor.
+- CLIs: ml-status, retrain, review-mistakes --tag "ignored_hedge,low_conf" --signal-id N --lesson "...", suggest --apply.
+- Dashboard: Core/Alpha % pie, special disclosures/whales, ML card (weights + recent regrets).
+- Gets better: every public disclosure/whale + outcome updates factors (Simons); avoid repeating safety violations (Buffett). Real auditable "learn from mistakes".
+See: politician_disclosures.py, scorer.py:CauseWeightPersister, signal_manager (veto+retrain+attribute), db (tables+log), knowledge_base (principles), web_dashboard+service.

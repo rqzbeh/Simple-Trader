@@ -16,6 +16,7 @@ __all__ = [
     "Config",
     "load_config",
     "Database",
+    "PortfolioManager",
     "version",
 ]
 
@@ -86,6 +87,12 @@ try:
     from .db import Database  # type: ignore
 except Exception:
     pass
+
+try:
+    from .portfolio import PortfolioManager, get_portfolio_manager  # type: ignore
+except Exception:
+    PortfolioManager = None
+    get_portfolio_manager = None
 
 # Expose a short helpful string for CLI or REPL use
 __doc__ = __doc__.strip() if __doc__ else ""

@@ -44,6 +44,13 @@ except Exception:
     # Keep a simple fallback if sklearn is missing
     SKLEARN_AVAILABLE = False
 
+# Optional joblib for better sklearn model persist (used by Simons-style production ML)
+try:
+    import joblib
+    JOBLIB_AVAILABLE = True
+except Exception:
+    JOBLIB_AVAILABLE = False
+
 from simple_trader.config import CONFIG, Config
 from simple_trader.db import Database, get_default_db
 
@@ -52,6 +59,84 @@ logger.addHandler(logging.NullHandler())
 
 DEFAULT_MODEL_PATH = "scorer.pkl"
 DB_MODEL_PARAM_KEY = "scorer:model_b64"
+
+
+class CauseWeightPersister:
+    """
+    Persists and applies a small cause -> weight mapping (Simons: statistical factors from every outcome;
+    Buffett: penalize repeating violations of margin-of-safety like insufficient hedge).
+    Weights are loaded from DB cause_weights table (or runtime_param fallback).
+    Applied as additive penalty to base score or as extra feature bias.
+    Small mapping: e.g. 'insufficient_hedge': -0.25 after several bad politician-disclosure alpha trades without hedge.
+    """
+    def __init__(self, db: Optional[Database] = None):
+        self.db = db or get_default_db()
+        self.weights: Dict[str, float] = {}
+        self.load()
+
+    def load(self):
+        try:
+            if self.db:
+                self.weights = self.db.get_cause_weights() or {}
+            if not self.weights:
+                # Fallback to runtime param JSON
+                raw = self.db.get_runtime_param("ml_cause_weights") if self.db else None
+                if raw:
+                    self.weights = json.loads(raw)
+        except Exception:
+            self.weights = {}
+        logger.debug("CauseWeightPersister loaded %d causes", len(self.weights))
+
+    def save(self):
+        # Already persisted via db.update_cause_weight in log_regret; here ensure runtime sync
+        try:
+            if self.db and self.weights:
+                self.db.set_runtime_param("ml_cause_weights", json.dumps(self.weights), "Cause->weight ML feedback (auto)")
+        except Exception:
+            pass
+
+    def get_penalty(self, causes: List[str] | str | None) -> float:
+        """Sum of weights for matched causes. Negative = penalty. Always reload for live updates from regret log."""
+        self.load()  # Simons continuous: fresh from cause_weights table
+        if not causes:
+            return 0.0
+        if isinstance(causes, str):
+            try:
+                causes = json.loads(causes)
+            except:
+                causes = [causes]
+        pen = 0.0
+        for c in causes:
+            w = self.weights.get(c, 0.0)
+            pen += w
+        return pen
+
+    def apply_to_score(self, base_score: float, causes: List[str] | None = None, signal_row: dict | None = None) -> float:
+        """Return adjusted score [0,1] with cause penalties applied. Clamped."""
+        pen = self.get_penalty(causes)
+        # Also check audit for embedded causes
+        if signal_row and not causes:
+            try:
+                audit = json.loads(signal_row.get("decision_audit", "{}")) if isinstance(signal_row.get("decision_audit"), str) else {}
+                if "[CAUSES:" in str(audit.get("notes", "")):
+                    # rough extract
+                    pass
+            except:
+                pass
+        adj = max(0.0, min(1.0, base_score + pen))  # pen is negative or small positive
+        if pen != 0:
+            logger.debug("CauseWeightPersister: base=%.3f pen=%.3f -> adj=%.3f", base_score, pen, adj)
+        return adj
+
+    def update(self, cause: str, delta: float, is_bad: bool = True):
+        """Direct update (usually called via db.log_regret which does it)."""
+        try:
+            if self.db:
+                self.db.update_cause_weight(cause, delta, is_bad)
+            self.weights[cause] = self.weights.get(cause, 0.0) + delta
+            self.save()
+        except Exception:
+            pass
 
 
 @dataclass
@@ -98,6 +183,7 @@ class SignalScorer:
             market_client  # Optional market data client (MarketDataClient)
         )
         self._classes = np.array([0, 1], dtype=np.int64)
+        self.cause_persister = CauseWeightPersister(self.db)  # Simons/Buffett cause->weight ML feedback
 
         self.model = None
         self.scaler = None
@@ -132,10 +218,15 @@ class SignalScorer:
     # ------------------------
     def save_model_to_disk(self, path: Optional[str] = None) -> None:
         """
-        Persist model and scaler to disk using pickle.
+        Persist model and scaler to disk using pickle (or joblib if sklearn model + joblib available for production robustness).
         """
         path = path or self.model_path
         try:
+            if JOBLIB_AVAILABLE and SKLEARN_AVAILABLE and self.model is not None:
+                payload = {"model": self.model, "scaler": self.scaler, "metadata": {"sklearn": True, "joblib": True}}
+                joblib.dump(payload, path + ".joblib")
+                logger.info("Scorer model saved to disk (joblib): %s.joblib", path)
+                # also save pickle for compat
             payload = {
                 "model": self.model,
                 "scaler": self.scaler,
@@ -165,8 +256,20 @@ class SignalScorer:
     def load_model_from_disk(self, path: Optional[str] = None) -> bool:
         """
         Load model from disk. Returns True on success, False otherwise.
+        Prefers joblib .joblib if present (for sklearn models).
         """
         path = path or self.model_path
+        # Try joblib first
+        if JOBLIB_AVAILABLE and os.path.exists(path + ".joblib"):
+            try:
+                payload = joblib.load(path + ".joblib")
+                self.model = payload.get("model", self.model)
+                self.scaler = payload.get("scaler", self.scaler)
+                self._is_trained = bool(getattr(self.model, "coef_", None) is not None) if self.model else False
+                logger.info("Scorer model loaded from disk (joblib): %s.joblib", path)
+                return True
+            except Exception:
+                logger.debug("Joblib load failed, trying pickle")
         if not os.path.exists(path):
             logger.debug("Model file not found: %s", path)
             return False
@@ -407,7 +510,18 @@ class SignalScorer:
         # Normalized features vector
         # Scale impact (-1..1) -> (0..1)
         impact_norm = (impact + 1.0) / 2.0
-        # Basic feature vector
+
+        # Rich features passed from full system (Allocator + Risk + Knowledge)
+        alpha_bucket = float(signal_row.get("current_alpha_bucket_risk") or 0) / 10000.0  # scale
+        hedge_ratio_f = float(signal_row.get("current_hedge_risk") or 0) / max(alpha_bucket*10000 + 1, 1)
+        risk_off_f = 1.0 if signal_row.get("risk_off") else 0.0
+
+        # New from whale/politics (Simons data edge) + Buffett value proxy
+        whale_f = 1.0 if "whale" in str(signal_row.get("provider", "")).lower() or "whale" in str(signal_row.get("decision_audit", "")).lower() else 0.0
+        politics_f = 1.0 if "politics" in str(signal_row.get("provider", "")).lower() or "trump" in str(signal_row.get("decision_audit", "")).lower() or "pelosi" in str(signal_row.get("decision_audit", "")).lower() else 0.0
+        value_f = 1.0 if (signal_row.get("asset_class") in ("GOLD", "OIL") and risk_off_f > 0) else 0.5  # Buffett value when fear high
+
+        # Basic + rich feature vector (12 features)
         features = np.array(
             [
                 llm_confidence,
@@ -416,6 +530,12 @@ class SignalScorer:
                 float(leverage or 1.0),
                 float(position_usd_ratio or 0.0),
                 float(atr_norm or 0.0),
+                alpha_bucket,
+                hedge_ratio_f,
+                risk_off_f,
+                whale_f,
+                politics_f,
+                value_f,
             ],
             dtype=float,
         ).reshape(1, -1)
@@ -504,9 +624,28 @@ class SignalScorer:
     def predict_proba_from_signal_row(self, signal_row: Dict[str, Any]) -> float:
         """
         Convenience function: extract features for a signal row and predict its win probability.
+        Applies CauseWeightPersister penalties (from regret_table + cause_weights) for Buffett/Simons learning:
+        e.g. repeated 'insufficient_hedge' on politician disclosure alpha trades lowers future prob for similar.
         """
         X = self._extract_features_for_signal_row(signal_row)
-        return self.predict_proba(X)
+        base = self.predict_proba(X)
+        # Extract causes from notes or decision_audit for penalty
+        causes = None
+        notes = str(signal_row.get("notes", "") or "")
+        if "[CAUSES:" in notes:
+            try:
+                causes = notes.split("[CAUSES:")[1].split("]")[0].split("; ")
+            except:
+                causes = None
+        if not causes:
+            try:
+                audit = json.loads(signal_row.get("decision_audit") or "{}")
+                if "[CAUSES:" in str(audit):
+                    causes = str(audit).split("[CAUSES:")[1].split("]")[0].split("; ")
+            except:
+                pass
+        adj = self.cause_persister.apply_to_score(base, causes=causes, signal_row=signal_row) if hasattr(self, 'cause_persister') else base
+        return adj
 
     # ------------------------
     # Online updates / training
@@ -559,7 +698,18 @@ class SignalScorer:
             else:
                 self.model.partial_fit(X_scaled, y)
             return True
-        except Exception:
+        except Exception as e:
+            msg = str(e)
+            if "mismatch" in msg.lower() or "n_features" in msg.lower() or "shape" in msg.lower():
+                logger.warning("ML features updated (new regret/cause/politician/whale/value features), resetting SGD learner for compatibility (Simons regime shift handling)")
+                # Reset model for new feature dim (12+ now)
+                self.model = SGDClassifier(loss="log_loss", alpha=0.0001, learning_rate="optimal", eta0=0.01, max_iter=1, tol=None, warm_start=True)
+                self._is_trained = False
+                try:
+                    self.scaler = StandardScaler()
+                    self.scaler.partial_fit(X)
+                except:
+                    pass
             logger.exception("Failed to partial_fit the scorer model")
             return False
 
