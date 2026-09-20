@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 370" width="100%" height="100%">
+  <defs>
+    <linearGradient id="aiBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="llmGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#7c3aed" />
+    </linearGradient>
+    <linearGradient id="bayesGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0ea5e9" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+    <filter id="aiShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <style>
+    .font-ui { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  </style>
+
+  <!-- Frame Background -->
+  <rect width="920" height="370" rx="14" fill="url(#aiBg)" stroke="#1e293b" stroke-width="1.5" />
+
+  <!-- Left: Offline CUDA RTX 2060 Deep Learning -->
+  <g transform="translate(25, 25)" filter="url(#aiShadow)">
+    <rect width="425" height="320" rx="12" fill="#0f172a" stroke="#334155" stroke-width="1.2" />
+
+    <g transform="translate(20, 20)">
+      <text class="font-ui" font-size="16" font-weight="800" fill="#ffffff">OFFLINE GPU DEEP LEARNING (RTX 2060)</text>
+      <text class="font-ui" font-size="11" fill="#94a3b8" y="20">CUDA-accelerated feature extraction over genuine klines</text>
+    </g>
+
+    <!-- Architecture Breakdown -->
+    <g transform="translate(20, 60)">
+      <rect width="385" height="74" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#a855f7" stroke-width="1" stroke-opacity="0.4" />
+      <circle cx="24" cy="37" r="10" fill="url(#llmGrad)" />
+      <text class="font-mono" font-size="11" font-weight="700" fill="#c084fc" x="46" y="26">PYTORCH RESIDUAL ALPHA NET (CUDA)</text>
+      <text class="font-ui" font-size="11" fill="#cbd5e1" x="46" y="44">Pre-trained on host NVIDIA RTX 2060 GPU VRAM</text>
+      <text class="font-mono" font-size="10.5" fill="#a855f7" x="46" y="62">20,000+ continuous historical Binance candles</text>
+    </g>
+
+    <g transform="translate(20, 145)">
+      <rect width="385" height="65" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#334155" stroke-width="1" />
+      <text class="font-mono" font-size="11" font-weight="700" fill="#38bdf8" x="14" y="24">STRICT ZERO-SYNTHETIC DATA POLICY</text>
+      <text class="font-ui" font-size="11" fill="#cbd5e1" x="14" y="44">Zero mockups or fake drift. 100% authentic exchange candles.</text>
+    </g>
+
+    <g transform="translate(20, 220)">
+      <rect width="385" height="65" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#334155" stroke-width="1" />
+      <text class="font-mono" font-size="11" font-weight="700" fill="#34d399" x="14" y="24">EXPORTED WEIGHTS FOR HEADLESS VPS</text>
+      <text class="font-ui" font-size="11" fill="#cbd5e1" x="14" y="44">models/multi_asset_alpha_net.pt deployed directly into Go runtime.</text>
+    </g>
+  </g>
+
+  <!-- Right: Headless VPS Bayesian Thompson Sampling -->
+  <g transform="translate(470, 25)" filter="url(#aiShadow)">
+    <rect width="425" height="320" rx="12" fill="#0f172a" stroke="#334155" stroke-width="1.2" />
+
+    <g transform="translate(20, 20)">
+      <text class="font-ui" font-size="16" font-weight="800" fill="#ffffff">ONLINE BAYESIAN FINE-TUNING (HEADLESS VPS)</text>
+      <text class="font-ui" font-size="11" fill="#94a3b8" y="20">Thompson sampling updates Beta(alpha, beta) posteriors in Pure Go</text>
+    </g>
+
+    <!-- Formula Box -->
+    <g transform="translate(20, 60)">
+      <rect width="385" height="74" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#0ea5e9" stroke-width="1" stroke-opacity="0.4" />
+      <circle cx="24" cy="37" r="10" fill="url(#bayesGrad)" />
+      <text class="font-mono" font-size="11" font-weight="700" fill="#38bdf8" x="46" y="26">ZERO-GPU LIGHTWEIGHT INFERENCE</text>
+      <text class="font-mono" font-size="11" fill="#cbd5e1" x="46" y="44">Posterior Mean: E[θ] = α / (α + β)</text>
+      <text class="font-mono" font-size="10.5" fill="#34d399" x="46" y="62">Updates instantly in memory upon each trade exit</text>
+    </g>
+
+    <!-- Live Posteriors Grid -->
+    <g transform="translate(20, 145)">
+      <rect width="385" height="140" rx="8" fill="#1e293b" fill-opacity="0.4" stroke="#334155" stroke-width="1" />
+      <text class="font-mono" font-size="11" font-weight="700" fill="#f8fafc" x="14" y="24">REAL-TIME INDICATOR POSTERIOR WEIGHTS:</text>
+
+      <!-- SuperTrend -->
+      <text class="font-mono" font-size="11" fill="#94a3b8" x="14" y="50">SuperTrend:</text>
+      <text class="font-mono" font-size="11" font-weight="700" fill="#34d399" x="120" y="50">Beta(α=3.5, β=1.8)</text>
+      <text class="font-mono" font-size="11" font-weight="800" fill="#34d399" x="300" y="50">Mean: 66.0%</text>
+
+      <!-- RSI -->
+      <text class="font-mono" font-size="11" fill="#94a3b8" x="14" y="78">RSI Momentum:</text>
+      <text class="font-mono" font-size="11" font-weight="700" fill="#38bdf8" x="120" y="78">Beta(α=2.8, β=2.1)</text>
+      <text class="font-mono" font-size="11" font-weight="800" fill="#38bdf8" x="300" y="78">Mean: 57.1%</text>
+
+      <!-- MACD -->
+      <text class="font-mono" font-size="11" fill="#94a3b8" x="14" y="106">MACD Histogram:</text>
+      <text class="font-mono" font-size="11" font-weight="700" fill="#fbbf24" x="120" y="106">Beta(α=2.2, β=2.4)</text>
+      <text class="font-mono" font-size="11" font-weight="800" fill="#fbbf24" x="300" y="106">Mean: 47.8%</text>
+
+      <!-- Confluence Threshold -->
+      <line x1="14" y1="116" x2="370" y2="116" stroke="#334155" stroke-width="1" />
+      <text class="font-mono" font-size="10.5" fill="#94a3b8" x="14" y="132">Trade Confluence Threshold: &gt;= 75.0%</text>
+    </g>
+  </g>
+</svg>

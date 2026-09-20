@@ -1,0 +1,111 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 380" width="100%" height="100%">
+  <defs>
+    <linearGradient id="intelBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="whalePill" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="poliPill" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#7c3aed" />
+    </linearGradient>
+    <linearGradient id="nlpPill" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <filter id="intelShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <style>
+    .font-ui { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  </style>
+
+  <!-- Frame Background -->
+  <rect width="920" height="380" rx="14" fill="url(#intelBg)" stroke="#1e293b" stroke-width="1.5" />
+
+  <!-- Left Card: Real-Time Catalyst Feed -->
+  <g transform="translate(25, 25)" filter="url(#intelShadow)">
+    <rect width="425" height="330" rx="12" fill="#0f172a" stroke="#334155" stroke-width="1.2" />
+
+    <g transform="translate(20, 20)">
+      <text class="font-ui" font-size="16" font-weight="800" fill="#ffffff">MARKET-MOVER INTELLIGENCE FEED</text>
+      <text class="font-ui" font-size="11" fill="#94a3b8" y="20">On-chain whale alerts + Congressional trading filings</text>
+    </g>
+
+    <!-- News Item 1: Whale Accumulation -->
+    <g transform="translate(20, 60)">
+      <rect width="385" height="74" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#38bdf8" stroke-width="1" stroke-opacity="0.3" />
+      <rect x="12" y="12" width="90" height="20" rx="4" fill="url(#whalePill)" fill-opacity="0.2" stroke="#38bdf8" stroke-width="1" />
+      <text class="font-mono" font-size="10" font-weight="700" fill="#38bdf8" x="22" y="26">🐋 WHALE ALERT</text>
+      <text class="font-mono" font-size="10" fill="#64748b" x="310" y="26">2m ago</text>
+      <text class="font-ui" font-size="11" font-weight="600" fill="#f8fafc" x="12" y="48">"12,500 BTC ($812M) swept off Coinbase Prime into cold storage"</text>
+      <text class="font-mono" font-size="10" font-weight="700" fill="#34d399" x="12" y="66">CATALYST: BULLISH ACCUMULATION (+0.84)</text>
+    </g>
+
+    <!-- News Item 2: Politician Disclosure -->
+    <g transform="translate(20, 145)">
+      <rect width="385" height="74" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#a855f7" stroke-width="1" stroke-opacity="0.3" />
+      <rect x="12" y="12" width="130" height="20" rx="4" fill="url(#poliPill)" fill-opacity="0.2" stroke="#a855f7" stroke-width="1" />
+      <text class="font-mono" font-size="10" font-weight="700" fill="#c084fc" x="20" y="26">🏛️ CONGRESS DISCLOSURE</text>
+      <text class="font-mono" font-size="10" fill="#64748b" x="310" y="26">14m ago</text>
+      <text class="font-ui" font-size="11" font-weight="600" fill="#f8fafc" x="12" y="48">"House Financial Committee member discloses $250k spot ETH purchase"</text>
+      <text class="font-mono" font-size="10" font-weight="700" fill="#34d399" x="12" y="66">CATALYST: LEGISLATIVE CONFIDENCE (+0.62)</text>
+    </g>
+
+    <!-- News Item 3: SEC Subpoena / Whale Dump -->
+    <g transform="translate(20, 230)">
+      <rect width="385" height="74" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#ef4444" stroke-width="1" stroke-opacity="0.3" />
+      <rect x="12" y="12" width="95" height="20" rx="4" fill="#ef4444" fill-opacity="0.2" stroke="#ef4444" stroke-width="1" />
+      <text class="font-mono" font-size="10" font-weight="700" fill="#f87171" x="20" y="26">⚡ WHALE DUMP</text>
+      <text class="font-mono" font-size="10" fill="#64748b" x="310" y="26">41m ago</text>
+      <text class="font-ui" font-size="11" font-weight="600" fill="#f8fafc" x="12" y="48">"Early ICO address transfers 45,000 ETH to Binance deposit contract"</text>
+      <text class="font-mono" font-size="10" font-weight="700" fill="#f87171" x="12" y="66">CATALYST: SHORT ENTRY SIGNAL (-0.79)</text>
+    </g>
+  </g>
+
+  <!-- Right Card: NLP Sentiment Scoring & Deduplication -->
+  <g transform="translate(470, 25)" filter="url(#intelShadow)">
+    <rect width="425" height="330" rx="12" fill="#0f172a" stroke="#334155" stroke-width="1.2" />
+
+    <g transform="translate(20, 20)">
+      <text class="font-ui" font-size="16" font-weight="800" fill="#ffffff">QUANTITATIVE NLP &amp; DEDUP PIPELINE</text>
+      <text class="font-ui" font-size="11" fill="#94a3b8" y="20">SHA-256 fingerprinting &amp; hyperbolic tangent scoring</text>
+    </g>
+
+    <!-- Step 1: Deduplication -->
+    <g transform="translate(20, 60)">
+      <rect width="385" height="60" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#334155" stroke-width="1" />
+      <text class="font-mono" font-size="11" font-weight="700" fill="#38bdf8" x="16" y="24">1. SHA-256 FINGERPRINT DEDUPLICATION</text>
+      <text class="font-ui" font-size="11" fill="#cbd5e1" x="16" y="44">Eliminates multi-outlet repetition bias before sentiment aggregation.</text>
+    </g>
+
+    <!-- Step 2: Lexicon Scoring -->
+    <g transform="translate(20, 130)">
+      <rect width="385" height="75" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#334155" stroke-width="1" />
+      <text class="font-mono" font-size="11" font-weight="700" fill="#fbbf24" x="16" y="24">2. QUANT FINANCIAL LEXICON (1,200+ TOKENS)</text>
+      <text class="font-ui" font-size="11" fill="#cbd5e1" x="16" y="44">Domain-specific weighting: "whale dump", "ETF inflow", "rate cut",</text>
+      <text class="font-ui" font-size="11" fill="#cbd5e1" x="16" y="60">"SEC probe", "institutional accumulation", "subpoena".</text>
+    </g>
+
+    <!-- Step 3: Hyperbolic Tangent Output -->
+    <g transform="translate(20, 215)">
+      <rect width="385" height="90" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#10b981" stroke-width="1" stroke-opacity="0.4" />
+      <text class="font-mono" font-size="11" font-weight="700" fill="#34d399" x="16" y="24">3. CONTINUOUS SENTIMENT POLARITY: tanh(x)</text>
+      <text class="font-mono" font-size="11" fill="#94a3b8" x="16" y="46">Score = tanh(Raw / max(1.0, N × 0.5)) ∈ [-1.0, +1.0]</text>
+      <g transform="translate(16, 58)">
+        <rect width="110" height="22" rx="4" fill="#10b981" fill-opacity="0.2" />
+        <text class="font-mono" font-size="10" font-weight="700" fill="#34d399" x="12" y="15">BULLISH &gt;= +0.20</text>
+        <rect x="120" width="110" height="22" rx="4" fill="#ef4444" fill-opacity="0.2" />
+        <text class="font-mono" font-size="10" font-weight="700" fill="#f87171" x="134" y="15">BEARISH &lt;= -0.20</text>
+        <rect x="240" width="110" height="22" rx="4" fill="#64748b" fill-opacity="0.2" />
+        <text class="font-mono" font-size="10" font-weight="700" fill="#94a3b8" x="260" y="15">NEUTRAL</text>
+      </g>
+    </g>
+  </g>
+</svg>

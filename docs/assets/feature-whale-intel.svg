@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 370" width="100%" height="100%">
+  <defs>
+    <linearGradient id="whaleBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="whaleBadgeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="bullBadge" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <linearGradient id="bearBadge" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ef4444" />
+      <stop offset="100%" stop-color="#b91c1c" />
+    </linearGradient>
+    <filter id="whaleShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <style>
+    .font-ui { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  </style>
+
+  <!-- Background -->
+  <rect width="920" height="370" rx="14" fill="url(#whaleBg)" stroke="#1e293b" stroke-width="1.5" />
+
+  <!-- Left: Ingestion Feed Cards -->
+  <g transform="translate(25, 25)" filter="url(#whaleShadow)">
+    <rect width="435" height="320" rx="12" fill="#0f172a" stroke="#334155" stroke-width="1.2" />
+
+    <g transform="translate(20, 20)">
+      <text class="font-ui" font-size="16" font-weight="800" fill="#ffffff">WHALE &amp; POLITICIAN MARKET MOVERS</text>
+      <text class="font-ui" font-size="11" fill="#94a3b8" y="20">Autonomous RSS/WebSocket ingestion pipeline</text>
+    </g>
+
+    <!-- Item 1: Whale Accumulation -->
+    <g transform="translate(20, 60)">
+      <rect width="395" height="74" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#38bdf8" stroke-width="1" stroke-opacity="0.4" />
+      <text class="font-mono" font-size="10" font-weight="700" fill="#38bdf8" x="12" y="18">🐋 ON-CHAIN WHALE TRACKER</text>
+      <text class="font-ui" font-size="11.5" font-weight="600" fill="#f8fafc" x="12" y="38">12,500 BTC ($812M) transfer from Coinbase Prime to cold wallet</text>
+      <text class="font-mono" font-size="10" fill="#34d399" x="12" y="58">SENTIMENT: BULLISH (+0.78) • SHA-256 VERIFIED</text>
+      <rect x="330" y="44" width="55" height="18" rx="4" fill="url(#bullBadge)" />
+      <text class="font-mono" font-size="9" font-weight="700" fill="#ffffff" x="338" y="57">BULLISH</text>
+    </g>
+
+    <!-- Item 2: Politician Disclosures -->
+    <g transform="translate(20, 145)">
+      <rect width="395" height="74" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#a855f7" stroke-width="1" stroke-opacity="0.4" />
+      <text class="font-mono" font-size="10" font-weight="700" fill="#c084fc" x="12" y="18">🏛️ CONGRESSIONAL DISCLOSURE (Capitol Trades)</text>
+      <text class="font-ui" font-size="11.5" font-weight="600" fill="#f8fafc" x="12" y="38">Senate Finance Committee member disposes $4.5M in tech futures</text>
+      <text class="font-mono" font-size="10" fill="#f87171" x="12" y="58">SENTIMENT: BEARISH (-0.62) • SHA-256 VERIFIED</text>
+      <rect x="330" y="44" width="55" height="18" rx="4" fill="url(#bearBadge)" />
+      <text class="font-mono" font-size="9" font-weight="700" fill="#ffffff" x="338" y="57">BEARISH</text>
+    </g>
+
+    <!-- Item 3: Political Crypto Ventures -->
+    <g transform="translate(20, 230)">
+      <rect width="395" height="74" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#f59e0b" stroke-width="1" stroke-opacity="0.4" />
+      <text class="font-mono" font-size="10" font-weight="700" fill="#fbbf24" x="12" y="18">⚡ BREAKING POLITICAL CRYPTO CATALYST</text>
+      <text class="font-ui" font-size="11.5" font-weight="600" fill="#f8fafc" x="12" y="38">Federal Reserve surprise 50 bps benchmark easing confirmed</text>
+      <text class="font-mono" font-size="10" fill="#34d399" x="12" y="58">SENTIMENT: STRONG BULLISH (+0.92) • DEDUPLICATED</text>
+      <rect x="330" y="44" width="55" height="18" rx="4" fill="url(#bullBadge)" />
+      <text class="font-mono" font-size="9" font-weight="700" fill="#ffffff" x="338" y="57">BULLISH</text>
+    </g>
+  </g>
+
+  <!-- Right: Quantitative NLP Engine Architecture -->
+  <g transform="translate(480, 25)" filter="url(#whaleShadow)">
+    <rect width="415" height="320" rx="12" fill="#0f172a" stroke="#334155" stroke-width="1.2" />
+
+    <g transform="translate(20, 20)">
+      <text class="font-ui" font-size="16" font-weight="800" fill="#ffffff">FINANCIAL NLP SENTIMENT PIPELINE</text>
+      <text class="font-ui" font-size="11" fill="#94a3b8" y="20">Quant lexicon analysis &amp; hyperbolic tangent scaling</text>
+    </g>
+
+    <!-- Step 1: Ingestion & Deduplication -->
+    <g transform="translate(20, 60)">
+      <rect width="375" height="52" rx="8" fill="#1e293b" fill-opacity="0.4" stroke="#334155" stroke-width="1" />
+      <text class="font-mono" font-size="11" font-weight="700" fill="#38bdf8" x="14" y="22">1. SHA-256 DEDUPLICATION</text>
+      <text class="font-ui" font-size="10.5" fill="#cbd5e1" x="14" y="38">Normalizes headlines, strips syndication noise, prevents sentiment bias</text>
+    </g>
+
+    <!-- Step 2: Lexicon Evaluation -->
+    <g transform="translate(20, 122)">
+      <rect width="375" height="52" rx="8" fill="#1e293b" fill-opacity="0.4" stroke="#334155" stroke-width="1" />
+      <text class="font-mono" font-size="11" font-weight="700" fill="#fbbf24" x="14" y="22">2. DOMAIN LEXICON MATCHING</text>
+      <text class="font-ui" font-size="10.5" fill="#cbd5e1" x="14" y="38">Keywords: accumulation, whale, ETF inflow vs dump, SEC subpoena</text>
+    </g>
+
+    <!-- Step 3: Tanh Normalization -->
+    <g transform="translate(20, 184)">
+      <rect width="375" height="52" rx="8" fill="#1e293b" fill-opacity="0.4" stroke="#334155" stroke-width="1" />
+      <text class="font-mono" font-size="11" font-weight="700" fill="#a855f7" x="14" y="22">3. TANH NON-LINEAR COMPRESSION</text>
+      <text class="font-mono" font-size="10.5" fill="#e2e8f0" x="14" y="38">Score = tanh(Raw / max(1.0, N * 0.5)) ∈ [-1.0, +1.0]</text>
+    </g>
+
+    <!-- Bottom Trigger Output -->
+    <g transform="translate(20, 246)">
+      <rect width="375" height="58" rx="8" fill="#10b981" fill-opacity="0.1" stroke="#10b981" stroke-width="1" />
+      <circle cx="22" cy="29" r="5" fill="#10b981" />
+      <text class="font-mono" font-size="11" font-weight="700" fill="#34d399" x="36" y="24">CATALYST DRIVEN EXECUTION DISPATCH</text>
+      <text class="font-ui" font-size="10.5" fill="#cbd5e1" x="36" y="44">Feeds breaking news headline directly to AI reasoning engine</text>
+    </g>
+  </g>
+</svg>
