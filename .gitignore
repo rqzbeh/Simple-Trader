@@ -158,7 +158,9 @@ yarn-error.log*
 # Docker
 docker-compose.override.yml
 *.dockerfile
-.dockerignore
+
+# Compiled binaries
+bin/
 
 # Build artifacts from other tools
 doc/build/
@@ -198,6 +200,10 @@ scorer*.pkl*
 
 # Local service files
 simple-trader.service
+
+# Go binaries
+bin/
+/simple-trader
 
 # Web / Frontend artifacts
 web/node_modules/

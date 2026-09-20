@@ -1,0 +1,92 @@
+services:
+  # 1. PostgreSQL 16 Durable Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: simple-trader-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-trader}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-trader_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-simple_trader}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations/000001_init_schema.up.sql:/docker-entrypoint-initdb.d/001_init_schema.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trader} -d ${POSTGRES_DB:-simple_trader}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Redis 7 High-Speed In-Memory Cache & Pub/Sub
+  redis:
+    image: redis:7-alpine
+    container_name: simple-trader-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # 3. Pure Go 1.24 Autonomous Backend Engine
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: simple-trader-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      PORT: "8080"
+      DATABASE_URL: "postgres://${POSTGRES_USER:-trader}:${POSTGRES_PASSWORD:-trader_secret}@postgres:5432/${POSTGRES_DB:-simple_trader}?sslmode=disable"
+      REDIS_URL: "redis://redis:6379/0"
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL_ID: ${AI_MODEL_ID:-gpt-4o-mini}
+      AI_TEMPERATURE: ${AI_TEMPERATURE:-0.2}
+      INITIAL_CAPITAL: ${INITIAL_CAPITAL:-100000.0}
+      CORE_TARGET_PCT: ${CORE_TARGET_PCT:-0.60}
+      ALPHA_TARGET_PCT: ${ALPHA_TARGET_PCT:-0.40}
+      MAX_DRAWDOWN_LIMIT_PCT: ${MAX_DRAWDOWN_LIMIT_PCT:-0.10}
+      MAX_RISK_PER_TRADE_PCT: ${MAX_RISK_PER_TRADE_PCT:-0.02}
+      ENV: "production"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health | grep healthy || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # 4. React 18 + TypeScript Bun PWA Frontend with Nginx Reverse Proxy
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: simple-trader-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+      - "3000:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:80/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:

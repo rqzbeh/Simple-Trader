@@ -1,0 +1,23 @@
+# Build artifacts
+bin/
+dist/
+node_modules/
+.venv/
+__pycache__/
+*.pyc
+
+# Local environment & secrets
+.env
+*.pem
+*.key
+
+# Git and OS
+.DS_Store
+Thumbs.db
+.git
+.gitignore
+
+# Cache & logs
+.cache/
+tmp/
+*.log
