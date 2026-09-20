@@ -97,8 +97,94 @@ func TestConfluenceScore(t *testing.T) {
 	if direction != "BUY" {
 		t.Errorf("expected BUY direction, got %s", direction)
 	}
-	if score <= 0.5 {
-		t.Errorf("expected strong score > 0.5, got %f", score)
+	if score <= 0.3 {
+		t.Errorf("expected strong score > 0.3, got %f", score)
+	}
+}
+
+func TestOrderBookImbalance(t *testing.T) {
+	bids := []indicators.OrderBookLevel{
+		{Price: 60000, Quantity: 70.0},
+		{Price: 59990, Quantity: 30.0},
+	}
+	asks := []indicators.OrderBookLevel{
+		{Price: 60010, Quantity: 20.0},
+		{Price: 60020, Quantity: 10.0},
+	}
+
+	obi := indicators.CalculateOBI(bids, asks)
+	// (100 - 30) / (100 + 30) = 70 / 130 = ~0.53846
+	expected := 70.0 / 130.0
+	if math.Abs(obi-expected) > 0.001 {
+		t.Errorf("expected OBI %f, got %f", expected, obi)
+	}
+
+	// Empty book test
+	emptyOBI := indicators.CalculateOBI(nil, nil)
+	if emptyOBI != 0.0 {
+		t.Errorf("expected 0.0 for empty book, got %f", emptyOBI)
+	}
+}
+
+func TestCVDAndDivergence(t *testing.T) {
+	cvd := indicators.NewCVDTracker(10)
+
+	cvd.Update(10.0, 5.0)  // +5
+	cvd.Update(20.0, 10.0) // +15
+	cvd.Update(15.0, 5.0)  // +25
+	val := cvd.Update(30.0, 10.0) // +45
+
+	if val != 45.0 {
+		t.Errorf("expected cumulative delta 45.0, got %f", val)
+	}
+
+	// Test Bullish Absorption: Price makes lower low, CVD makes higher low
+	prices := []float64{100.0, 99.0, 98.0, 97.0}
+	cvdVals := []float64{10.0, 15.0, 20.0, 25.0}
+
+	div := indicators.DetectDivergence(prices, cvdVals)
+	if div != indicators.DivergenceBullishAbsorption {
+		t.Errorf("expected Bullish Absorption, got %s", div)
+	}
+
+	// Test Bearish Exhaustion: Price makes higher high, CVD makes lower high
+	pricesBear := []float64{100.0, 101.0, 102.0, 103.0}
+	cvdBear := []float64{50.0, 40.0, 30.0, 20.0}
+
+	divBear := indicators.DetectDivergence(pricesBear, cvdBear)
+	if divBear != indicators.DivergenceBearishExhaustion {
+		t.Errorf("expected Bearish Exhaustion, got %s", divBear)
+	}
+}
+
+func TestRegimeClassifier(t *testing.T) {
+	rc := indicators.NewRegimeClassifier(14, 5)
+
+	// Historical ATRs around 10.0
+	hist := []float64{10.0, 10.0, 10.0, 10.0, 10.0}
+
+	// Case 1: Low Vol Consolidation (ratio < 0.70)
+	regime, ratio := rc.ClassifyRegime(6.0, hist)
+	if regime != indicators.RegimeLowVolMeanReversion {
+		t.Errorf("expected LOW_VOL_CONSOLIDATION, got %s (ratio=%f)", regime, ratio)
+	}
+
+	// Case 2: High Vol Chop (ratio > 1.30)
+	regimeHV, ratioHV := rc.ClassifyRegime(15.0, hist)
+	if regimeHV != indicators.RegimeHighVolChop {
+		t.Errorf("expected HIGH_VOL_CHOP, got %s (ratio=%f)", regimeHV, ratioHV)
+	}
+
+	// Case 3: Normal Trending
+	regimeNorm, ratioNorm := rc.ClassifyRegime(10.5, hist)
+	if regimeNorm != indicators.RegimeNormalTrending {
+		t.Errorf("expected NORMAL_TRENDING, got %s (ratio=%f)", regimeNorm, ratioNorm)
+	}
+
+	// Multiplier tests
+	mHigh := indicators.CalculateSizingMultiplier(indicators.RegimeHighVolChop, 2.0)
+	if mHigh != 0.5 {
+		t.Errorf("expected 0.5 multiplier for ratio 2.0 in chop, got %f", mHigh)
 	}
 }
 

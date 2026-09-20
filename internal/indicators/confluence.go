@@ -9,6 +9,7 @@ func CalculateConfluence(snap Snapshot, weights map[string]float64) (float64, st
 	rsiWeight := 1.0
 	macdWeight := 1.0
 	stWeight := 1.0
+	microWeight := 1.5 // Microstructure (OBI + CVD) carries strong institutional weight
 
 	if w, ok := weights["RSI"]; ok && w > 0 {
 		rsiWeight = w
@@ -19,8 +20,11 @@ func CalculateConfluence(snap Snapshot, weights map[string]float64) (float64, st
 	if w, ok := weights["SUPERTREND"]; ok && w > 0 {
 		stWeight = w
 	}
+	if w, ok := weights["MICROSTRUCTURE"]; ok && w > 0 {
+		microWeight = w
+	}
 
-	totalWeight := rsiWeight + macdWeight + stWeight
+	totalWeight := rsiWeight + macdWeight + stWeight + microWeight
 	if totalWeight == 0 {
 		return 0.0, "NEUTRAL"
 	}
@@ -49,6 +53,16 @@ func CalculateConfluence(snap Snapshot, weights map[string]float64) (float64, st
 		directionalScore += 1.0 * stWeight
 	} else if snap.SuperTrendTrend == "BEAR" {
 		directionalScore += -1.0 * stWeight
+	}
+
+	// Microstructure contribution (-1.0 to +1.0) via L2 OBI and CVD divergence
+	microScore := EvaluateMicrostructure(snap.OBI, snap.Divergence)
+	directionalScore += microScore * microWeight
+
+	// Apply Volatility Regime dampening/adaptation
+	// Under High Volatility Chop, damp directional conviction to filter out false breakouts
+	if snap.Regime == RegimeHighVolChop {
+		directionalScore *= 0.60
 	}
 
 	normalizedScore := directionalScore / totalWeight

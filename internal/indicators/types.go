@@ -35,4 +35,9 @@ type Snapshot struct {
 	SuperTrendVal   float64
 	SuperTrendTrend string
 	VWAP            float64
+	OBI             float64
+	CVD             float64
+	Divergence      DivergenceType
+	Regime          MarketRegime
+	VolRatio        float64
 }

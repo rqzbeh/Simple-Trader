@@ -11,14 +11,17 @@ import (
 
 // OrderRequest contains order parameters for execution.
 type OrderRequest struct {
-	Symbol       string
-	Bucket       string
-	Side         string // "BUY" or "SELL"
-	Price        float64
-	PositionSize float64
-	StopLoss     float64
-	TakeProfit   float64
-	AIReasoning  string
+	Symbol            string
+	Bucket            string
+	Side              string // "BUY" or "SELL"
+	Price             float64
+	PositionSize      float64
+	StopLoss          float64
+	TakeProfit        float64
+	AIReasoning       string
+	SymbolSpreadPct   float64
+	AvailableDepthQty float64
+	IsTaker           bool
 }
 
 // ExecutionEngine simulates paper order execution and tracks open/closed positions in-memory.
@@ -29,19 +32,28 @@ type ExecutionEngine struct {
 	positions     map[string]*db.Trade
 	closedTrades  []*db.Trade
 	orderCounter  int64
+	friction      FrictionModel
 }
 
-// NewExecutionEngine initializes the paper execution engine.
+// NewExecutionEngine initializes the paper execution engine with realistic friction.
 func NewExecutionEngine(initialCapital float64) *ExecutionEngine {
 	return &ExecutionEngine{
 		initialEquity: initialCapital,
 		cash:          initialCapital,
 		positions:     make(map[string]*db.Trade),
 		closedTrades:  make([]*db.Trade, 0),
+		friction:      DefaultFrictionModel(),
 	}
 }
 
-// ExecuteOrder opens a new paper trading position.
+// SetFrictionModel sets custom friction parameters.
+func (e *ExecutionEngine) SetFrictionModel(f FrictionModel) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.friction = f
+}
+
+// ExecuteOrder opens a new paper trading position with realistic friction.
 func (e *ExecutionEngine) ExecuteOrder(ctx context.Context, req OrderRequest) (*db.Trade, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -49,9 +61,17 @@ func (e *ExecutionEngine) ExecuteOrder(ctx context.Context, req OrderRequest) (*
 	e.orderCounter++
 	now := time.Now()
 
-	cost := req.PositionSize * req.Price
-	if cost > e.cash {
-		return nil, fmt.Errorf("insufficient cash to execute order: need %.2f, have %.2f", cost, e.cash)
+	quote := e.friction.CalculateExecution(
+		req.Side,
+		req.PositionSize,
+		req.Price,
+		req.SymbolSpreadPct,
+		req.AvailableDepthQty,
+		req.IsTaker,
+	)
+
+	if quote.TotalNetCost > e.cash {
+		return nil, fmt.Errorf("insufficient cash to execute order: need %.2f, have %.2f", quote.TotalNetCost, e.cash)
 	}
 
 	trade := &db.Trade{
@@ -59,22 +79,24 @@ func (e *ExecutionEngine) ExecuteOrder(ctx context.Context, req OrderRequest) (*
 		Symbol:       req.Symbol,
 		Bucket:       req.Bucket,
 		Side:         req.Side,
-		EntryPrice:   req.Price,
+		EntryPrice:   quote.EffectivePrice,
 		EntryTime:    now,
 		PositionSize: req.PositionSize,
 		StopLoss:     req.StopLoss,
 		TakeProfit:   req.TakeProfit,
+		ExecutionFee: quote.TotalFee,
+		SlippagePaid: quote.Slippage,
 		Status:       "OPEN",
 		CreatedAt:    now,
 	}
 
-	e.cash -= cost
+	e.cash -= quote.TotalNetCost
 	e.positions[req.Symbol] = trade
 
 	return trade, nil
 }
 
-// CheckExit checks whether the latest market price triggers a Stop Loss or Take Profit.
+// CheckExit checks whether the latest market price triggers a Stop Loss or Take Profit with realistic friction.
 func (e *ExecutionEngine) CheckExit(symbol string, currentPrice float64) (*db.Trade, bool) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -109,10 +131,26 @@ func (e *ExecutionEngine) CheckExit(symbol string, currentPrice float64) (*db.Tr
 		return nil, false
 	}
 
+	exitSide := "SELL"
+	if trade.Side == "SELL" {
+		exitSide = "BUY"
+	}
+
+	exitQuote := e.friction.CalculateExecution(
+		exitSide,
+		trade.PositionSize,
+		currentPrice,
+		0.0002, // 2 bps default spread
+		100.0,  // default depth
+		true,   // exit via taker order
+	)
+
 	// Close position
-	trade.ExitPrice = currentPrice
+	trade.ExitPrice = exitQuote.EffectivePrice
 	trade.ExitReason = exitReason
 	trade.Status = "CLOSED"
+	trade.ExecutionFee += exitQuote.TotalFee
+	trade.SlippagePaid += exitQuote.Slippage
 	now := time.Now()
 	trade.ExitTime = &now
 
@@ -120,7 +158,9 @@ func (e *ExecutionEngine) CheckExit(symbol string, currentPrice float64) (*db.Tr
 	trade.RealizedPnL = pnl
 	trade.ReturnPct = retPct
 
-	// Credit cash back + PnL
+	// Credit proceeds back
+	// Buy position closed: proceeds = (size * exitPrice) - exitFee
+	// Sell position closed: proceeds = (size * entryPrice) + pnl
 	proceeds := (trade.PositionSize * trade.EntryPrice) + pnl
 	e.cash += proceeds
 
@@ -152,4 +192,16 @@ func (e *ExecutionEngine) GetTotalEquity(currentPrices map[string]float64) float
 	}
 
 	return equity
+}
+
+// GetOpenTrades returns all currently open trading positions.
+func (e *ExecutionEngine) GetOpenTrades() []*db.Trade {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	trades := make([]*db.Trade, 0, len(e.positions))
+	for _, t := range e.positions {
+		trades = append(trades, t)
+	}
+	return trades
 }

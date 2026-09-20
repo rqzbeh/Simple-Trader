@@ -13,6 +13,9 @@ type AllocatorConfig struct {
 	MaxRiskPerTradePct float64 // 0.0 - 1.0 (e.g. 0.02)
 }
 
+// CapitalAllocator is an alias for Allocator.
+type CapitalAllocator = Allocator
+
 // Allocator dynamically balances capital between Core (Gold, Silver) and Alpha (Crypto, Forex, Oil) buckets.
 type Allocator struct {
 	mu     sync.RWMutex
@@ -71,3 +74,42 @@ func (a *Allocator) CalculatePositionSize(bucket string, entryPrice float64, ris
 	units := math.Min(sizeByRisk, sizeByCap)
 	return math.Round(units*10000) / 10000
 }
+
+// CalculateKellyPositionSize computes position size using the dynamic Half-Kelly criterion (FR-007).
+func (a *Allocator) CalculateKellyPositionSize(bucket string, entryPrice, stopLoss, takeProfit, winProb float64) float64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	if entryPrice <= 0 || stopLoss <= 0 || takeProfit <= 0 {
+		return a.CalculatePositionSize(bucket, entryPrice, 0.015)
+	}
+
+	slDistance := math.Abs(entryPrice - stopLoss)
+	tpDistance := math.Abs(takeProfit - entryPrice)
+	if slDistance <= 0 {
+		return 0
+	}
+
+	payoffRatio := tpDistance / slDistance
+	riskFraction := CalculateHalfKelly(DefaultKellyConfig(), winProb, payoffRatio)
+
+	var bucketCapital float64
+	if bucket == "CORE" {
+		bucketCapital = a.config.TotalCapital * a.config.CoreTargetPct
+	} else {
+		bucketCapital = a.config.TotalCapital * a.config.AlphaTargetPct
+	}
+
+	// Maximum allowable dollar risk based on Half-Kelly
+	maxRiskDollars := a.config.TotalCapital * riskFraction
+
+	sizeByRisk := maxRiskDollars / slDistance
+
+	// Cap by 50% of bucket capital
+	maxDollarSize := bucketCapital * 0.50
+	sizeByCap := maxDollarSize / entryPrice
+
+	units := math.Min(sizeByRisk, sizeByCap)
+	return math.Round(units*10000) / 10000
+}
+
