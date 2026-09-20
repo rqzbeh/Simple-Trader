@@ -2,7 +2,9 @@ package server_test
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -40,6 +42,35 @@ func TestHealthAndAssetsEndpoints(t *testing.T) {
 	}
 	if respAssets.StatusCode != http.StatusOK {
 		t.Errorf("expected status 200, got %d", respAssets.StatusCode)
+	}
+
+	// 3. Economic Calendar endpoint (FR-005)
+	respCal, err := http.Get(ts.URL + "/api/v1/calendar")
+	if err != nil {
+		t.Fatalf("failed calling /api/v1/calendar: %v", err)
+	}
+	if respCal.StatusCode != http.StatusOK {
+		t.Errorf("expected calendar status 200, got %d", respCal.StatusCode)
+	}
+
+	// 4. Backtest & Monte Carlo endpoint (FR-008, SC-004)
+	payload := []byte(`{"symbol":"BTC/USD","initial_capital":100000,"bars_count":500}`)
+	respBT, err := http.Post(ts.URL+"/api/v1/backtest/run", "application/json", bytes.NewBuffer(payload))
+	if err != nil {
+		t.Fatalf("failed calling /api/v1/backtest/run: %v", err)
+	}
+	if respBT.StatusCode != http.StatusOK {
+		t.Errorf("expected backtest status 200, got %d", respBT.StatusCode)
+	}
+	var btBody map[string]interface{}
+	if err := json.NewDecoder(respBT.Body).Decode(&btBody); err != nil {
+		t.Fatalf("failed decoding backtest response: %v", err)
+	}
+	if _, ok := btBody["backtest"]; !ok {
+		t.Errorf("missing 'backtest' key in response")
+	}
+	if _, ok := btBody["monte_carlo"]; !ok {
+		t.Errorf("missing 'monte_carlo' key in response")
 	}
 }
 

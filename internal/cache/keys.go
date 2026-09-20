@@ -59,6 +59,10 @@ type IndicatorSnapshot struct {
 	SuperTrend      string  `json:"super_trend"` // "BULL" or "BEAR"
 	ConfluenceScore float64 `json:"confluence_score"`
 	Regime          string  `json:"regime"`
+	OBI             float64 `json:"obi"`
+	CVD             float64 `json:"cvd"`
+	Divergence      string  `json:"divergence"`
+	VolRatio        float64 `json:"vol_ratio"`
 	UpdatedAt       int64   `json:"updated_at"`
 }
 

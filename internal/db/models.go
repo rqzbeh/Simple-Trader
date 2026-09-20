@@ -99,6 +99,8 @@ type Trade struct {
 	ExitReason   string     `json:"exit_reason"`
 	RootCause    string     `json:"root_cause"`
 	Status       string     `json:"status"` // 'OPEN', 'CLOSED'
+	ExecutionFee float64    `json:"execution_fee"`
+	SlippagePaid float64    `json:"slippage_paid"`
 	CreatedAt    time.Time  `json:"created_at"`
 }
 
@@ -113,9 +115,10 @@ func (t *Trade) CalculatePnL() (float64, float32) {
 	} else {
 		diff = t.EntryPrice - t.ExitPrice
 	}
-	pnl := diff * t.PositionSize
-	retPct := float32((diff / t.EntryPrice) * 100)
-	return pnl, retPct
+	grossPnL := diff * t.PositionSize
+	netPnL := grossPnL - t.ExecutionFee
+	retPct := float32((netPnL / (t.EntryPrice * t.PositionSize)) * 100)
+	return netPnL, retPct
 }
 
 // FineTuneRecord holds exportable pairs for OpenAI model fine-tuning.
