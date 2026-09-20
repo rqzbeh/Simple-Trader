@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"math"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -26,6 +29,8 @@ type Server struct {
 	aiClient    *ai.Client
 	allocator   *trader.Allocator
 	execEngine  *trader.ExecutionEngine
+	newsCrawler *market.NewsCrawler
+	screener    *market.DynamicCryptoScreener
 	broadcaster *SSEBroadcaster
 	router      *chi.Mux
 }
@@ -39,6 +44,10 @@ func NewServer(
 	allocator *trader.Allocator,
 	execEngine *trader.ExecutionEngine,
 ) *Server {
+	crawler := market.NewNewsCrawler(market.DefaultNewsFeedConfig(), redisClient, dbStore)
+	binanceFetcher := market.NewBinanceFetcher()
+	screener := market.NewDynamicCryptoScreener(market.DefaultScreenerConfig(), binanceFetcher, redisClient, dbStore)
+
 	s := &Server{
 		cfg:         cfg,
 		dbStore:     dbStore,
@@ -46,6 +55,8 @@ func NewServer(
 		aiClient:    aiClient,
 		allocator:   allocator,
 		execEngine:  execEngine,
+		newsCrawler: crawler,
+		screener:    screener,
 		broadcaster: NewSSEBroadcaster(),
 		router:      chi.NewRouter(),
 	}
@@ -62,6 +73,16 @@ func (s *Server) Router() *chi.Mux {
 // Broadcaster returns the SSE broadcaster.
 func (s *Server) Broadcaster() *SSEBroadcaster {
 	return s.broadcaster
+}
+
+// NewsCrawler returns the news crawler instance.
+func (s *Server) NewsCrawler() *market.NewsCrawler {
+	return s.newsCrawler
+}
+
+// Screener returns the crypto screener instance.
+func (s *Server) Screener() *market.DynamicCryptoScreener {
+	return s.screener
 }
 
 func (s *Server) setupRoutes() {
@@ -215,4 +236,124 @@ func (s *Server) setupRoutes() {
 			"monte_carlo": mcResult,
 		})
 	})
+
+	// Investor Capital Ledger (US1, FR-009, FR-010)
+	r.Get("/api/v1/investors", s.ListInvestorsHandler)
+	r.Post("/api/v1/investors", s.CreateInvestorHandler)
+	r.Get("/api/v1/investors/{id}", s.GetInvestorHandler)
+	r.Post("/api/v1/investors/{id}/deposit", s.RecordDepositHandler)
+	r.Post("/api/v1/investors/{id}/withdraw", s.RecordWithdrawalHandler)
+
+	// 3-Tier Liquidity Allocation (US2, FR-002, FR-003)
+	r.Get("/api/v1/allocator/tiers", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if s.allocator == nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{})
+			return
+		}
+		json.NewEncoder(w).Encode(s.allocator.Get3TierBreakdown())
+	})
+
+	// Live News Stream & Sentiment (FR-004)
+	r.Get("/api/v1/news/stream", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var articles []db.NewsArticle
+		if s.newsCrawler != nil {
+			articles = s.newsCrawler.GetLatestArticles()
+		}
+		if articles == nil {
+			articles = []db.NewsArticle{}
+		}
+
+		var sentiment market.NewsSentimentReport
+		if s.newsCrawler != nil {
+			sentiment = s.newsCrawler.GetAggregateSentiment()
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"articles":  articles,
+			"sentiment": sentiment,
+		})
+	})
+
+	// Dynamic Liquid Crypto Screener (FR-006)
+	r.Get("/api/v1/market/screener", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var assets []db.ScreenedAsset
+		var universe []string
+		if s.screener != nil {
+			assets = s.screener.GetScreenedAssets()
+			universe = s.screener.GetActiveUniverse()
+		}
+		if assets == nil {
+			assets = []db.ScreenedAsset{}
+		}
+		if universe == nil {
+			universe = []string{}
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"assets":          assets,
+			"active_universe": universe,
+		})
+	})
+
+	// Live AI Trade Decision Engine (OmniRoute / OpenAI Chat Completions)
+	r.Post("/api/v1/trade/decide", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if s.aiClient == nil {
+			http.Error(w, `{"error":"ai client not configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+
+		var req ai.DecisionRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, `{"error":"invalid request format: `+err.Error()+`"}`, http.StatusBadRequest)
+			return
+		}
+
+		if req.Symbol == "" {
+			req.Symbol = "BTC/USD"
+		}
+		if req.Bucket == "" {
+			req.Bucket = "ALPHA"
+		}
+		if len(req.NewsHeadlines) == 0 && s.newsCrawler != nil {
+			latest := s.newsCrawler.GetLatestArticles()
+			for i := 0; i < len(latest) && i < 5; i++ {
+				req.NewsHeadlines = append(req.NewsHeadlines, latest[i].Title)
+			}
+		}
+
+		decision, err := s.aiClient.Analyze(r.Context(), req)
+		if err != nil {
+			http.Error(w, `{"error":"ai analysis failed: `+err.Error()+`"}`, http.StatusInternalServerError)
+			return
+		}
+
+		json.NewEncoder(w).Encode(decision)
+	})
+
+	// 8. Serve static frontend PWA assets if built (allows direct access or reverse-proxy from host Nginx)
+	workDir, _ := os.Getwd()
+	distPaths := []string{
+		filepath.Join(workDir, "web", "dist"),
+		filepath.Join(workDir, "dist"),
+		"/app/web/dist",
+		"/app/dist",
+	}
+	for _, p := range distPaths {
+		if fi, err := os.Stat(p); err == nil && fi.IsDir() {
+			fs := http.FileServer(http.Dir(p))
+			r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
+				cleanPath := filepath.Clean(req.URL.Path)
+				targetPath := filepath.Join(p, cleanPath)
+				if fi, err := os.Stat(targetPath); (os.IsNotExist(err) || fi.IsDir()) && !strings.HasPrefix(req.URL.Path, "/api") {
+					http.ServeFile(w, req, filepath.Join(p, "index.html"))
+					return
+				}
+				fs.ServeHTTP(w, req)
+			})
+			break
+		}
+	}
 }

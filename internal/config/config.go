@@ -15,6 +15,7 @@ type Config struct {
 	AIModelID          string
 	AITemperature      float64
 	AITimeoutSeconds   int
+	AIReasoningEffort  string
 	InitialCapital     float64
 	CoreTargetPct      float64
 	AlphaTargetPct     float64
@@ -60,6 +61,7 @@ func Load() (*Config, error) {
 		AIModelID:           getEnv("AI_MODEL_ID", "gpt-4o"),
 		AITemperature:       getEnvFloat("AI_TEMPERATURE", 0.2),
 		AITimeoutSeconds:    getEnvInt("AI_TIMEOUT_SECONDS", 30),
+		AIReasoningEffort:   getEnv("AI_REASONING_EFFORT", "high"),
 		InitialCapital:      getEnvFloat("INITIAL_CAPITAL", 10000.0),
 		CoreTargetPct:       getEnvFloat("CORE_TARGET_PCT", 0.50),
 		AlphaTargetPct:      getEnvFloat("ALPHA_TARGET_PCT", 0.50),

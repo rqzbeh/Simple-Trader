@@ -44,6 +44,18 @@ func main() {
 			defer dbStore.Close()
 			store = dbStore
 			log.Printf("[INFO] Connected to PostgreSQL 16 Store successfully.")
+
+			// Run migrations idempotently
+			for _, migPath := range []string{"migrations", "/app/migrations", "internal/db/migrations"} {
+				if _, err := os.Stat(migPath); err == nil {
+					if err := store.RunMigrations(ctx, migPath); err != nil {
+						log.Printf("[WARN] Error executing migrations from %s: %v", migPath, err)
+					} else {
+						log.Printf("[INFO] Migrations successfully verified from %s.", migPath)
+						break
+					}
+				}
+			}
 		}
 	}
 
@@ -62,9 +74,12 @@ func main() {
 
 	// 4. Initialize AI Engine & Client
 	aiCfg := ai.ClientConfig{
-		BaseURL: cfg.AIBaseURL,
-		ModelID: cfg.AIModelID,
-		APIKey:  cfg.AIAPIKey,
+		BaseURL:         cfg.AIBaseURL,
+		ModelID:         cfg.AIModelID,
+		APIKey:          cfg.AIAPIKey,
+		Temperature:     cfg.AITemperature,
+		TimeoutSec:      cfg.AITimeoutSeconds,
+		ReasoningEffort: cfg.AIReasoningEffort,
 	}
 	aiClient := ai.NewClient(aiCfg)
 	_ = ai.NewWeightEngine()
@@ -81,6 +96,16 @@ func main() {
 
 	// 6. Initialize HTTP & SSE Broadcaster Server
 	srv := server.NewServer(cfg, store, rCache, aiClient, allocator, execEngine)
+
+	// 6b. Start Autonomous News Crawler and Dynamic Crypto Screener
+	if srv.NewsCrawler() != nil {
+		srv.NewsCrawler().Start(ctx)
+		log.Println("[INFO] Autonomous News Crawler started (polling financial & crypto RSS feeds).")
+	}
+	if srv.Screener() != nil {
+		srv.Screener().Start(ctx)
+		log.Println("[INFO] Dynamic Liquid Crypto Screener started (evaluating $50M volume / 10bps spread).")
+	}
 
 	// 7. Start Market Simulated Ticker Feed Generator
 	go func() {

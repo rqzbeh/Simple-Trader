@@ -213,6 +213,7 @@ web/.cache/
 # Internal AI Tooling & Scaffolding
 .claude/
 .specify/
+.codebase-memory/
 docs/superpowers/
 specs/
 

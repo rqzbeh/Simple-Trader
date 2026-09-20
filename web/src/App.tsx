@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTheme } from './context/ThemeContext';
-import { Sun, Moon, Activity, TrendingUp, Cpu, Layers, SlidersHorizontal, BarChart2 } from 'lucide-react';
+import { Sun, Moon, Activity, TrendingUp, Cpu, Layers, SlidersHorizontal, BarChart2, Users, Newspaper, Filter } from 'lucide-react';
 import { useSSE } from './hooks/useSSE';
 import { AssetTickerGrid } from './components/AssetTickerGrid';
 import { TradingViewChart } from './components/TradingViewChart';
@@ -11,6 +11,9 @@ import { AIWeightMatrix, INITIAL_WEIGHTS } from './components/AIWeightMatrix';
 import { QuantDashboardView } from './components/QuantDashboardView';
 import { MicrostructureCard } from './components/MicrostructureCard';
 import { MacroCalendarPanel } from './components/MacroCalendarPanel';
+import { InvestorLedgerView } from './components/InvestorLedgerView';
+import { NewsStreamView } from './components/NewsStreamView';
+import { ScreenerView } from './components/ScreenerView';
 import { AssetInfo, CandleData, TradePosition, IndicatorWeights, MicrostructureState, MacroCalendarEvent } from './types';
 
 // Deterministic candle data generator for visual demonstration
@@ -37,7 +40,7 @@ export const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const { isConnected, assets, signals, positions, summary, setPositions } = useSSE();
   const [selectedSymbol, setSelectedSymbol] = useState<string>('XAU/USD');
-  const [activeTab, setActiveTab] = useState<'terminal' | 'ai_weights' | 'quant'>('terminal');
+  const [activeTab, setActiveTab] = useState<'terminal' | 'investors' | 'screener' | 'news' | 'quant' | 'ai_weights'>('terminal');
   const [weights, setWeights] = useState<IndicatorWeights>(INITIAL_WEIGHTS);
 
   // Microstructure state for selected asset
@@ -115,7 +118,40 @@ export const App: React.FC = () => {
                 }`}
               >
                 <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Market Terminal</span>
+                <span>Terminal</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('investors')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
+                  activeTab === 'investors'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 text-sky-500" />
+                <span>Investor Ledger</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('screener')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
+                  activeTab === 'screener'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                <Filter className="w-3.5 h-3.5 text-amber-500" />
+                <span>Liquid Screener</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('news')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
+                  activeTab === 'news'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                <Newspaper className="w-3.5 h-3.5 text-rose-500" />
+                <span>News Trading</span>
               </button>
               <button
                 onClick={() => setActiveTab('quant')}
@@ -126,7 +162,7 @@ export const App: React.FC = () => {
                 }`}
               >
                 <BarChart2 className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Quant Suite & Backtester</span>
+                <span>Quant Suite</span>
               </button>
               <button
                 onClick={() => setActiveTab('ai_weights')}
@@ -136,8 +172,8 @@ export const App: React.FC = () => {
                     : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                 }`}
               >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-sky-500" />
-                <span>AI Weight Heatmap</span>
+                <SlidersHorizontal className="w-3.5 h-3.5 text-purple-500" />
+                <span>Weights</span>
               </button>
             </nav>
           </div>
@@ -288,6 +324,42 @@ export const App: React.FC = () => {
               <MacroCalendarPanel events={macroEvents} activeSymbol={selectedSymbol} />
             </div>
           </>
+        ) : activeTab === 'investors' ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-slate-800 dark:text-slate-200">
+                Institutional Investor Capital Ledger & NAV Accounting
+              </h2>
+              <span className="text-xs text-slate-400 font-mono">
+                Tier 1 Instant Liquidity • Non-Diluting NAV Pool
+              </span>
+            </div>
+            <InvestorLedgerView />
+          </div>
+        ) : activeTab === 'screener' ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-slate-800 dark:text-slate-200">
+                Dynamic Liquid Crypto Screener
+              </h2>
+              <span className="text-xs text-slate-400 font-mono">
+                Slippage Defense • $50M 24h Volume • 10 bps Spread
+              </span>
+            </div>
+            <ScreenerView />
+          </div>
+        ) : activeTab === 'news' ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-slate-800 dark:text-slate-200">
+                Real-Time Macro & Crypto News Trading
+              </h2>
+              <span className="text-xs text-slate-400 font-mono">
+                SHA-256 Deduplication • Tanh Polarity NLP Scoring
+              </span>
+            </div>
+            <NewsStreamView />
+          </div>
         ) : activeTab === 'quant' ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between px-1">

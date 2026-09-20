@@ -59,12 +59,15 @@ Output ONLY valid JSON matching this schema:
   "summary": "<string>"
 }`, strings.Join(headlines, "\n- "))
 
+	temp := 0.1
 	chatReq := openAIChatRequest{
 		Model: c.cfg.ModelID,
 		Messages: []openAIMessage{
 			{Role: "user", Content: prompt},
 		},
-		Temperature: 0.1,
+		Temperature:     &temp,
+		ReasoningEffort: c.cfg.ReasoningEffort,
+		ToolChoice:      "none",
 		ResponseFormat: &responseFormat{
 			Type: "json_object",
 		},

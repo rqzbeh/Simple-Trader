@@ -78,7 +78,6 @@ jobs:
         run: |
           REPO_OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "BACKEND_IMAGE=ghcr.io/${REPO_OWNER_LOWER}/simple-trader-backend" >> $GITHUB_ENV
-          echo "FRONTEND_IMAGE=ghcr.io/${REPO_OWNER_LOWER}/simple-trader-frontend" >> $GITHUB_ENV
 
       - name: Extract Docker metadata for Backend
         id: meta-backend
@@ -98,26 +97,5 @@ jobs:
           push: true
           tags: ${{ steps.meta-backend.outputs.tags }}
           labels: ${{ steps.meta-backend.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Extract Docker metadata for Frontend
-        id: meta-frontend
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.FRONTEND_IMAGE }}
-          tags: |
-            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
-            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
-            type=ref,event=tag
-
-      - name: Build and Push Frontend Image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ./Dockerfile.frontend
-          push: true
-          tags: ${{ steps.meta-frontend.outputs.tags }}
-          labels: ${{ steps.meta-frontend.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

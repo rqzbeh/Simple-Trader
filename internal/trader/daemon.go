@@ -137,6 +137,12 @@ func (d *TradingDaemon) ProcessTick(ctx context.Context) {
 			if closedTrade, exited := d.engine.CheckExit(symbol, price); exited {
 				log.Printf("[Daemon] Position exited for %s: reason=%s pnl=%.2f ret=%.2f%% fee=%.4f slippage=%.4f",
 					symbol, closedTrade.ExitReason, closedTrade.RealizedPnL, closedTrade.ReturnPct, closedTrade.ExecutionFee, closedTrade.SlippagePaid)
+
+				// Sweep tactical profit to Tier 1 cash buffer
+				if closedTrade.RealizedPnL > 0 && d.allocator != nil {
+					d.allocator.SweepProfitToTier1(closedTrade.RealizedPnL)
+					log.Printf("[Daemon] Swept profit of $%.2f from %s into Tier 1 cash reserve", closedTrade.RealizedPnL, symbol)
+				}
 			}
 		}
 	}
