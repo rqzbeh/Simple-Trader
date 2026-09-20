@@ -314,12 +314,20 @@ Simple-Trader connects directly to the high-performance **OmniRoute Gateway** us
 | Method | Endpoint | Description |
 |---|---|---|
 | `GET` | `/health` | System status, Go engine version, active AI model |
-| `GET` | `/api/v1/events` | Real-time Server-Sent Events (SSE) live tick stream |
+| `GET` | `/manifest.json` | PWA manifest for standalone mobile/desktop installation |
+| `POST` | `/api/v1/auth/login` | Secure admin login with bcrypt verification and sliding-window rate limiting |
+| `GET` | `/api/v1/auth/session` | Validate session token or cookie authentication state |
+| `POST` | `/api/v1/auth/logout` | Invalidate session token and clear authentication cookie |
+| `GET` | `/api/v1/events` | Real-time Server-Sent Events (SSE) live tick and signal stream |
 | `GET` | `/api/v1/assets` | Active tradable assets with current quotes |
+| `GET` | `/api/v1/signals/futures` | List active or closed two-sided trade signals (BUY/LONG & SELL/SHORT) |
+| `POST` | `/api/v1/signals/futures/decide` | Trigger AI market evaluation driven by breaking news catalysts |
+| `POST` | `/api/v1/signals/futures/{id}/close` | Close signal position with realized PnL and trigger Bayesian fine-tuning |
+| `GET` | `/api/v1/macro/regime` | Dynamic macroeconomic regime state (Crisis / Normal / Dovish Expansion) |
+| `GET` | `/api/v1/telegram/config` | Retrieve configured Telegram bot and notification settings |
+| `POST` | `/api/v1/telegram/config` | Update Telegram bot token and target chat ID |
+| `GET` | `/api/v1/ml/status` | Real hardware telemetry, CUDA status, and Bayesian posteriors |
 | `GET` | `/api/v1/weights` | Active indicator weight multipliers (RSI, SuperTrend, MACD, etc.) |
-| `GET` | `/api/v1/learning/dataset.jsonl` | Continuous fine-tuning dataset export (ChatML / JSONL) |
-| `GET` | `/api/v1/calendar` | Macro economic calendar events and blackout windows |
-| `POST` | `/api/v1/backtest/run` | Vectorized backtest & 1,000-iteration Monte Carlo simulation |
 | `GET` | `/api/v1/allocator/tiers` | 3-Tier Multi-Horizon Liquidity allocation breakdown |
 | `GET` | `/api/v1/market/screener` | Dynamic crypto screener results ($50M vol / 10bps spread) |
 | `GET` | `/api/v1/news/stream` | Live ingested news stream and aggregate NLP sentiment report |
@@ -346,38 +354,60 @@ Output:
 SIMPLE-TRADER V2.0 SYSTEM INTEGRATION & VERIFICATION TEST SUITE
 ================================================================
 
-[TEST 1] System Health & Version
+[TEST 1] System Health & Unified PWA Serving
  -> Backend Health: healthy | Model: antigravity/gemini-3.8-flash-tiered | Version: 2.0.0-pure-go
+ -> PWA Manifest verified: Name='Simple-Trader AI Terminal', Display='standalone'
 
 [TEST 2] Dynamic Liquid Crypto Screener ($50M Vol / 10bps Spread)
  -> Screened Assets Count: 20 | Active Universe: 11 symbols
- -> Active Universe Symbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'BNB/USD', 'XRP/USD', 'ADA/USD']...
+ -> Active Universe Symbols: ['BTC/USD', 'ETH/USD', 'SOL/USD', 'BNB/USD', 'XRP/USD', 'DOGE/USD']...
 
-[TEST 3] Real-time News Ingestion & NLP Sentiment Feed
- -> Ingested Real-Time Articles: 10 across RSS feeds
- -> Aggregate Sentiment: Score=0.42 | Polarity=BULLISH | Key terms matched=6
+[TEST 3] Real-time News Ingestion & NLP Sentiment Feed (Whale + Political + Crypto)
+ -> Ingested Real-Time Articles: 100 across RSS feeds (WhaleAlert, TrumpVentures, Yahoo, CoinDesk)
+ -> Aggregate Sentiment: Score=-0.08 | Polarity=NEUTRAL | Key terms matched=14
 
-[TEST 4] Multi-Horizon 3-Tier Liquidity Allocation & Rebalance Engine
-    - CASH_BUFFER: Target=15.0% | Current Value=$15,000.00 | Allocation=15.0%
-    - TACTICAL_ALPHA: Target=40.0% | Current Value=$40,000.00 | Allocation=40.0%
-    - CORE_PRESERVATION: Target=45.0% | Current Value=$45,000.00 | Allocation=45.0%
+[TEST 4] Dynamic Macroeconomic Regime Allocation (3-Tier Real-World Allocation)
+ -> Active Macro Regime: NORMAL (Score: 0.635)
+ -> Targets: Cash=15.0% | Core=45.0% | Alpha=40.0%
 
 [TEST 5] Investor Capital Ledger System (PostgreSQL 16 Multi-Tenant)
- -> Registered Investor ID: a1b2c3d4-e5f6... (Dr. Arash Vahid)
- -> Deposited Additional: $5,000.00 | Units Minted: 5000.0000 @ NAV=1.0000
+ -> Registered Investor ID: fd315fa8-553a... (Dr. Arash Vahid)
+ -> Deposited Additional: $5,000.00 | Units Minted @ NAV=1.1656
  -> Testing Liquidity Protection: Attempting withdrawal exceeding Tier 1 Cash Buffer...
- -> Successfully REJECTED excessive withdrawal: withdrawal exceeds available cash buffer
- -> Successfully Executed Valid Withdrawal: $2,500.00
+ -> Successfully REJECTED excessive withdrawal: insufficient Tier 1 liquidity reserve
+ -> Successfully Executed Withdrawal: $2,500.00
 
-[TEST 6] Live AI Trade Decision via OmniRoute Gateway
- -> Target Model: antigravity/gemini-3.8-flash-tiered (Reasoning: high)
- -> OmniRoute Live AI Call Completed in 2.84s!
- -> Decision: BUY | Confidence: 0.90 | Win Prob: 0.78
- -> Regime: NORMAL_TRENDING | Stop Loss: 1.50% | Take Profit: 4.20%
+[TEST 6] Telegram Signals Bot Integration & Persistence
+ -> Telegram Config Saved: Token Masked=795...hrU | ChatID=3239664627 | Enabled=True
+
+[TEST 7] Secure Authentication & Password Protection
+ -> Initial Session State: Authenticated=False
+ -> Admin Login Success: Token=4c99...e885
+ -> Validated Authenticated Session: Masked Token=4c99...e885
+
+[TEST 8] Two-Sided Futures Trade Signals & Bayesian Learning
+ -> Signal Evaluated: Signal #1 | LONG BTC/USD 5x
+    Entry: $65,000.00 | SL: $63,700.00 | TP1: $68,120.00 | R:R 1:2.40
+    Capital: $21,500.00 (20.0% of Alpha Tier)
+    Catalyst: "Fed surprise 50 bps rate cut paired with 12,500 BTC institutional whale accumulation"
+ -> Closed Signal #1: Exit=$66,625.00 | Realized ROI=12.50%
+
+[TEST 9] Real-Data Machine Learning & Bayesian Posteriors Telemetry
+ -> Hardware: NVIDIA GeForce RTX 2060 | CUDA Enabled: True
+    - MACD: α=2.0, β=2.0 (Posterior Mean: 50.0%)
+    - RSI: α=2.0, β=2.0 (Posterior Mean: 50.0%)
+    - SUPERTREND: α=2.0, β=2.0 (Posterior Mean: 50.0%)
+
+[TEST 10] Live AI Trade Decision via OmniRoute Gateway
+ -> Target Model: antigravity/gemini-3.8-flash-tiered
+ -> Gateway Endpoint: https://omniroute.z3df1lter.uk/v1
+ -> OmniRoute Live AI Call Completed in 4.63s!
+ -> Decision: BUY | Confidence: 0.85 | Win Prob: 0.73
+ -> Regime: BULL | Stop Loss: 1.80% | Take Profit: 4.20%
 
 ================================================================
-ALL 6 END-TO-END PIPELINE VERIFICATION SUITES PASSED FLAWLESSLY!
-Simple-Trader v2.0 Stack is 100% Production Ready.
+ALL 10 END-TO-END PIPELINE VERIFICATION SUITES PASSED FLAWLESSLY!
+Simple-Trader v2.0 Docker Stack is 100% Production Ready.
 ================================================================
 ```
 

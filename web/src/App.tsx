@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useTheme } from './context/ThemeContext';
-import { Sun, Moon, Activity, TrendingUp, Cpu, Layers, SlidersHorizontal, BarChart2, Users, Newspaper, Filter } from 'lucide-react';
+import { useAuth } from './context/AuthContext';
+import { Sun, Moon, Activity, TrendingUp, Cpu, Layers, SlidersHorizontal, BarChart2, Users, Newspaper, Filter, Globe, MessageSquare, LogOut, ShieldCheck } from 'lucide-react';
 import { useSSE } from './hooks/useSSE';
 import { AssetTickerGrid } from './components/AssetTickerGrid';
 import { TradingViewChart } from './components/TradingViewChart';
@@ -14,6 +15,11 @@ import { MacroCalendarPanel } from './components/MacroCalendarPanel';
 import { InvestorLedgerView } from './components/InvestorLedgerView';
 import { NewsStreamView } from './components/NewsStreamView';
 import { ScreenerView } from './components/ScreenerView';
+import { MacroRegimeView } from './components/MacroRegimeView';
+import { TelegramConfigModal } from './components/TelegramConfigModal';
+import { LoginModal } from './components/LoginModal';
+import { PWAInstallBanner } from './components/PWAInstallBanner';
+import { IOSInstallModal } from './components/IOSInstallModal';
 import { AssetInfo, CandleData, TradePosition, IndicatorWeights, MicrostructureState, MacroCalendarEvent } from './types';
 
 // Deterministic candle data generator for visual demonstration
@@ -38,10 +44,13 @@ function generateCandles(basePrice: number): CandleData[] {
 
 export const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
-  const { isConnected, assets, signals, positions, summary, setPositions } = useSSE();
+  const { isAuthenticated, tokenMasked, logout } = useAuth();
+  const { isConnected, assets, positions, summary, setPositions } = useSSE();
   const [selectedSymbol, setSelectedSymbol] = useState<string>('XAU/USD');
-  const [activeTab, setActiveTab] = useState<'terminal' | 'investors' | 'screener' | 'news' | 'quant' | 'ai_weights'>('terminal');
+  const [activeTab, setActiveTab] = useState<'terminal' | 'macro' | 'investors' | 'screener' | 'news' | 'quant' | 'ai_weights'>('terminal');
   const [weights, setWeights] = useState<IndicatorWeights>(INITIAL_WEIGHTS);
+  const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
+  const [isIOSGuideOpen, setIsIOSGuideOpen] = useState<boolean>(false);
 
   // Microstructure state for selected asset
   const [microState] = useState<MicrostructureState>({
@@ -121,6 +130,17 @@ export const App: React.FC = () => {
                 <span>Terminal</span>
               </button>
               <button
+                onClick={() => setActiveTab('macro')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
+                  activeTab === 'macro'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                <Globe className="w-3.5 h-3.5 text-sky-500" />
+                <span>Macro Regime</span>
+              </button>
+              <button
                 onClick={() => setActiveTab('investors')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
                   activeTab === 'investors'
@@ -197,6 +217,16 @@ export const App: React.FC = () => {
               </span>
             </div>
 
+            {/* Telegram Bot Config Trigger */}
+            <button
+              onClick={() => setIsTelegramModalOpen(true)}
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-sm flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200"
+              title="Configure Telegram Bot"
+            >
+              <MessageSquare className="w-4 h-4 text-sky-500" />
+              <span className="hidden md:inline font-mono">Telegram Bot</span>
+            </button>
+
             {/* Dark / Light Mode Toggle */}
             <button
               onClick={toggleTheme}
@@ -209,6 +239,25 @@ export const App: React.FC = () => {
                 <Moon className="w-4 h-4 text-slate-600" />
               )}
             </button>
+
+            {/* Admin Session Indicator & Logout */}
+            {isAuthenticated && (
+              <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
+                <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Admin</span>
+                  {tokenMasked && <span className="text-[10px] text-emerald-600 dark:text-emerald-400">({tokenMasked})</span>}
+                </div>
+                <button
+                  onClick={logout}
+                  className="p-2 rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors shadow-sm flex items-center gap-1 text-xs font-mono"
+                  title="Logout Session"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span className="hidden sm:inline">Logout</span>
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -294,7 +343,7 @@ export const App: React.FC = () => {
                 <TradingViewChart symbol={selectedSymbol} data={candleData} />
               </div>
               <div className="lg:col-span-1">
-                <AISignalFeed signals={signals} />
+                <AISignalFeed selectedSymbol={selectedSymbol} />
               </div>
             </div>
 
@@ -324,6 +373,10 @@ export const App: React.FC = () => {
               <MacroCalendarPanel events={macroEvents} activeSymbol={selectedSymbol} />
             </div>
           </>
+        ) : activeTab === 'macro' ? (
+          <div className="space-y-4">
+            <MacroRegimeView />
+          </div>
         ) : activeTab === 'investors' ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between px-1">
@@ -389,6 +442,24 @@ export const App: React.FC = () => {
           </div>
         )}
       </main>
+
+      {/* Telegram Bot Configuration Modal */}
+      <TelegramConfigModal
+        isOpen={isTelegramModalOpen}
+        onClose={() => setIsTelegramModalOpen(false)}
+      />
+
+      {/* PWA Floating Install Banner (US5) */}
+      <PWAInstallBanner onShowIOSGuide={() => setIsIOSGuideOpen(true)} />
+
+      {/* iOS Safari Home Screen Installation Modal Guide (US5) */}
+      <IOSInstallModal
+        isOpen={isIOSGuideOpen}
+        onClose={() => setIsIOSGuideOpen(false)}
+      />
+
+      {/* Admin Authentication Modal Gate */}
+      {!isAuthenticated && <LoginModal />}
     </div>
   );
 };

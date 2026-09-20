@@ -200,3 +200,21 @@ func (ts *ThompsonSampler) GetPosteriorStats() map[string]map[string]float64 {
 	}
 	return stats
 }
+
+// UpdatePosteriors batches custom alpha and beta updates (e.g. from real-data GPU ML training).
+func (ts *ThompsonSampler) UpdatePosteriors(updates map[string]struct{ Alpha, Beta float64 }) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+
+	for name, param := range updates {
+		if post, exists := ts.posteriors[name]; exists {
+			post.Alpha = param.Alpha
+			post.Beta = param.Beta
+		} else {
+			ts.posteriors[name] = &BetaPosterior{
+				Alpha: param.Alpha,
+				Beta:  param.Beta,
+			}
+		}
+	}
+}

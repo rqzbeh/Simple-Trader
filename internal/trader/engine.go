@@ -18,6 +18,7 @@ type OrderRequest struct {
 	PositionSize      float64
 	StopLoss          float64
 	TakeProfit        float64
+	Leverage          int
 	AIReasoning       string
 	SymbolSpreadPct   float64
 	AvailableDepthQty float64
@@ -61,8 +62,18 @@ func (e *ExecutionEngine) ExecuteOrder(ctx context.Context, req OrderRequest) (*
 	e.orderCounter++
 	now := time.Now()
 
+	executionSide := req.Side
+	dir := DirectionLong
+	if req.Side == "SELL" || req.Side == "SHORT" {
+		executionSide = "SELL"
+		dir = DirectionShort
+	} else {
+		executionSide = "BUY"
+		dir = DirectionLong
+	}
+
 	quote := e.friction.CalculateExecution(
-		req.Side,
+		executionSide,
 		req.PositionSize,
 		req.Price,
 		req.SymbolSpreadPct,
@@ -70,27 +81,39 @@ func (e *ExecutionEngine) ExecuteOrder(ctx context.Context, req OrderRequest) (*
 		req.IsTaker,
 	)
 
-	if quote.TotalNetCost > e.cash {
-		return nil, fmt.Errorf("insufficient cash to execute order: need %.2f, have %.2f", quote.TotalNetCost, e.cash)
+	lev := req.Leverage
+	if lev < 1 {
+		lev = 1
 	}
+
+	marginCost := (quote.EffectivePrice * req.PositionSize) / float64(lev)
+	totalEntryCost := marginCost + quote.TotalFee
+
+	if totalEntryCost > e.cash {
+		return nil, fmt.Errorf("insufficient cash to execute order: need %.2f, have %.2f", totalEntryCost, e.cash)
+	}
+
+	liqPrice, _ := CalculateLiquidationPrice(quote.EffectivePrice, lev, dir, 0.005)
 
 	trade := &db.Trade{
-		ID:           e.orderCounter,
-		Symbol:       req.Symbol,
-		Bucket:       req.Bucket,
-		Side:         req.Side,
-		EntryPrice:   quote.EffectivePrice,
-		EntryTime:    now,
-		PositionSize: req.PositionSize,
-		StopLoss:     req.StopLoss,
-		TakeProfit:   req.TakeProfit,
-		ExecutionFee: quote.TotalFee,
-		SlippagePaid: quote.Slippage,
-		Status:       "OPEN",
-		CreatedAt:    now,
+		ID:               e.orderCounter,
+		Symbol:           req.Symbol,
+		Bucket:           req.Bucket,
+		Side:             executionSide,
+		EntryPrice:       quote.EffectivePrice,
+		EntryTime:        now,
+		PositionSize:     req.PositionSize,
+		StopLoss:         req.StopLoss,
+		TakeProfit:       req.TakeProfit,
+		ExecutionFee:     quote.TotalFee,
+		SlippagePaid:     quote.Slippage,
+		Leverage:         lev,
+		LiquidationPrice: liqPrice,
+		Status:           "OPEN",
+		CreatedAt:        now,
 	}
 
-	e.cash -= quote.TotalNetCost
+	e.cash -= totalEntryCost
 	e.positions[req.Symbol] = trade
 
 	return trade, nil
@@ -109,21 +132,27 @@ func (e *ExecutionEngine) CheckExit(symbol string, currentPrice float64) (*db.Tr
 	shouldExit := false
 	exitReason := ""
 
-	if trade.Side == "BUY" {
+	if trade.Side == "BUY" || trade.Side == "LONG" {
 		if trade.TakeProfit > 0 && currentPrice >= trade.TakeProfit {
 			shouldExit = true
 			exitReason = "TAKE_PROFIT"
 		} else if trade.StopLoss > 0 && currentPrice <= trade.StopLoss {
 			shouldExit = true
 			exitReason = "STOP_LOSS"
+		} else if trade.LiquidationPrice > 0 && currentPrice <= trade.LiquidationPrice {
+			shouldExit = true
+			exitReason = "LIQUIDATION"
 		}
-	} else if trade.Side == "SELL" {
+	} else if trade.Side == "SELL" || trade.Side == "SHORT" {
 		if trade.TakeProfit > 0 && currentPrice <= trade.TakeProfit {
 			shouldExit = true
 			exitReason = "TAKE_PROFIT"
 		} else if trade.StopLoss > 0 && currentPrice >= trade.StopLoss {
 			shouldExit = true
 			exitReason = "STOP_LOSS"
+		} else if trade.LiquidationPrice > 0 && currentPrice >= trade.LiquidationPrice {
+			shouldExit = true
+			exitReason = "LIQUIDATION"
 		}
 	}
 
@@ -132,7 +161,7 @@ func (e *ExecutionEngine) CheckExit(symbol string, currentPrice float64) (*db.Tr
 	}
 
 	exitSide := "SELL"
-	if trade.Side == "SELL" {
+	if trade.Side == "SELL" || trade.Side == "SHORT" {
 		exitSide = "BUY"
 	}
 
@@ -158,10 +187,16 @@ func (e *ExecutionEngine) CheckExit(symbol string, currentPrice float64) (*db.Tr
 	trade.RealizedPnL = pnl
 	trade.ReturnPct = retPct
 
-	// Credit proceeds back
-	// Buy position closed: proceeds = (size * exitPrice) - exitFee
-	// Sell position closed: proceeds = (size * entryPrice) + pnl
-	proceeds := (trade.PositionSize * trade.EntryPrice) + pnl
+	// Credit proceeds back: margin + realized net PnL
+	lev := trade.Leverage
+	if lev < 1 {
+		lev = 1
+	}
+	margin := (trade.PositionSize * trade.EntryPrice) / float64(lev)
+	proceeds := margin + pnl
+	if proceeds < 0 {
+		proceeds = 0
+	}
 	e.cash += proceeds
 
 	delete(e.positions, symbol)
@@ -188,13 +223,18 @@ func (e *ExecutionEngine) GetTotalEquity(currentPrices ...map[string]float64) fl
 			currPrice = pos.EntryPrice
 		}
 		var diff float64
-		if pos.Side == "BUY" {
+		if pos.Side == "BUY" || pos.Side == "LONG" {
 			diff = currPrice - pos.EntryPrice
 		} else {
 			diff = pos.EntryPrice - currPrice
 		}
 		unrealized := diff * pos.PositionSize
-		equity += (pos.PositionSize * pos.EntryPrice) + unrealized
+		lev := pos.Leverage
+		if lev < 1 {
+			lev = 1
+		}
+		margin := (pos.PositionSize * pos.EntryPrice) / float64(lev)
+		equity += margin + unrealized
 	}
 
 	return equity

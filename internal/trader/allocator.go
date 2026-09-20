@@ -35,31 +35,61 @@ func Default3TierConfig(totalCapital float64) AllocatorConfig {
 type CapitalAllocator = Allocator
 
 // Allocator dynamically balances capital across the 3 Tiers:
-// Tier 1 (15% Liquid Cash Buffer), Tier 2 (45% Core Commodities), Tier 3 (40% Tactical Alpha)
+// Tier 1 (Liquid Cash Buffer), Tier 2 (Core Commodities: Gold/Silver), Tier 3 (Tactical Alpha)
 type Allocator struct {
-	mu        sync.RWMutex
-	config    AllocatorConfig
-	tier1Cash float64 // Actual held unencumbered cash reserve
+	mu          sync.RWMutex
+	config      AllocatorConfig
+	tier1Cash   float64 // Actual held unencumbered cash reserve
+	macroEngine *MacroRegimeEngine
 }
 
 // NewAllocator creates a 3-tier capital allocator.
 func NewAllocator(cfg AllocatorConfig) *Allocator {
-	if cfg.Tier1TargetPct <= 0 {
-		cfg.Tier1TargetPct = 0.15
-	}
-	if cfg.CoreTargetPct <= 0 {
-		cfg.CoreTargetPct = 0.45
-	}
-	if cfg.AlphaTargetPct <= 0 {
-		cfg.AlphaTargetPct = 0.40
+	macroEngine := NewMacroRegimeEngine()
+	regimeState := macroEngine.GetCurrentState()
+
+	if cfg.Tier1TargetPct <= 0 && cfg.CoreTargetPct <= 0 && cfg.AlphaTargetPct <= 0 {
+		// Use dynamic macro regime targets as default
+		cfg.Tier1TargetPct = regimeState.TargetTier1Pct
+		cfg.CoreTargetPct = regimeState.TargetCorePct
+		cfg.AlphaTargetPct = regimeState.TargetAlphaPct
+	} else {
+		if cfg.Tier1TargetPct <= 0 {
+			cfg.Tier1TargetPct = 0.15
+		}
+		if cfg.CoreTargetPct <= 0 {
+			cfg.CoreTargetPct = 0.45
+		}
+		if cfg.AlphaTargetPct <= 0 {
+			cfg.AlphaTargetPct = 0.40
+		}
 	}
 
 	initialTier1 := cfg.TotalCapital * cfg.Tier1TargetPct
 
 	return &Allocator{
-		config:    cfg,
-		tier1Cash: initialTier1,
+		config:      cfg,
+		tier1Cash:   initialTier1,
+		macroEngine: macroEngine,
 	}
+}
+
+// GetMacroEngine returns the underlying macroeconomic stress scoring engine.
+func (a *Allocator) GetMacroEngine() *MacroRegimeEngine {
+	return a.macroEngine
+}
+
+// ApplyMacroRegime updates the allocator targets dynamically based on latest macroeconomic indicators.
+func (a *Allocator) ApplyMacroRegime(ind MacroIndicators) MacroRegimeState {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	state := a.macroEngine.UpdateIndicators(ind)
+	a.config.Tier1TargetPct = state.TargetTier1Pct
+	a.config.CoreTargetPct = state.TargetCorePct
+	a.config.AlphaTargetPct = state.TargetAlphaPct
+
+	return state
 }
 
 // GetAvailableBuckets returns (coreCapital, alphaCapital).

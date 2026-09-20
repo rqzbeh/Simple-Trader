@@ -27,6 +27,9 @@ type DecisionResponse struct {
 	Decision                string  `json:"decision"`                   // "BUY", "SELL", or "HOLD"
 	Confidence              float64 `json:"confidence"`                 // 0.0 - 1.0
 	Reasoning               string  `json:"reasoning"`                  // LLM analytical justification
+	Catalyst                string  `json:"catalyst,omitempty"`         // Primary news catalyst headline or source
+	Leverage                int     `json:"leverage,omitempty"`         // Isolated leverage factor (1x - 10x)
+	AllocationPct           float64 `json:"allocation_pct,omitempty"`   // Suggested % of available alpha fund (e.g. 2.0%)
 	SuggestedStopLossPct    float64 `json:"suggested_stop_loss_pct"`    // e.g. 1.5%
 	SuggestedTakeProfitPct  float64 `json:"suggested_take_profit_pct"`  // e.g. 3.0%
 	Regime                  string  `json:"regime"`                     // "BULL", "BEAR", or "RANGING"
