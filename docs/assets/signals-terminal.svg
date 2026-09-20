@@ -111,7 +111,7 @@
 
     <!-- Breaking Catalyst Box -->
     <rect x="18" y="58" width="389" height="74" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1" />
-    <text x="30" y="78" class="font-mono" font-size="10" font-weight="700" fill="#f43f5e">⚡ BREAKING NEWS CATALYST (SEC & Whale Outflow)</text>
+    <text x="30" y="78" class="font-mono" font-size="10" font-weight="700" fill="#f43f5e">⚡ BREAKING NEWS CATALYST (SEC &amp; Whale Outflow)</text>
     <text x="30" y="98" class="font-ui" font-size="11" font-style="italic" fill="#cbd5e1">"Massive 48,000 ETH exchange deposit observed from early ICO wallet</text>
     <text x="30" y="116" class="font-ui" font-size="11" font-style="italic" fill="#cbd5e1">amidst regulatory staking investigation inquiries"</text>
 
