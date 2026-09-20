@@ -210,10 +210,10 @@ def run_tests():
     for ind, p in posteriors.items():
         print(f"    - {ind}: α={p.get('alpha'):.1f}, β={p.get('beta'):.1f} (Posterior Mean: {p.get('mean')*100:.1f}%)")
 
-    # 10. Live AI Autonomous Decision via OmniRoute Gateway
-    print("\n[TEST 10] Live AI Trade Decision via OmniRoute Gateway")
-    print(" -> Target Model: antigravity/gemini-3.8-flash-tiered")
-    print(" -> Gateway Endpoint: https://omniroute.z3df1lter.uk/v1")
+    # 10. Live AI Autonomous Decision via OpenAI-Compatible Gateway
+    print("\n[TEST 10] Live AI Trade Decision via OpenAI-Compatible Gateway")
+    print(f" -> Target Model: {os.getenv('AI_MODEL_ID', 'Configured AI Model')}")
+    print(f" -> Gateway Endpoint: {os.getenv('AI_BASE_URL', 'Configured AI Base URL')}")
     print(" -> System Prompt: Institutional Quantitative 3-Tier Multi-Horizon Risk & Bayesian Confluence")
 
     t0 = time.time()
