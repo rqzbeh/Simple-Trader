@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 460" width="100%" height="100%">
+  <defs>
+    <linearGradient id="macroBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#d97706" />
+    </linearGradient>
+    <linearGradient id="alphaGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0ea5e9" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+    <linearGradient id="cashGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <filter id="boxShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <style>
+    .ui-text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .mono-text { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  </style>
+
+  <!-- Background Canvas -->
+  <rect width="960" height="460" rx="16" fill="url(#macroBg)" stroke="#1e293b" stroke-width="2" />
+
+  <!-- Top Title -->
+  <g transform="translate(36, 32)">
+    <text class="ui-text" font-size="16" font-weight="800" fill="#ffffff">DYNAMIC 3-TIER MACROECONOMIC REGIME ALLOCATION</text>
+    <text class="ui-text" font-size="12" fill="#94a3b8" y="22">Scientific capital weighting conditioned on real geopolitical tension, inflation data, and central bank rates</text>
+  </g>
+
+  <!-- Left: 3-Tier Allocation Cards -->
+  <g transform="translate(36, 80)">
+    <!-- Tier 1: Cash / Liquidity Reserve -->
+    <g transform="translate(0, 0)" filter="url(#boxShadow)">
+      <rect width="520" height="95" rx="10" fill="#1e293b" fill-opacity="0.6" stroke="#10b981" stroke-width="1.5" stroke-opacity="0.4" />
+      <rect x="16" y="16" width="6" height="63" rx="3" fill="url(#cashGrad)" />
+      <text x="34" y="36" class="ui-text" font-size="14" font-weight="700" fill="#ffffff">TIER 1 • LIQUID CASH &amp; MARGIN BUFFER</text>
+      <text x="34" y="56" class="ui-text" font-size="12" fill="#cbd5e1">USD / USDC safe-haven reserve. Backs investor withdrawals and prevents liquidation.</text>
+      <text x="34" y="74" class="mono-text" font-size="11" font-weight="600" fill="#34d399">Target: 15.0% • Immediate Redemption Liquidity ($15,000 baseline)</text>
+      <text x="470" y="44" text-anchor="middle" class="mono-text" font-size="20" font-weight="800" fill="#34d399">15%</text>
+    </g>
+
+    <!-- Tier 2: Safe-Haven Core Capital Preservation -->
+    <g transform="translate(0, 110)" filter="url(#boxShadow)">
+      <rect width="520" height="95" rx="10" fill="#1e293b" fill-opacity="0.6" stroke="#f59e0b" stroke-width="1.5" stroke-opacity="0.4" />
+      <rect x="16" y="16" width="6" height="63" rx="3" fill="url(#goldGrad)" />
+      <text x="34" y="36" class="ui-text" font-size="14" font-weight="700" fill="#ffffff">TIER 2 • CORE SAFE-HAVEN PRESERVATION</text>
+      <text x="34" y="56" class="ui-text" font-size="12" fill="#cbd5e1">XAU/USD Gold Spot, XAG/USD Silver Spot, and macro Bitcoin holdings.</text>
+      <text x="34" y="74" class="mono-text" font-size="11" font-weight="600" fill="#fbbf24">Target: 45.0% • Inflation &amp; War Hedge Portfolio ($45,000 baseline)</text>
+      <text x="470" y="44" text-anchor="middle" class="mono-text" font-size="20" font-weight="800" fill="#fbbf24">45%</text>
+    </g>
+
+    <!-- Tier 3: Tactical Alpha Short-Term Futures -->
+    <g transform="translate(0, 220)" filter="url(#boxShadow)">
+      <rect width="520" height="95" rx="10" fill="#1e293b" fill-opacity="0.6" stroke="#0ea5e9" stroke-width="1.5" stroke-opacity="0.4" />
+      <rect x="16" y="16" width="6" height="63" rx="3" fill="url(#alphaGrad)" />
+      <text x="34" y="36" class="ui-text" font-size="14" font-weight="700" fill="#ffffff">TIER 3 • TACTICAL ALPHA TRADING</text>
+      <text x="34" y="56" class="ui-text" font-size="12" fill="#cbd5e1">News catalyst driven two-sided futures entries (3h timeframe, isolated leverage 1x-10x).</text>
+      <text x="34" y="74" class="mono-text" font-size="11" font-weight="600" fill="#38bdf8">Target: 40.0% • High-Conviction Market Mover Alpha ($40,000 baseline)</text>
+      <text x="470" y="44" text-anchor="middle" class="mono-text" font-size="20" font-weight="800" fill="#38bdf8">40%</text>
+    </g>
+  </g>
+
+  <!-- Right: Real-World Regime States Matrix -->
+  <g transform="translate(580, 80)" filter="url(#boxShadow)">
+    <rect width="344" height="315" rx="12" fill="#0b1120" stroke="#334155" stroke-width="1" />
+
+    <!-- Matrix Header -->
+    <rect x="0" y="0" width="344" height="42" rx="12" fill="#1e293b" fill-opacity="0.8" />
+    <text x="18" y="26" class="ui-text" font-size="13" font-weight="700" fill="#f8fafc">MACRO REGIME CLASSIFIER</text>
+
+    <!-- State 1: CRISIS REGIME -->
+    <g transform="translate(18, 56)">
+      <rect width="308" height="72" rx="8" fill="#090d16" stroke="#ef4444" stroke-width="1" stroke-opacity="0.5" />
+      <text x="14" y="24" class="mono-text" font-size="11" font-weight="800" fill="#f87171">🚨 CRISIS / ESCALATION REGIME</text>
+      <text x="14" y="42" class="ui-text" font-size="10" fill="#cbd5e1">Geopolitical stress > 75 or war outbreak</text>
+      <text x="14" y="58" class="mono-text" font-size="10" font-weight="600" fill="#94a3b8">Alloc: <tspan fill="#34d399">Cash 30%</tspan> • <tspan fill="#fbbf24">Core Gold 55%</tspan> • <tspan fill="#38bdf8">Alpha 15%</tspan></text>
+    </g>
+
+    <!-- State 2: NORMAL BALANCED REGIME (ACTIVE) -->
+    <g transform="translate(18, 140)">
+      <rect width="308" height="72" rx="8" fill="#10b981" fill-opacity="0.08" stroke="#10b981" stroke-width="1.5" />
+      <circle cx="288" cy="20" r="5" fill="#10b981" />
+      <text x="14" y="24" class="mono-text" font-size="11" font-weight="800" fill="#34d399">ACTIVE • BALANCED NORMAL</text>
+      <text x="14" y="42" class="ui-text" font-size="10" fill="#cbd5e1">Moderate inflation &amp; steady economic growth</text>
+      <text x="14" y="58" class="mono-text" font-size="10" font-weight="600" fill="#94a3b8">Alloc: <tspan fill="#34d399">Cash 15%</tspan> • <tspan fill="#fbbf24">Core 45%</tspan> • <tspan fill="#38bdf8">Alpha 40%</tspan></text>
+    </g>
+
+    <!-- State 3: DOVISH EXPANSION REGIME -->
+    <g transform="translate(18, 224)">
+      <rect width="308" height="72" rx="8" fill="#090d16" stroke="#3b82f6" stroke-width="1" stroke-opacity="0.5" />
+      <text x="14" y="24" class="mono-text" font-size="11" font-weight="800" fill="#60a5fa">📈 DOVISH EXPANSION / RATE CUTS</text>
+      <text x="14" y="42" class="ui-text" font-size="10" fill="#cbd5e1">Aggressive global central bank rate easing</text>
+      <text x="14" y="58" class="mono-text" font-size="10" font-weight="600" fill="#94a3b8">Alloc: <tspan fill="#34d399">Cash 10%</tspan> • <tspan fill="#fbbf24">Core 35%</tspan> • <tspan fill="#38bdf8">Alpha 55%</tspan></text>
+    </g>
+  </g>
+
+  <!-- Bottom Dynamic Auto-Rebalance Notice -->
+  <g transform="translate(36, 410)">
+    <text class="mono-text" font-size="11" fill="#64748b">AUTO-REBALANCE: Dynamic reallocation triggers when any tier drifts by more than ±5.0% from target threshold.</text>
+  </g>
+</svg>

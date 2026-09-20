@@ -1,0 +1,160 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 480" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="longGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#059669" />
+      <stop offset="100%" stop-color="#10b981" />
+    </linearGradient>
+    <linearGradient id="shortGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#dc2626" />
+      <stop offset="100%" stop-color="#f43f5e" />
+    </linearGradient>
+    <linearGradient id="cardGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1e293b" stop-opacity="0.8" />
+      <stop offset="100%" stop-color="#0f172a" stop-opacity="0.9" />
+    </linearGradient>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <style>
+    .font-ui { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  </style>
+
+  <!-- Background Canvas -->
+  <rect width="960" height="480" rx="16" fill="url(#bgGrad)" stroke="#1e293b" stroke-width="2" />
+
+  <!-- Window Header -->
+  <rect x="0" y="0" width="960" height="52" rx="16" fill="#0b1120" />
+  <circle cx="28" cy="26" r="6" fill="#ef4444" opacity="0.8" />
+  <circle cx="48" cy="26" r="6" fill="#f59e0b" opacity="0.8" />
+  <circle cx="68" cy="26" r="6" fill="#10b981" opacity="0.8" />
+
+  <text x="100" y="31" class="font-ui" font-size="14" font-weight="700" fill="#f8fafc">TWO-SIDED ACTIONABLE SIGNALS ENGINE</text>
+  <rect x="750" y="16" width="180" height="22" rx="6" fill="#0284c7" fill-opacity="0.2" stroke="#0ea5e9" stroke-width="1" />
+  <text x="840" y="31" text-anchor="middle" class="font-mono" font-size="10" font-weight="600" fill="#38bdf8">NEWS CATALYST DRIVEN</text>
+
+  <!-- Signal 1: LONG BTC/USD 5x Card -->
+  <g transform="translate(36, 75)" filter="url(#shadow)">
+    <rect width="425" height="375" rx="12" fill="url(#cardGrad)" stroke="#10b981" stroke-width="1.5" stroke-opacity="0.4" />
+
+    <!-- Card Top Badge -->
+    <rect x="18" y="18" width="85" height="26" rx="6" fill="url(#longGrad)" />
+    <text x="60" y="35" text-anchor="middle" class="font-mono" font-size="12" font-weight="800" fill="#ffffff">LONG 5x</text>
+
+    <text x="115" y="36" class="font-ui" font-size="17" font-weight="800" fill="#f8fafc">BTC / USD</text>
+    <text x="320" y="35" class="font-mono" font-size="12" font-weight="600" fill="#38bdf8">$65,000.00</text>
+
+    <!-- Breaking Catalyst Box -->
+    <rect x="18" y="58" width="389" height="74" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1" />
+    <text x="30" y="78" class="font-mono" font-size="10" font-weight="700" fill="#f59e0b">⚡ BREAKING NEWS CATALYST (WhaleAlert + Macro)</text>
+    <text x="30" y="98" class="font-ui" font-size="11" font-style="italic" fill="#cbd5e1">"Federal Reserve dovish pivot announcement paired with</text>
+    <text x="30" y="116" class="font-ui" font-size="11" font-style="italic" fill="#cbd5e1">12,500 BTC institutional accumulation across Coinbase Prime"</text>
+
+    <!-- Execution Target Levels -->
+    <g transform="translate(18, 146)">
+      <!-- Entry -->
+      <rect x="0" y="0" width="123" height="52" rx="6" fill="#090d16" stroke="#1e293b" stroke-width="1" />
+      <text x="12" y="18" class="font-ui" font-size="10" fill="#94a3b8">ENTRY LEVEL</text>
+      <text x="12" y="38" class="font-mono" font-size="13" font-weight="700" fill="#f8fafc">$65,000.00</text>
+
+      <!-- Stop Loss -->
+      <rect x="133" y="0" width="123" height="52" rx="6" fill="#090d16" stroke="#f43f5e" stroke-width="1" stroke-opacity="0.4" />
+      <text x="145" y="18" class="font-ui" font-size="10" fill="#f87171">STOP LOSS (2.0%)</text>
+      <text x="145" y="38" class="font-mono" font-size="13" font-weight="700" fill="#f43f5e">$63,700.00</text>
+
+      <!-- Take Profit -->
+      <rect x="266" y="0" width="123" height="52" rx="6" fill="#090d16" stroke="#10b981" stroke-width="1" stroke-opacity="0.4" />
+      <text x="278" y="18" class="font-ui" font-size="10" fill="#34d399">TAKE PROFIT 1</text>
+      <text x="278" y="38" class="font-mono" font-size="13" font-weight="700" fill="#10b981">$68,120.00</text>
+    </g>
+
+    <!-- Quantitative Metrics & Risk Sizing -->
+    <g transform="translate(18, 212)">
+      <rect x="0" y="0" width="389" height="74" rx="8" fill="#090d16" stroke="#1e293b" stroke-width="1" />
+
+      <text x="16" y="24" class="font-ui" font-size="11" fill="#94a3b8">Risk-Reward Ratio</text>
+      <text x="16" y="46" class="font-mono" font-size="15" font-weight="800" fill="#f59e0b">1 : 2.40</text>
+
+      <line x1="130" y1="12" x2="130" y2="62" stroke="#1e293b" stroke-width="1" />
+
+      <text x="146" y="24" class="font-ui" font-size="11" fill="#94a3b8">Allocated Alpha Capital</text>
+      <text x="146" y="46" class="font-mono" font-size="15" font-weight="800" fill="#38bdf8">$21,500.00 <tspan font-size="11" fill="#94a3b8">(20.0%)</tspan></text>
+
+      <line x1="285" y1="12" x2="285" y2="62" stroke="#1e293b" stroke-width="1" />
+
+      <text x="300" y="24" class="font-ui" font-size="11" fill="#94a3b8">Confluence</text>
+      <text x="300" y="46" class="font-mono" font-size="15" font-weight="800" fill="#10b981">88.4%</text>
+    </g>
+
+    <!-- Status & Execution Dispatch -->
+    <rect x="18" y="300" width="389" height="52" rx="8" fill="#10b981" fill-opacity="0.1" stroke="#10b981" stroke-width="1" stroke-opacity="0.3" />
+    <circle cx="36" cy="326" r="5" fill="#10b981" />
+    <text x="50" y="330" class="font-mono" font-size="12" font-weight="700" fill="#34d399">ACTIVE POSITION • TELEGRAM BROADCASTED</text>
+  </g>
+
+  <!-- Signal 2: SHORT ETH/USD 4x Card -->
+  <g transform="translate(498, 75)" filter="url(#shadow)">
+    <rect width="425" height="375" rx="12" fill="url(#cardGrad)" stroke="#f43f5e" stroke-width="1.5" stroke-opacity="0.4" />
+
+    <!-- Card Top Badge -->
+    <rect x="18" y="18" width="85" height="26" rx="6" fill="url(#shortGrad)" />
+    <text x="60" y="35" text-anchor="middle" class="font-mono" font-size="12" font-weight="800" fill="#ffffff">SHORT 4x</text>
+
+    <text x="115" y="36" class="font-ui" font-size="17" font-weight="800" fill="#f8fafc">ETH / USD</text>
+    <text x="325" y="35" class="font-mono" font-size="12" font-weight="600" fill="#f43f5e">$2,840.00</text>
+
+    <!-- Breaking Catalyst Box -->
+    <rect x="18" y="58" width="389" height="74" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1" />
+    <text x="30" y="78" class="font-mono" font-size="10" font-weight="700" fill="#f43f5e">⚡ BREAKING NEWS CATALYST (SEC & Whale Outflow)</text>
+    <text x="30" y="98" class="font-ui" font-size="11" font-style="italic" fill="#cbd5e1">"Massive 48,000 ETH exchange deposit observed from early ICO wallet</text>
+    <text x="30" y="116" class="font-ui" font-size="11" font-style="italic" fill="#cbd5e1">amidst regulatory staking investigation inquiries"</text>
+
+    <!-- Execution Target Levels -->
+    <g transform="translate(18, 146)">
+      <!-- Entry -->
+      <rect x="0" y="0" width="123" height="52" rx="6" fill="#090d16" stroke="#1e293b" stroke-width="1" />
+      <text x="12" y="18" class="font-ui" font-size="10" fill="#94a3b8">ENTRY LEVEL</text>
+      <text x="12" y="38" class="font-mono" font-size="13" font-weight="700" fill="#f8fafc">$2,840.00</text>
+
+      <!-- Stop Loss -->
+      <rect x="133" y="0" width="123" height="52" rx="6" fill="#090d16" stroke="#f43f5e" stroke-width="1" stroke-opacity="0.4" />
+      <text x="145" y="18" class="font-ui" font-size="10" fill="#f87171">STOP LOSS (2.1%)</text>
+      <text x="145" y="38" class="font-mono" font-size="13" font-weight="700" fill="#f43f5e">$2,900.00</text>
+
+      <!-- Take Profit -->
+      <rect x="266" y="0" width="123" height="52" rx="6" fill="#090d16" stroke="#10b981" stroke-width="1" stroke-opacity="0.4" />
+      <text x="278" y="18" class="font-ui" font-size="10" fill="#34d399">TAKE PROFIT 1</text>
+      <text x="278" y="38" class="font-mono" font-size="13" font-weight="700" fill="#10b981">$2,710.00</text>
+    </g>
+
+    <!-- Quantitative Metrics & Risk Sizing -->
+    <g transform="translate(18, 212)">
+      <rect x="0" y="0" width="389" height="74" rx="8" fill="#090d16" stroke="#1e293b" stroke-width="1" />
+
+      <text x="16" y="24" class="font-ui" font-size="11" fill="#94a3b8">Risk-Reward Ratio</text>
+      <text x="16" y="46" class="font-mono" font-size="15" font-weight="800" fill="#f59e0b">1 : 2.17</text>
+
+      <line x1="130" y1="12" x2="130" y2="62" stroke="#1e293b" stroke-width="1" />
+
+      <text x="146" y="24" class="font-ui" font-size="11" fill="#94a3b8">Allocated Alpha Capital</text>
+      <text x="146" y="46" class="font-mono" font-size="15" font-weight="800" fill="#38bdf8">$16,000.00 <tspan font-size="11" fill="#94a3b8">(15.0%)</tspan></text>
+
+      <line x1="285" y1="12" x2="285" y2="62" stroke="#1e293b" stroke-width="1" />
+
+      <text x="300" y="24" class="font-ui" font-size="11" fill="#94a3b8">Confluence</text>
+      <text x="300" y="46" class="font-mono" font-size="15" font-weight="800" fill="#f43f5e">84.2%</text>
+    </g>
+
+    <!-- Resolved Profit Box -->
+    <rect x="18" y="300" width="389" height="52" rx="8" fill="#0f172a" stroke="#10b981" stroke-width="1" stroke-dasharray="4,2" />
+    <text x="32" y="322" class="font-mono" font-size="11" fill="#94a3b8">RESOLUTION:</text>
+    <text x="125" y="322" class="font-mono" font-size="12" font-weight="700" fill="#10b981">CLOSED • REALIZED ROI +18.31%</text>
+    <text x="32" y="340" class="font-ui" font-size="11" fill="#cbd5e1">Fine-tuned Bayesian posterior weights in real-time VPS memory</text>
+  </g>
+</svg>

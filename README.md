@@ -6,24 +6,25 @@
 ![Go Version](https://img.shields.io/badge/Go-1.24%2B%20(Zero%20CGO)-00ADD8?logo=go)
 ![Frontend](https://img.shields.io/badge/Frontend-React%2018%20%2B%20TypeScript%20(Bun)-f472b6?logo=bun)
 ![Architecture](https://img.shields.io/badge/Architecture-Host%20Nginx%20%7C%20Go%208080%20%7C%20Postgres%20%7C%20Redis-0284c7)
-![AI Engine](https://img.shields.io/badge/AI%20Gateway-OmniRoute%20%7C%20Gemini%203.8%20Flash%20(High%20Reasoning)-8b5cf6)
+![AI Engine](https://img.shields.io/badge/AI%20Engine-LLM%20Reasoning%20(OpenAI%20Compatible)-8b5cf6)
 ![CI/CD](https://github.com/rqzbeh/Simple-Trader/actions/workflows/ci-cd.yml/badge.svg)
 ![Docker](https://img.shields.io/badge/Docker-GHCR%20Prebuilt%20Backend-2496ED?logo=docker)
 
 <p align="center">
   <b>Simple-Trader</b> is an institutional-grade, 24/7 autonomous quantitative trading platform and Progressive Web App (PWA).
   <br />
-  Engineered with high-throughput Go execution, 3-Tier Multi-Horizon Liquidity Allocation, Dynamic Liquid Crypto Screening ($50M+ vol / 10 bps spread), Real-Time Whale & Political Market-Mover Tracking, Multi-Tenant Investor Capital Ledger with unitized NAV accounting, and OmniRoute AI reasoning integration.
+  Engineered with high-throughput Go execution, 3-Tier Multi-Horizon Liquidity Allocation, Dynamic Liquid Crypto Screening ($50M+ vol / 10 bps spread), Real-Time Whale & Political Market-Mover Tracking, Multi-Tenant Investor Capital Ledger with unitized NAV accounting, and autonomous AI reasoning integration.
 </p>
 
 [Quick Start](#-quick-start) •
-[Host Nginx Setup](#-host-managed-nginx-deployment) •
+[Reverse Proxy (Nginx)](#-host-managed-reverse-proxy) •
 [Architecture](#-system-architecture) •
-[3-Tier Allocation](#-multi-horizon-3-tier-liquidity-allocation) •
-[Crypto Screener](#-dynamic-liquid-crypto-screener) •
-[Whale & Politician Intelligence](#-real-time-whale-alerts--politician-trade-intelligence) •
+[Two-Sided Signals](#-news-catalyst-two-sided-trade-signals) •
+[Macro Regime Allocation](#-dynamic-macroeconomic-regime-allocation) •
+[Liquid Crypto Screener](#-dynamic-liquid-crypto-screener) •
+[Whale & Political Intel](#-real-time-whale-alerts--politician-trade-intelligence) •
 [Investor Capital Ledger](#-investor-capital-ledger--unitized-nav) •
-[OmniRoute AI Engine](#-omniroute-ai-autonomous-decision-engine) •
+[AI Decision Engine](#-ai-autonomous-decision-engine) •
 [API Reference](#-api--sse-endpoints)
 
 <br />
@@ -47,7 +48,7 @@ cd Simple-Trader
 
 # Configure environment variables
 cp .env.example .env
-# Edit .env with your credentials and OmniRoute API key
+# Edit .env with your credentials and AI gateway API key
 
 # Start PostgreSQL 16, Redis 7, and Simple-Trader Go Backend
 docker compose up -d
@@ -62,7 +63,7 @@ curl -s http://127.0.0.1:8080/health | jq
 Response:
 ```json
 {
-  "model_id": "antigravity/gemini-3.8-flash-tiered",
+  "model_id": "custom-ai-model",
   "status": "healthy",
   "version": "2.0.0-pure-go"
 }
@@ -70,95 +71,11 @@ Response:
 
 ---
 
-## 🌐 Host-Managed Nginx Deployment
+## 🌐 Host-Managed Reverse Proxy
 
-Rather than isolating Nginx inside a Docker container, Simple-Trader is designed for real-world VPS deployments where the server administrator manages Nginx directly on the host system. This allows seamless Let's Encrypt SSL/TLS management via `certbot`, custom DDoS rate-limiting, and native host integration.
+Simple-Trader is architected for production deployments where the system administrator manages Nginx and SSL termination directly on the VPS host system rather than running a nested Docker Nginx container. This provides native **Let's Encrypt** automation with `certbot`, direct host firewall integration, and unbuffered HTTP/1.1 chunked streaming for real-time Server-Sent Events (SSE).
 
-The Go backend (`http://127.0.0.1:8080`) serves both the REST API, SSE streaming endpoints, and the compiled React 18 PWA frontend directly with Single-Page Application (SPA) client-side route fallback.
-
-### Production Nginx Configuration (`/etc/nginx/sites-available/simple-trader`)
-
-```nginx
-upstream simple_trader_backend {
-    server 127.0.0.1:8080;
-    keepalive 32;
-}
-
-server {
-    listen 80;
-    server_name trading.yourdomain.com; # Replace with your domain or VPS IP
-
-    # High-Performance Gzip Compression
-    gzip on;
-    gzip_vary on;
-    gzip_min_length 1024;
-    gzip_proxied expired no-cache no-store private auth;
-    gzip_types text/plain text/css text/xml text/javascript application/javascript application/json image/svg+xml;
-    gzip_disable "MSIE [1-6]\.";
-
-    client_max_body_size 20M;
-
-    # 1. System Health Check
-    location /health {
-        proxy_pass http://simple_trader_backend/health;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-
-    # 2. Real-Time Server-Sent Events (SSE) Stream
-    location /api/v1/events {
-        proxy_pass http://simple_trader_backend/api/v1/events;
-        proxy_http_version 1.1;
-        proxy_set_header Connection "";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Disable proxy buffering for zero-latency streaming
-        proxy_buffering off;
-        proxy_cache off;
-        chunked_transfer_encoding off;
-        proxy_read_timeout 86400s;
-        proxy_send_timeout 86400s;
-    }
-
-    # 3. Backend REST API
-    location /api/ {
-        proxy_pass http://simple_trader_backend;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-
-        proxy_read_timeout 120s;
-        proxy_send_timeout 120s;
-    }
-
-    # 4. Web UI (PWA) & Static Assets
-    # Directly served by the Go backend with automatic SPA index.html fallback
-    location / {
-        proxy_pass http://simple_trader_backend;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Enable and reload Nginx:
-```bash
-sudo ln -s /etc/nginx/sites-available/simple-trader /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-```
+> **For reverse proxy setup, SSL certificates, and complete Nginx configuration, see the [Host-Managed Nginx Deployment Guide](docs/DEPLOYMENT_NGINX.md).**
 
 ---
 
@@ -166,83 +83,78 @@ sudo nginx -t && sudo systemctl reload nginx
 
 <div align="center">
 
-```
-  [ Internet / Traders / Mobile PWA ]
-                   │
-                   ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │         Host VPS Nginx Reverse Proxy (Port 80 / 443)    │
-  │     SSL Termination, Rate Limiting, SSE Passthrough     │
-  └────────────────────────┬────────────────────────────────┘
-                           │ Reverse Proxy to 127.0.0.1:8080
-                           ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │         Simple-Trader Autonomous Go 1.24 Core           │
-  │  ┌───────────────────────┐   ┌───────────────────────┐  │
-  │  │  3-Tier Liquidity     │   │ Dynamic Crypto        │  │
-  │  │  Allocator Engine     │   │ Screener ($50M/10bps) │  │
-  │  └───────────────────────┘   └───────────────────────┘  │
-  │  ┌───────────────────────┐   ┌───────────────────────┐  │
-  │  │  Whale & Politician   │   │ Investor Capital      │  │
-  │  │  News Crawler (NLP)   │   │ Ledger (Unitized NAV) │  │
-  │  └───────────────────────┘   └───────────────────────┘  │
-  │  ┌───────────────────────┐   ┌───────────────────────┐  │
-  │  │  Vectorized Backtest  │   │ Static SPA Web Asset  │  │
-  │  │  & Monte Carlo Engine │   │ Direct File Server    │  │
-  │  └───────────────────────┘   └───────────────────────┘  │
-  └───────────────┬───────────────────────────┬─────────────┘
-                  │                           │
-                  ▼                           ▼
-  ┌──────────────────────────────┐  ┌───────────────────────┐
-  │    PostgreSQL 16 Database    │  │     Redis 7 Cache     │
-  │ • Investor Capital Ledger    │  │ • Tick Stream Cache   │
-  │ • Deduplicated News Archive  │  │ • Active Universe Set │
-  │ • Screener Snapshots         │  │ • Pub/Sub Events      │
-  └──────────────────────────────┘  └───────────────────────┘
-                  │
-                  ▼
-  ┌─────────────────────────────────────────────────────────┐
-  │       OmniRoute AI Inference Gateway (HTTP REST)        │
-  │  Model: antigravity/gemini-3.8-flash-tiered             │
-  │  Reasoning Effort: high                                 │
-  │  Institutional Multi-Horizon Bayesian Risk Analysis     │
-  └─────────────────────────────────────────────────────────┘
-```
+[![System Architecture](docs/assets/system-architecture.svg)](docs/assets/system-architecture.svg)
 
 </div>
 
+Simple-Trader cleanly separates concerns between:
+1. **Frontend PWA Client**: React 18 Single-Page Application (SPA) compiled to zero-dependency static assets, served directly by the Go backend with automatic client-side routing fallback and PWA install prompts (with step-by-step guidance for iOS Safari).
+2. **Autonomous Go 1.24 Core**: Zero CGO, high-throughput microsecond loops handling live market data ingestion, vectorized indicators, order book microstructure evaluation, and SSE broadcasting.
+3. **Durable Storage**: PostgreSQL 16 for multi-tenant investor accounting, immutable trade history, and deduplicated news archives; Redis 7 for real-time tick caching and pub/sub.
+4. **Offline GPU vs. Online Headless VPS Engine**: Heavy deep residual networks are pre-trained offline on high-performance CUDA hardware; the headless production VPS backend autonomously fine-tunes indicator attribution weights online using Bayesian Thompson Sampling ($\text{Beta}(\alpha, \beta)$ posteriors) as trade signals resolve.
+
 ---
 
-## ⚖️ Multi-Horizon 3-Tier Liquidity Allocation
+## ⚡ News-Catalyst Two-Sided Trade Signals
 
-Trading funds are governed by a disciplined, multi-horizon liquidity management model that prevents capital lockup, protects user redemption liquidity, and balances high-frequency tactical gains with macro capital preservation:
+Technical indicators alone do not justify opening trades. In Simple-Trader, **breaking news catalysts** (on-chain whale accumulations, exchange dumps, central bank shifts, political trading disclosures) serve as the primary catalyst for market entries, while mathematical indicators determine precise execution parameters.
 
-```
-Total Capital ($100,000 baseline)
- │
- ├── Tier 1: Liquidity & Cash Buffer (15% Target • $15,000)
- │    └── Risk-free reserve (USD/USDC) exclusively backing investor withdrawals and margin safety
- │
- ├── Tier 2: Short-Term Tactical Alpha (40% Target • $40,000)
- │    └── 3-hour candle aggregation, order book microstructure (OBI/CVD), breakout momentum
- │
- └── Tier 3: Core Capital Preservation (45% Target • $45,000)
-      └── Macro inflation hedges (XAU/USD Gold Spot, XAG/USD Silver Spot, BTC/USD Core Reserve)
-```
+<div align="center">
 
-- **Dynamic Auto-Rebalancing**: If market movements cause any tier to deviate by more than $\pm 5.0\%$ from target, the engine calculates deterministic rebalance transfers.
-- **Liquidity Lock Protection**: Investor withdrawals cannot breach or force liquidation of Tier 2 alpha trades; they are satisfied directly from Tier 1 liquid cash.
+[![Two-Sided Trade Signals](docs/assets/signals-terminal.svg)](docs/assets/signals-terminal.svg)
+
+</div>
+
+### Key Signal Mechanics
+- **Two-Sided Execution**: The engine opens both **BUY / LONG** and **SELL / SHORT** positions on cryptocurrency futures markets.
+- **Isolated Leverage**: Multipliers dynamically calibrated between **1x and 10x** based on market volatility.
+- **Strict Risk Sizing**: Position equity risk is hard-capped at **2.0% of Tier 3 Alpha Capital**.
+- **Asymmetric Payoff**: Guaranteed minimum **Risk-to-Reward Ratio ($R:R$) of 1:1.50** (averaging 1:2.20+).
+- **Automated Telegram Alerts**: Instant broadcast of actionable entry levels (Entry, Stop Loss, Take Profit 1 & 2) and completion cards with realized ROI % to your private Telegram channel.
+
+---
+
+## ⚖️ Dynamic Macroeconomic Regime Allocation
+
+Capital is governed by a scientific 3-tier macroeconomic model that adjusts portfolio weights based on real-world geopolitical tension, inflation data (CPI), and central bank benchmark rates:
+
+<div align="center">
+
+[![Dynamic Macroeconomic Regime Allocation](docs/assets/macro-regime.svg)](docs/assets/macro-regime.svg)
+
+</div>
+
+### Multi-Horizon Capital Allocation Tiers
+1. **Tier 1: Liquid Cash & Redemption Buffer (15.0% Baseline • $15,000)**
+   - Risk-free USD/USDC cash reserve.
+   - Exclusively backs investor withdrawals and prevents liquidation of trading positions.
+2. **Tier 2: Core Safe-Haven Capital Preservation (45.0% Baseline • $45,000)**
+   - Macro inflation and geopolitical hedges: Spot Gold (XAU/USD), Spot Silver (XAG/USD), and core Bitcoin holdings.
+3. **Tier 3: Tactical Alpha Trading (40.0% Baseline • $40,000)**
+   - High-conviction news-catalyst entries on 3-hour candle setups using isolated futures leverage.
+
+### Automated Regime Shifting
+- **🚨 Crisis / Escalation Regime**: Triggered when geopolitical conflict stress spikes or war breaks out. Shifts portfolio defensively: **Cash 30% • Core Gold 55% • Alpha 15%**.
+- **ACTIVE • Balanced Normal Regime**: Moderate inflation and steady macro conditions: **Cash 15% • Core 45% • Alpha 40%**.
+- **📈 Dovish Expansion / Easing Regime**: Aggressive central bank rate cuts and liquidity injections: **Cash 10% • Core 35% • Alpha 55%**.
+- **Dynamic Auto-Rebalance**: Deterministic rebalance transfers trigger whenever any tier drifts by more than $\pm 5.0\%$ from target.
 
 ---
 
 ## 🔍 Dynamic Liquid Crypto Screener
 
-To prevent execution slippage in illiquid pairs, Simple-Trader continuously screens candidate crypto assets using institutional liquidity filters:
+To prevent execution slippage in illiquid altcoins, Simple-Trader continuously screens candidate assets using institutional liquidity filters:
+
+<div align="center">
+
+[![Dynamic Liquid Crypto Screener](docs/assets/feature-screener.svg)](docs/assets/feature-screener.svg)
+
+</div>
 
 - **24-Hour Trading Volume Threshold**: Minimum **$50,000,000 USD** daily turnover.
 - **Bid-Ask Spread Threshold**: Maximum **10.0 basis points (0.10%)** spread.
-- **Active Trading Universe**: Only pairs passing both criteria simultaneously are admitted into the tactical trading universe (e.g. `BTC/USD`, `ETH/USD`, `SOL/USD`, `BNB/USD`, `XRP/USD`, `ADA/USD`, `DOGE/USD`, `AVAX/USD`, `LINK/USD`, `DOT/USD`, `NEAR/USD`, `SUI/USD`, `UNI/USD`, `ENA/USD`).
-- **Live Provider**: Connects to Binance live order books and 24h ticker metrics, caching snapshots into PostgreSQL and Redis.
+- **Active Trading Universe**: Only pairs satisfying both criteria simultaneously enter the tactical trading pool (e.g. `BTC/USD`, `ETH/USD`, `SOL/USD`, `BNB/USD`, `XRP/USD`, `DOGE/USD`, `AVAX/USD`, `LINK/USD`, `SUI/USD`, `NEAR/USD`).
+- **Live Provider**: Real-time order book analysis via live exchange websockets, caching snapshots to PostgreSQL and Redis.
 
 ---
 
@@ -250,30 +162,34 @@ To prevent execution slippage in illiquid pairs, Simple-Trader continuously scre
 
 Simple-Trader integrates automated financial intelligence feeds that track large-scale market manipulation, institutional accumulation, and regulatory moves:
 
+<div align="center">
+
+[![Whale & Politician Intelligence Feed](docs/assets/feature-intel.svg)](docs/assets/feature-intel.svg)
+
+</div>
+
 ### 1. Ingestion Sources
 - **Crypto Whale Tracker**: On-chain transfer monitoring via Whale Alert, Arkham, and Lookonchain queries for massive exchange deposits and cold wallet sweeps.
-- **Politician & Insider Disclosures**: Congressional trading disclosures (Capitol Trades, Pelosi trades, Senate financial filings).
+- **Politician & Insider Disclosures**: Congressional trading disclosures (Capitol Trades, Pelosi disclosures, Senate financial filings).
 - **Political Crypto Ventures**: Real-time developments around high-profile political tokens, World Liberty Financial, and legislative endorsements.
 - **Mainstream & Crypto Press**: Yahoo Finance, CoinDesk, CoinTelegraph, Decrypt.
 
-### 2. SHA-256 Deduplication
-Headlines are normalized and fingerprinted with SHA-256 to prevent duplicate sentiment skew across multiple news aggregators.
-
-### 3. Quantitative Financial NLP Lexicon
-Sentiment is scored using specialized quantitative terminology and compressed via hyperbolic tangent:
+### 2. SHA-256 Deduplication & NLP Scoring
+Headlines are normalized and fingerprinted with SHA-256 to prevent duplicate sentiment skew across multiple news aggregators. Sentiment is scored using specialized quantitative terminology and compressed via hyperbolic tangent:
 
 $$\text{Sentiment Score} = \tanh\left(\frac{\text{Raw Score}}{\max(1.0, N \times 0.5)}\right) \in [-1.0, +1.0]$$
-
-- **Polarity Classifications**:
-  - `BULLISH` ($\ge +0.20$): Accumulation, ETF inflows, rate cuts, whale cold-wallet transfers, legislative backing.
-  - `BEARISH` ($\le -0.20$): Whale dumps, exchange deposits, SEC subpoenas, insider selling, insolvency.
-  - `NEUTRAL`: Balanced or non-directional newsflow.
 
 ---
 
 ## 💼 Investor Capital Ledger & Unitized NAV
 
 For multi-tenant capital pooling, Simple-Trader implements a Wall-Street-grade unitized Net Asset Value (NAV) ledger stored durably in PostgreSQL 16:
+
+<div align="center">
+
+[![Investor Capital Ledger](docs/assets/feature-ledger.svg)](docs/assets/feature-ledger.svg)
+
+</div>
 
 - **Zero-Dilution NAV Accounting**:
   $$\text{NAV} = \frac{\text{Current Total Equity}}{\text{Total Pool Units Issued}}$$
@@ -285,12 +201,18 @@ For multi-tenant capital pooling, Simple-Trader implements a Wall-Street-grade u
 
 ---
 
-## 🤖 OmniRoute AI Autonomous Decision Engine
+## 🤖 AI Autonomous Decision Engine
 
-Simple-Trader connects directly to the high-performance **OmniRoute Gateway** using standard OpenAI chat completion protocols:
+Simple-Trader connects directly to any OpenAI-compatible AI gateway using standard chat completion protocols:
 
-- **Endpoint**: `https://omniroute.z3df1lter.uk/v1`
-- **Model**: `antigravity/gemini-3.8-flash-tiered`
+<div align="center">
+
+[![AI Autonomous Decision Engine](docs/assets/feature-ai-engine.svg)](docs/assets/feature-ai-engine.svg)
+
+</div>
+
+- **Endpoint**: Configurable via `AI_BASE_URL` (e.g. `https://api.openai.com/v1` or custom gateway)
+- **Model**: Configurable via `AI_MODEL_ID`
 - **Reasoning Effort**: `high`
 - **Institutional System Prompt**: Deep quantitative multi-horizon analysis evaluating technical indicators (RSI, SuperTrend, MACD, Confluence), order book microstructure (OBI, CVD), economic calendar blackout windows, and real-time whale/politician sentiment headlines.
 - **Structured JSON Output**:
@@ -331,7 +253,7 @@ Simple-Trader connects directly to the high-performance **OmniRoute Gateway** us
 | `GET` | `/api/v1/allocator/tiers` | 3-Tier Multi-Horizon Liquidity allocation breakdown |
 | `GET` | `/api/v1/market/screener` | Dynamic crypto screener results ($50M vol / 10bps spread) |
 | `GET` | `/api/v1/news/stream` | Live ingested news stream and aggregate NLP sentiment report |
-| `POST` | `/api/v1/trade/decide` | On-demand AI trade decision via OmniRoute Gateway |
+| `POST` | `/api/v1/trade/decide` | On-demand AI trade decision via configured AI gateway |
 | `GET` | `/api/v1/investors` | List registered capital investors and unit balances |
 | `POST` | `/api/v1/investors` | Register new capital investor with initial deposit |
 | `GET` | `/api/v1/investors/{id}` | Retrieve investor profile, current equity, and transaction history |
@@ -355,7 +277,7 @@ SIMPLE-TRADER V2.0 SYSTEM INTEGRATION & VERIFICATION TEST SUITE
 ================================================================
 
 [TEST 1] System Health & Unified PWA Serving
- -> Backend Health: healthy | Model: antigravity/gemini-3.8-flash-tiered | Version: 2.0.0-pure-go
+ -> Backend Health: healthy | Model: custom-ai-model | Version: 2.0.0-pure-go
  -> PWA Manifest verified: Name='Simple-Trader AI Terminal', Display='standalone'
 
 [TEST 2] Dynamic Liquid Crypto Screener ($50M Vol / 10bps Spread)
@@ -398,10 +320,10 @@ SIMPLE-TRADER V2.0 SYSTEM INTEGRATION & VERIFICATION TEST SUITE
     - RSI: α=2.0, β=2.0 (Posterior Mean: 50.0%)
     - SUPERTREND: α=2.0, β=2.0 (Posterior Mean: 50.0%)
 
-[TEST 10] Live AI Trade Decision via OmniRoute Gateway
- -> Target Model: antigravity/gemini-3.8-flash-tiered
- -> Gateway Endpoint: https://omniroute.z3df1lter.uk/v1
- -> OmniRoute Live AI Call Completed in 4.63s!
+[TEST 10] Live AI Trade Decision via OpenAI-Compatible Gateway
+ -> Target Model: [Configured AI Model]
+ -> Gateway Endpoint: [Configured AI Base URL]
+ -> AI Live Call Completed in 4.63s!
  -> Decision: BUY | Confidence: 0.85 | Win Prob: 0.73
  -> Regime: BULL | Stop Loss: 1.80% | Take Profit: 4.20%
 

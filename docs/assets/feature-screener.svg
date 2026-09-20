@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 360" width="100%" height="100%">
+  <defs>
+    <linearGradient id="scrBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+    <linearGradient id="volGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38bdf8" />
+      <stop offset="100%" stop-color="#0284c7" />
+    </linearGradient>
+    <linearGradient id="sprGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+    <filter id="scrShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <style>
+    .font-ui { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  </style>
+
+  <!-- Frame Background -->
+  <rect width="920" height="360" rx="14" fill="url(#scrBg)" stroke="#1e293b" stroke-width="1.5" />
+
+  <!-- Left: Screener Gate Logic -->
+  <g transform="translate(25, 25)" filter="url(#scrShadow)">
+    <rect width="425" height="310" rx="12" fill="#0f172a" stroke="#334155" stroke-width="1.2" />
+
+    <g transform="translate(20, 20)">
+      <text class="font-ui" font-size="16" font-weight="800" fill="#ffffff">INSTITUTIONAL LIQUIDITY GATES</text>
+      <text class="font-ui" font-size="11" fill="#94a3b8" y="20">Continuous screening prevents slippage in illiquid pairs</text>
+    </g>
+
+    <!-- Gate 1: 24h Volume Threshold -->
+    <g transform="translate(20, 65)">
+      <rect width="385" height="68" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#38bdf8" stroke-width="1" stroke-opacity="0.4" />
+      <circle cx="24" cy="34" r="10" fill="url(#volGrad)" />
+      <text class="font-mono" font-size="12" font-weight="700" fill="#38bdf8" x="46" y="26">CRITERION 1 • 24H VOLUME</text>
+      <text class="font-mono" font-size="16" font-weight="800" fill="#ffffff" x="46" y="50">&gt;= $50,000,000 USD</text>
+      <rect x="290" y="20" width="80" height="26" rx="6" fill="#0284c7" fill-opacity="0.2" stroke="#0ea5e9" stroke-width="1" />
+      <text class="font-mono" font-size="10" font-weight="700" fill="#38bdf8" x="303" y="37">ENFORCED</text>
+    </g>
+
+    <!-- Gate 2: Bid-Ask Spread -->
+    <g transform="translate(20, 145)">
+      <rect width="385" height="68" rx="8" fill="#1e293b" fill-opacity="0.5" stroke="#10b981" stroke-width="1" stroke-opacity="0.4" />
+      <circle cx="24" cy="34" r="10" fill="url(#sprGrad)" />
+      <text class="font-mono" font-size="12" font-weight="700" fill="#34d399" x="46" y="26">CRITERION 2 • BID-ASK SPREAD</text>
+      <text class="font-mono" font-size="16" font-weight="800" fill="#ffffff" x="46" y="50">&lt;= 10.0 BPS (0.10%)</text>
+      <rect x="290" y="20" width="80" height="26" rx="6" fill="#10b981" fill-opacity="0.2" stroke="#10b981" stroke-width="1" />
+      <text class="font-mono" font-size="10" font-weight="700" fill="#34d399" x="303" y="37">ENFORCED</text>
+    </g>
+
+    <!-- Bottom Filter Status -->
+    <g transform="translate(20, 230)">
+      <rect width="385" height="58" rx="8" fill="#1e293b" fill-opacity="0.4" stroke="#334155" stroke-width="1" />
+      <text class="font-ui" font-size="11" fill="#cbd5e1" x="14" y="22">Dual-Gate Admittance Rule:</text>
+      <text class="font-mono" font-size="11" font-weight="700" fill="#f59e0b" x="14" y="42">Pairs must satisfy BOTH filters to enter Alpha trading universe</text>
+    </g>
+  </g>
+
+  <!-- Right: Screened Universe Table Preview -->
+  <g transform="translate(470, 25)" filter="url(#scrShadow)">
+    <rect width="425" height="310" rx="12" fill="#0f172a" stroke="#334155" stroke-width="1.2" />
+
+    <g transform="translate(20, 20)">
+      <text class="font-ui" font-size="16" font-weight="800" fill="#ffffff">QUALIFIED UNIVERSE SNAPSHOT</text>
+      <text class="font-ui" font-size="11" fill="#94a3b8" y="20">Live orderbook tick verification via Binance</text>
+    </g>
+
+    <!-- Table Header -->
+    <g transform="translate(20, 60)">
+      <rect width="385" height="26" rx="4" fill="#1e293b" />
+      <text class="font-mono" font-size="10" font-weight="700" fill="#94a3b8" x="12" y="17">SYMBOL</text>
+      <text class="font-mono" font-size="10" font-weight="700" fill="#94a3b8" x="120" y="17">24H VOLUME</text>
+      <text class="font-mono" font-size="10" font-weight="700" fill="#94a3b8" x="240" y="17">SPREAD</text>
+      <text class="font-mono" font-size="10" font-weight="700" fill="#94a3b8" x="325" y="17">STATUS</text>
+    </g>
+
+    <!-- Row 1: BTC/USD -->
+    <g transform="translate(20, 95)">
+      <text class="font-mono" font-size="12" font-weight="800" fill="#f8fafc" x="12">BTC/USD</text>
+      <text class="font-mono" font-size="11" fill="#38bdf8" x="120">$1.84B</text>
+      <text class="font-mono" font-size="11" fill="#34d399" x="240">0.8 bps</text>
+      <text class="font-mono" font-size="11" font-weight="700" fill="#10b981" x="325">QUALIFIED</text>
+      <line x1="0" y1="12" x2="385" y2="12" stroke="#1e293b" stroke-width="1" />
+    </g>
+
+    <!-- Row 2: ETH/USD -->
+    <g transform="translate(20, 130)">
+      <text class="font-mono" font-size="12" font-weight="800" fill="#f8fafc" x="12">ETH/USD</text>
+      <text class="font-mono" font-size="11" fill="#38bdf8" x="120">$840M</text>
+      <text class="font-mono" font-size="11" fill="#34d399" x="240">1.2 bps</text>
+      <text class="font-mono" font-size="11" font-weight="700" fill="#10b981" x="325">QUALIFIED</text>
+      <line x1="0" y1="12" x2="385" y2="12" stroke="#1e293b" stroke-width="1" />
+    </g>
+
+    <!-- Row 3: SOL/USD -->
+    <g transform="translate(20, 165)">
+      <text class="font-mono" font-size="12" font-weight="800" fill="#f8fafc" x="12">SOL/USD</text>
+      <text class="font-mono" font-size="11" fill="#38bdf8" x="120">$460M</text>
+      <text class="font-mono" font-size="11" fill="#34d399" x="240">2.1 bps</text>
+      <text class="font-mono" font-size="11" font-weight="700" fill="#10b981" x="325">QUALIFIED</text>
+      <line x1="0" y1="12" x2="385" y2="12" stroke="#1e293b" stroke-width="1" />
+    </g>
+
+    <!-- Row 4: DOGE/USD -->
+    <g transform="translate(20, 200)">
+      <text class="font-mono" font-size="12" font-weight="800" fill="#f8fafc" x="12">DOGE/USD</text>
+      <text class="font-mono" font-size="11" fill="#38bdf8" x="120">$120M</text>
+      <text class="font-mono" font-size="11" fill="#34d399" x="240">4.5 bps</text>
+      <text class="font-mono" font-size="11" font-weight="700" fill="#10b981" x="325">QUALIFIED</text>
+      <line x1="0" y1="12" x2="385" y2="12" stroke="#1e293b" stroke-width="1" />
+    </g>
+
+    <!-- Row 5: ILLIQUID COIN -->
+    <g transform="translate(20, 235)">
+      <text class="font-mono" font-size="12" font-weight="800" fill="#64748b" x="12">SHIB/USD</text>
+      <text class="font-mono" font-size="11" fill="#64748b" x="120">$14M</text>
+      <text class="font-mono" font-size="11" fill="#ef4444" x="240">18.5 bps</text>
+      <text class="font-mono" font-size="11" font-weight="700" fill="#ef4444" x="325">REJECTED</text>
+      <line x1="0" y1="12" x2="385" y2="12" stroke="#1e293b" stroke-width="1" />
+    </g>
+
+    <!-- Summary Count -->
+    <g transform="translate(20, 275)">
+      <rect width="385" height="26" rx="6" fill="#10b981" fill-opacity="0.1" stroke="#10b981" stroke-width="1" />
+      <text class="font-mono" font-size="11" font-weight="700" fill="#34d399" x="70" y="17">11 ACTIVE ADMITTED TRADING PAIRS</text>
+    </g>
+  </g>
+</svg>
