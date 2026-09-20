@@ -1,5 +1,5 @@
 services:
-  # 1. PostgreSQL 16 Durable Database
+  # 1. PostgreSQL 16 Durable Relational Database
   postgres:
     image: postgres:16-alpine
     container_name: simple-trader-postgres
@@ -10,7 +10,6 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-simple_trader}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations/000001_init_schema.up.sql:/docker-entrypoint-initdb.d/001_init_schema.sql:ro
     ports:
       - "5432:5432"
     healthcheck:
@@ -19,7 +18,7 @@ services:
       timeout: 5s
       retries: 5
 
-  # 2. Redis 7 High-Speed In-Memory Cache & Pub/Sub
+  # 2. Redis 7 In-Memory Cache & Pub/Sub
   redis:
     image: redis:7-alpine
     container_name: simple-trader-redis
@@ -35,14 +34,12 @@ services:
       timeout: 3s
       retries: 5
 
-  # 3. Pure Go 1.24 Autonomous Backend Engine (Prebuilt GHCR image with local build fallback)
+  # 3. Pure Go 1.24 Backend (Prebuilt Image from GitHub Container Registry)
   backend:
-    image: ${BACKEND_IMAGE:-ghcr.io/rqzbeh/simple-trader-backend:latest}
-    build:
-      context: .
-      dockerfile: Dockerfile.backend
+    image: ghcr.io/rqzbeh/simple-trader-backend:latest
     container_name: simple-trader-backend
     restart: unless-stopped
+    pull_policy: always
     depends_on:
       postgres:
         condition: service_healthy
@@ -70,14 +67,12 @@ services:
       timeout: 5s
       retries: 3
 
-  # 4. React 18 + TypeScript Bun PWA Frontend with Nginx Reverse Proxy (Prebuilt GHCR image with local build fallback)
+  # 4. React 18 + TypeScript PWA Frontend (Prebuilt Image from GitHub Container Registry)
   frontend:
-    image: ${FRONTEND_IMAGE:-ghcr.io/rqzbeh/simple-trader-frontend:latest}
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
+    image: ghcr.io/rqzbeh/simple-trader-frontend:latest
     container_name: simple-trader-frontend
     restart: unless-stopped
+    pull_policy: always
     depends_on:
       - backend
     ports:
