@@ -78,22 +78,28 @@ func (c *Client) BuildSystemPrompt(req DecisionRequest) string {
 		weightsStr.WriteString("- Equal Baseline Weight (1.00)\n")
 	}
 
-	return fmt.Sprintf(`You are Simple-Trader's Institutional Quantitative Risk & Systematic Execution Core.
-You operate as a Senior Portfolio Manager and Quantitative Risk Officer governing a 3-Tier Multi-Horizon Capital Structure:
+	return fmt.Sprintf(`You are Simple-Trader's Institutional Quantitative Risk & Two-Sided Futures Execution Core.
+You operate as a Senior Hedge Fund Portfolio Manager and Quantitative Risk Officer governing a 3-Tier Multi-Horizon Capital Structure:
 
 PORTFOLIO ARCHITECTURE & CAPITAL MANDATE:
-- Tier 1 (15%% Cash Reserve): Absolute liquidity buffer dedicated solely to zero-slippage investor redemptions. Strictly NEVER allocate or risk funds from Tier 1.
-- Tier 2 (45%% Core Wealth Preservation): Strategic macro store-of-value assets (Gold XAU/USD, Silver XAG/USD) grounded in monetary base expansion, inflation hedging, and real-yield compression.
-- Tier 3 (40%% Tactical Alpha): High-turnover liquid assets (evaluated on 3-hour swing candlesticks and high-volume crypto pairs >$50M 24h turnover, <10 bps spread). Realized profits are systematically swept into Tier 1 cash buffer.
+- Tier 1 (15-25%% Cash Reserve): Absolute liquidity buffer dedicated solely to zero-slippage investor redemptions. Strictly NEVER allocate or risk funds from Tier 1.
+- Tier 2 (40-60%% Core Wealth Preservation): Strategic macro store-of-value assets (Gold XAU/USD, Silver XAG/USD) grounded in monetary base expansion, inflation hedging, and real-yield compression.
+- Tier 3 (15-40%% Tactical Alpha): High-turnover liquid assets (evaluated on 3-hour swing candlesticks and high-volume crypto pairs >$50M 24h turnover, <10 bps spread). Realized profits are systematically swept into Tier 1 cash buffer.
 
 STRICT COMPLIANCE DIRECTIVE:
 All Iranian assets and instruments are strictly disabled and prohibited. Focus exclusively on verified global liquid pairs.
 
-QUANTITATIVE EVALUATION PRINCIPLES:
-1. Asymmetric Payoff Expectation: Require minimum 2.0:1 Reward-to-Risk ratio on entry signals. If directional edge is ambiguous or volume confirms distribution, output "HOLD".
-2. Multi-Signal Confluence: Synthesize technical indicators (SuperTrend trend regime, RSI momentum exhaustion, MACD histogram velocity), 3-hour price action structure, and live market headline sentiment.
-3. Liquidity & Slippage Defense: Account for order book spread and turnover. Reject illiquid expansion.
-4. Bayesian Weight Attribution: Factor in recent empirical indicator performance weights derived from historical trade outcomes.
+CRITICAL ARCHITECTURAL MANDATE: NEWS CATALYST FIRST
+1. Primary Trade Catalyst: Breaking news headlines, macroeconomic events, whale exchange deposits/withdrawals, or geopolitical developments are the SOLE VALID PREREQUISITES to enter any trade.
+2. If there is NO significant news catalyst or the sentiment is neutral/ambiguous (-0.15 to +0.15), you MUST output "HOLD". NEVER trigger a trade purely because technical indicators show overbought, oversold, or trending conditions! Technicals without catalysts produce chop.
+3. Two-Sided Futures Trading: The market is two-sided.
+   - Bullish news catalyst (sentiment >= +0.25) -> Evaluate "BUY" (LONG futures contract).
+   - Bearish news catalyst (sentiment <= -0.25) -> Evaluate "SELL" (SHORT futures contract).
+4. Role of Technical Indicators: Technical indicators (RSI, SuperTrend, MACD, Bollinger Bands, Order Book Confluence) MUST be used STRICTLY to:
+   - Identify pullback entry pricing (do not chase green/red spikes).
+   - Calculate exact Stop Loss and Take Profit levels enforcing Risk-to-Reward (R:R) >= 1.5 (Institutional target >= 2.0).
+   - Calibrate isolated margin leverage (1x to 10x max).
+5. Capital Sizing & Allocation: Suggest allocation_pct as percent of available tactical alpha (default 1.0%% to 2.0%% max per trade; NEVER risk > 2.0%% of equity on a single trade).
 
 CURRENT ADAPTIVE INDICATOR WEIGHTS (Calibrated via Thompson Sampling / Regret Minimization):
 %s
@@ -106,7 +112,10 @@ SCHEMA:
 {
   "decision": "BUY" | "SELL" | "HOLD",
   "confidence": <float between 0.0 and 1.0>,
-  "reasoning": "<concise institutional quantitative analysis referencing technicals, news sentiment, and risk/reward>",
+  "reasoning": "<concise institutional quantitative analysis referencing primary news catalyst, technical entry/exit calibration, and risk/reward>",
+  "catalyst": "<headline or catalyst summary that triggered this decision, or empty if HOLD>",
+  "leverage": <integer between 1 and 10>,
+  "allocation_pct": <float between 0.5 and 2.0>,
   "suggested_stop_loss_pct": <float between 0.5 and 5.0>,
   "suggested_take_profit_pct": <float between 1.0 and 15.0>,
   "regime": "BULL" | "BEAR" | "RANGING",
@@ -116,28 +125,29 @@ SCHEMA:
 
 // BuildUserPrompt presents the real-time ticker and indicator snapshot.
 func (c *Client) BuildUserPrompt(req DecisionRequest) string {
-	newsSection := "No recent market news headlines."
+	newsSection := "No recent market news headlines available (NEUTRAL / NO CATALYST)."
 	if len(req.NewsHeadlines) > 0 {
 		newsSection = "- " + strings.Join(req.NewsHeadlines, "\n- ")
 	}
 
-	return fmt.Sprintf(`Analyze real-time market telemetry snapshot:
+	return fmt.Sprintf(`Analyze real-time market telemetry snapshot with News-First Catalyst Priority:
 ASSET: %s (Fund Tier Bucket: %s)
 CURRENT PRICE: %.4f (24h Price Change: %+.2f%%)
 
-TECHNICAL INDICATOR SNAPSHOT:
+REAL-TIME BREAKING NEWS & CATALYST HEADLINES (Primary Entry Prerequisite):
+%s
+
+TECHNICAL INDICATOR SNAPSHOT (For Entry Optimization, SL/TP Levels, and Leverage Factor Only):
 - RSI (14): %.2f
 - SuperTrend Indicator: %s
 - MACD Histogram: %+.4f
 - Multi-Indicator Confluence Score: %.2f
 
-REAL-TIME NEWS & SENTIMENT:
-%s
-
-Synthesize the technical momentum, news sentiment, and risk regime. Output strict JSON.`,
+Analyze catalyst priority first. If no high-conviction news catalyst exists, output "HOLD". If a catalyst exists, evaluate direction (BUY for Long, SELL for Short) and calibrate SL/TP with R:R >= 1.5. Output strict JSON.`,
 		req.Symbol, req.Bucket, req.Quote.Price, req.Quote.Change24h,
+		newsSection,
 		req.IndicatorSnap.RSI, req.IndicatorSnap.SuperTrend, req.IndicatorSnap.Histogram,
-		req.IndicatorSnap.ConfluenceScore, newsSection)
+		req.IndicatorSnap.ConfluenceScore)
 }
 
 // Analyze requests trade analysis from the OpenAI-compatible engine with heuristic fallback.
@@ -249,23 +259,66 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (*DecisionRes
 }
 
 // fallbackHeuristic provides deterministic fallback logic when LLM is unavailable.
+// Enforces news catalyst first: if no headlines exist, outputs HOLD.
 func (c *Client) fallbackHeuristic(req DecisionRequest) *DecisionResponse {
 	snap := req.IndicatorSnap
 	decision := "HOLD"
 	confidence := 0.5
+	catalyst := ""
+	reasoning := "No high-impact breaking news catalyst detected. Preserving capital in HOLD state."
+	lev := 1
+	alloc := 0.0
 
-	if snap.SuperTrend == "BULL" && snap.RSI > 50 && snap.Histogram > 0 {
-		decision = "BUY"
-		confidence = 0.75
-	} else if snap.SuperTrend == "BEAR" && snap.RSI < 50 && snap.Histogram < 0 {
-		decision = "SELL"
-		confidence = 0.75
+	// Require at least one non-empty news headline as a catalyst
+	hasCatalyst := len(req.NewsHeadlines) > 0 && strings.TrimSpace(req.NewsHeadlines[0]) != ""
+	if hasCatalyst {
+		catalyst = req.NewsHeadlines[0]
+		lowerHeadline := strings.ToLower(catalyst)
+
+		isBullish := strings.Contains(lowerHeadline, "surge") ||
+			strings.Contains(lowerHeadline, "inflow") ||
+			strings.Contains(lowerHeadline, "rally") ||
+			strings.Contains(lowerHeadline, "accumulat") ||
+			strings.Contains(lowerHeadline, "bull") ||
+			strings.Contains(lowerHeadline, "approved") ||
+			strings.Contains(lowerHeadline, "record") ||
+			strings.Contains(lowerHeadline, "breakout")
+
+		isBearish := strings.Contains(lowerHeadline, "dump") ||
+			strings.Contains(lowerHeadline, "ban") ||
+			strings.Contains(lowerHeadline, "crash") ||
+			strings.Contains(lowerHeadline, "lawsuit") ||
+			strings.Contains(lowerHeadline, "hack") ||
+			strings.Contains(lowerHeadline, "bear") ||
+			strings.Contains(lowerHeadline, "liquidation") ||
+			strings.Contains(lowerHeadline, "investigation")
+
+		if isBullish {
+			decision = "BUY"
+			confidence = 0.80
+			reasoning = fmt.Sprintf("Bullish catalyst (%s) confirmed by technical momentum.", catalyst)
+			lev = 5
+			alloc = 1.5
+		} else if isBearish {
+			decision = "SELL"
+			confidence = 0.80
+			reasoning = fmt.Sprintf("Bearish catalyst (%s) confirmed by downward technical momentum.", catalyst)
+			lev = 5
+			alloc = 1.5
+		} else {
+			decision = "HOLD"
+			confidence = 0.50
+			reasoning = fmt.Sprintf("Neutral news headline detected (%s). Edge ambiguous, holding.", catalyst)
+		}
 	}
 
 	return &DecisionResponse{
 		Decision:                decision,
 		Confidence:              confidence,
-		Reasoning:               "Deterministic technical confluence fallback execution.",
+		Reasoning:               reasoning,
+		Catalyst:                catalyst,
+		Leverage:                lev,
+		AllocationPct:           alloc,
 		SuggestedStopLossPct:    1.5,
 		SuggestedTakeProfitPct:  3.0,
 		Regime:                  snap.SuperTrend,

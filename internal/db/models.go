@@ -99,9 +99,11 @@ type Trade struct {
 	ExitReason   string     `json:"exit_reason"`
 	RootCause    string     `json:"root_cause"`
 	Status       string     `json:"status"` // 'OPEN', 'CLOSED'
-	ExecutionFee float64    `json:"execution_fee"`
-	SlippagePaid float64    `json:"slippage_paid"`
-	CreatedAt    time.Time  `json:"created_at"`
+	ExecutionFee     float64    `json:"execution_fee"`
+	SlippagePaid     float64    `json:"slippage_paid"`
+	Leverage         int        `json:"leverage"`
+	LiquidationPrice float64    `json:"liquidation_price"`
+	CreatedAt        time.Time  `json:"created_at"`
 }
 
 // CalculatePnL computes realized profit/loss and return percentage.
@@ -117,7 +119,12 @@ func (t *Trade) CalculatePnL() (float64, float32) {
 	}
 	grossPnL := diff * t.PositionSize
 	netPnL := grossPnL - t.ExecutionFee
-	retPct := float32((netPnL / (t.EntryPrice * t.PositionSize)) * 100)
+	lev := t.Leverage
+	if lev < 1 {
+		lev = 1
+	}
+	margin := (t.EntryPrice * t.PositionSize) / float64(lev)
+	retPct := float32((netPnL / margin) * 100)
 	return netPnL, retPct
 }
 

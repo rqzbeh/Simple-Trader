@@ -13,11 +13,13 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/rqzbeh/simple-trader/internal/ai"
+	"github.com/rqzbeh/simple-trader/internal/auth"
 	"github.com/rqzbeh/simple-trader/internal/backtest"
 	"github.com/rqzbeh/simple-trader/internal/cache"
 	"github.com/rqzbeh/simple-trader/internal/config"
 	"github.com/rqzbeh/simple-trader/internal/db"
 	"github.com/rqzbeh/simple-trader/internal/market"
+	"github.com/rqzbeh/simple-trader/internal/telegram"
 	"github.com/rqzbeh/simple-trader/internal/trader"
 )
 
@@ -29,10 +31,15 @@ type Server struct {
 	aiClient    *ai.Client
 	allocator   *trader.Allocator
 	execEngine  *trader.ExecutionEngine
-	newsCrawler *market.NewsCrawler
-	screener    *market.DynamicCryptoScreener
-	broadcaster *SSEBroadcaster
-	router      *chi.Mux
+	newsCrawler   *market.NewsCrawler
+	screener      *market.DynamicCryptoScreener
+	telegramBot   *telegram.BotClient
+	authenticator *auth.Authenticator
+	broadcaster   *SSEBroadcaster
+	sampler       *ai.ThompsonSampler
+	gpuTrainer    *ai.GPUTrainer
+	realDataPipeline *ai.RealDataPipeline
+	router        *chi.Mux
 }
 
 // NewServer configures routes and dependency injection.
@@ -48,17 +55,37 @@ func NewServer(
 	binanceFetcher := market.NewBinanceFetcher()
 	screener := market.NewDynamicCryptoScreener(market.DefaultScreenerConfig(), binanceFetcher, redisClient, dbStore)
 
+	tgBot := telegram.NewBotClient(telegram.BotConfig{
+		BotToken: cfg.TelegramBotToken,
+		ChatID:   cfg.TelegramChatID,
+		Enabled:  cfg.TelegramBotToken != "" && cfg.TelegramChatID != "",
+	})
+
+	var authenticator *auth.Authenticator
+	if cfg.AdminPassword != "" {
+		authenticator, _ = auth.NewAuthenticator(cfg.AdminPassword, redisClient)
+	}
+
+	sampler := ai.NewThompsonSampler(0)
+	gpuTrainer := ai.NewGPUTrainer("", "", sampler)
+	realDataPipeline := ai.NewRealDataPipeline(nil, sampler)
+
 	s := &Server{
-		cfg:         cfg,
-		dbStore:     dbStore,
-		redisClient: redisClient,
-		aiClient:    aiClient,
-		allocator:   allocator,
-		execEngine:  execEngine,
-		newsCrawler: crawler,
-		screener:    screener,
-		broadcaster: NewSSEBroadcaster(),
-		router:      chi.NewRouter(),
+		cfg:              cfg,
+		dbStore:          dbStore,
+		redisClient:      redisClient,
+		aiClient:         aiClient,
+		allocator:        allocator,
+		execEngine:       execEngine,
+		newsCrawler:      crawler,
+		screener:         screener,
+		telegramBot:      tgBot,
+		authenticator:    authenticator,
+		sampler:          sampler,
+		gpuTrainer:       gpuTrainer,
+		realDataPipeline: realDataPipeline,
+		broadcaster:      NewSSEBroadcaster(),
+		router:           chi.NewRouter(),
 	}
 
 	s.setupRoutes()
@@ -83,6 +110,11 @@ func (s *Server) NewsCrawler() *market.NewsCrawler {
 // Screener returns the crypto screener instance.
 func (s *Server) Screener() *market.DynamicCryptoScreener {
 	return s.screener
+}
+
+// Authenticator returns the authenticator instance.
+func (s *Server) Authenticator() *auth.Authenticator {
+	return s.authenticator
 }
 
 func (s *Server) setupRoutes() {
@@ -332,6 +364,30 @@ func (s *Server) setupRoutes() {
 
 		json.NewEncoder(w).Encode(decision)
 	})
+
+	// Two-Sided Futures Trade Signals & News-First Execution (US1)
+	r.Get("/api/v1/signals/futures", s.ListFuturesSignalsHandler)
+	r.Post("/api/v1/signals/futures/decide", s.GenerateFuturesSignalHandler)
+	r.Post("/api/v1/signals/futures/{id}/close", s.CloseFuturesSignalHandler)
+
+	// Dynamic Macroeconomic Regime & 3-Tier Allocation (US2, FR-004)
+	r.Get("/api/v1/macro/regime", s.GetMacroRegimeHandler)
+	r.Post("/api/v1/macro/regime", s.UpdateMacroRegimeHandler)
+
+	// Telegram Signals Bot Integration (US3, FR-007)
+	r.Get("/api/v1/telegram/config", s.GetTelegramConfigHandler)
+	r.Post("/api/v1/telegram/config", s.UpdateTelegramConfigHandler)
+	r.Post("/api/v1/telegram/test", s.TestTelegramHandler)
+
+	// Administrative Authentication & Session Security (US4)
+	r.Post("/api/v1/auth/login", s.LoginHandler)
+	r.Post("/api/v1/auth/logout", s.LogoutHandler)
+	r.Get("/api/v1/auth/session", s.SessionHandler)
+
+	// Real-Data Machine Learning Training & Model Telemetry (US6)
+	r.Post("/api/v1/ml/train", s.TrainMLHandler)
+	r.Get("/api/v1/ml/status", s.GetMLStatusHandler)
+	r.Get("/api/v1/ml/runs", s.ListMLRunsHandler)
 
 	// 8. Serve static frontend PWA assets if built (allows direct access or reverse-proxy from host Nginx)
 	workDir, _ := os.Getwd()

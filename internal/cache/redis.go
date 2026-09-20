@@ -59,6 +59,28 @@ func (c *Client) GetTicker(ctx context.Context, symbol string) (*TickerQuote, er
 	return &quote, nil
 }
 
+// SetIndicatorSnapshot caches an indicator snapshot with a TTL.
+func (c *Client) SetIndicatorSnapshot(ctx context.Context, symbol string, snap *IndicatorSnapshot, ttl time.Duration) error {
+	data, err := snap.Marshal()
+	if err != nil {
+		return fmt.Errorf("failed to marshal indicators: %w", err)
+	}
+	return c.rdb.Set(ctx, IndicatorKey(symbol), data, ttl).Err()
+}
+
+// GetIndicatorSnapshot fetches a cached indicator snapshot.
+func (c *Client) GetIndicatorSnapshot(ctx context.Context, symbol string) (*IndicatorSnapshot, error) {
+	data, err := c.rdb.Get(ctx, IndicatorKey(symbol)).Bytes()
+	if err != nil {
+		return nil, err
+	}
+	var snap IndicatorSnapshot
+	if err := snap.Unmarshal(data); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal indicators: %w", err)
+	}
+	return &snap, nil
+}
+
 // Publish broadcasts an event payload onto a pub/sub channel.
 func (c *Client) Publish(ctx context.Context, channel string, message interface{}) error {
 	return c.rdb.Publish(ctx, channel, message).Err()

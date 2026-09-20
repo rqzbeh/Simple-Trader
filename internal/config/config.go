@@ -23,6 +23,10 @@ type Config struct {
 	MaxRiskPerTradePct float64
 	LogLevel           string
 	IsProduction       bool
+	AdminPassword      string
+	AppSecret          string
+	TelegramBotToken   string
+	TelegramChatID     string
 }
 
 func getEnv(key, defaultVal string) string {
@@ -69,5 +73,9 @@ func Load() (*Config, error) {
 		MaxRiskPerTradePct:  getEnvFloat("MAX_RISK_PER_TRADE_PCT", 0.02),
 		LogLevel:            getEnv("LOG_LEVEL", "info"),
 		IsProduction:        getEnv("ENV", "development") == "production",
+		AdminPassword:       getEnv("ADMIN_PASSWORD", "SuperSecureAdminPassword2026!"),
+		AppSecret:           getEnv("APP_SECRET", "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"),
+		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:      getEnv("TELEGRAM_CHAT_ID", ""),
 	}, nil
 }

@@ -10,6 +10,11 @@ func TickerKey(symbol string) string {
 	return fmt.Sprintf("ticker:%s", symbol)
 }
 
+// IndicatorKey generates the Redis key for an indicator snapshot.
+func IndicatorKey(symbol string) string {
+	return fmt.Sprintf("indicators:%s", symbol)
+}
+
 // CandleKey generates the Redis key for historical candles.
 func CandleKey(symbol, timeframe string) string {
 	return fmt.Sprintf("candles:%s:%s", symbol, timeframe)
@@ -18,6 +23,26 @@ func CandleKey(symbol, timeframe string) string {
 // WeightsKey generates the Redis key for dynamic indicator weights.
 func WeightsKey(symbol, regime string) string {
 	return fmt.Sprintf("weights:%s:%s", symbol, regime)
+}
+
+// SessionKey generates the Redis key for active admin user session tokens.
+func SessionKey(token string) string {
+	return fmt.Sprintf("session:%s", token)
+}
+
+// RateLimitKey generates the Redis key for sliding-window login attempts per IP/username.
+func RateLimitKey(identifier string) string {
+	return fmt.Sprintf("ratelimit:login:%s", identifier)
+}
+
+// SignalQueueKey generates the Redis key for asynchronous signal distribution.
+func SignalQueueKey() string {
+	return "queue:signals:futures"
+}
+
+// TelegramQueueKey generates the Redis key for asynchronous telegram notifications.
+func TelegramQueueKey() string {
+	return "queue:telegram:notifications"
 }
 
 // PubSubChannels defines the standard pub/sub communication channels.

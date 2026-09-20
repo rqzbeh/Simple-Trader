@@ -1,0 +1,55 @@
+{
+  "status": "success",
+  "symbol": "BTCUSDT",
+  "device": "NVIDIA GeForce RTX 2060",
+  "cuda_version": "12.4",
+  "peak_vram_mb": 18.4,
+  "candles_analyzed": 5000,
+  "features_count": 21,
+  "total_samples": 4948,
+  "train_samples": 3463,
+  "val_samples": 742,
+  "test_samples": 743,
+  "epochs_trained": 2,
+  "best_epoch": 2,
+  "peak_val_accuracy": 0.5162,
+  "holdout_test_accuracy": 0.541,
+  "duration_seconds": 9.47,
+  "model_checkpoint": "/home/redsnow/Simple-Trader/models/btcusdt_max_accuracy_model.pt",
+  "bayesian_posteriors": {
+    "RSI": {
+      "alpha": 194.0,
+      "beta": 189.0
+    },
+    "MACD": {
+      "alpha": 210.0,
+      "beta": 174.0
+    },
+    "SUPERTREND": {
+      "alpha": 198.0,
+      "beta": 199.0
+    },
+    "MICROSTRUCTURE": {
+      "alpha": 203.0,
+      "beta": 191.0
+    }
+  },
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.7066,
+      "train_acc": 50.77,
+      "val_loss": 0.719,
+      "val_acc": 43.94,
+      "vram_mb": 18.4
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.6955,
+      "train_acc": 53.68,
+      "val_loss": 0.7251,
+      "val_acc": 51.62,
+      "vram_mb": 18.4
+    }
+  ]
+}

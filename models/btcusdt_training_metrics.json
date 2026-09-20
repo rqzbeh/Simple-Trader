@@ -1,0 +1,154 @@
+{
+  "status": "success",
+  "symbol": "BTCUSDT",
+  "device": "cuda",
+  "gpu_name": "NVIDIA GeForce RTX 2060",
+  "cuda_version": "12.4",
+  "peak_vram_mb": 28.63,
+  "candles_analyzed": 5000,
+  "instances_trained": 2404,
+  "epochs_run": 13,
+  "best_epoch": 1,
+  "final_train_accuracy": 0.8632,
+  "final_val_accuracy": 0.5489,
+  "final_val_loss": 0.6934,
+  "duration_seconds": 23.18,
+  "model_path": "/home/redsnow/Simple-Trader/models/btcusdt_best_alpha_net.pth",
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 0.6945,
+      "train_acc": 51.59,
+      "val_loss": 0.6934,
+      "val_acc": 54.89,
+      "lr": 0.0015,
+      "vram_mb": 28.63
+    },
+    {
+      "epoch": 2,
+      "train_loss": 0.6882,
+      "train_acc": 54.97,
+      "val_loss": 0.7049,
+      "val_acc": 52.81,
+      "lr": 0.0015,
+      "vram_mb": 28.63
+    },
+    {
+      "epoch": 3,
+      "train_loss": 0.6745,
+      "train_acc": 59.96,
+      "val_loss": 0.7829,
+      "val_acc": 39.92,
+      "lr": 0.0015,
+      "vram_mb": 28.63
+    },
+    {
+      "epoch": 4,
+      "train_loss": 0.6566,
+      "train_acc": 61.67,
+      "val_loss": 0.7823,
+      "val_acc": 43.66,
+      "lr": 0.0015,
+      "vram_mb": 28.63
+    },
+    {
+      "epoch": 5,
+      "train_loss": 0.6266,
+      "train_acc": 65.26,
+      "val_loss": 0.8127,
+      "val_acc": 47.82,
+      "lr": 0.0015,
+      "vram_mb": 28.63
+    },
+    {
+      "epoch": 6,
+      "train_loss": 0.6181,
+      "train_acc": 66.41,
+      "val_loss": 0.7549,
+      "val_acc": 46.57,
+      "lr": 0.0015,
+      "vram_mb": 28.63
+    },
+    {
+      "epoch": 7,
+      "train_loss": 0.5935,
+      "train_acc": 69.42,
+      "val_loss": 0.8511,
+      "val_acc": 44.91,
+      "lr": 0.0015,
+      "vram_mb": 28.63
+    },
+    {
+      "epoch": 8,
+      "train_loss": 0.5463,
+      "train_acc": 72.7,
+      "val_loss": 1.0241,
+      "val_acc": 45.95,
+      "lr": 0.0015,
+      "vram_mb": 28.63
+    },
+    {
+      "epoch": 9,
+      "train_loss": 0.5154,
+      "train_acc": 75.56,
+      "val_loss": 1.1775,
+      "val_acc": 42.41,
+      "lr": 0.00075,
+      "vram_mb": 28.63
+    },
+    {
+      "epoch": 10,
+      "train_loss": 0.4585,
+      "train_acc": 79.93,
+      "val_loss": 1.2087,
+      "val_acc": 43.24,
+      "lr": 0.00075,
+      "vram_mb": 28.63
+    },
+    {
+      "epoch": 11,
+      "train_loss": 0.394,
+      "train_acc": 83.0,
+      "val_loss": 1.4082,
+      "val_acc": 44.91,
+      "lr": 0.00075,
+      "vram_mb": 28.63
+    },
+    {
+      "epoch": 12,
+      "train_loss": 0.3527,
+      "train_acc": 85.86,
+      "val_loss": 1.3252,
+      "val_acc": 43.45,
+      "lr": 0.00075,
+      "vram_mb": 28.63
+    },
+    {
+      "epoch": 13,
+      "train_loss": 0.3267,
+      "train_acc": 86.32,
+      "val_loss": 1.5399,
+      "val_acc": 42.2,
+      "lr": 0.00075,
+      "vram_mb": 28.63
+    }
+  ],
+  "bayesian_posteriors": {
+    "RSI": {
+      "alpha": 147.0,
+      "beta": 130.0
+    },
+    "MACD": {
+      "alpha": 139.0,
+      "beta": 113.0
+    },
+    "SUPERTREND": {
+      "alpha": 267.0,
+      "beta": 218.0
+    },
+    "MICROSTRUCTURE": {
+      "alpha": 267.0,
+      "beta": 218.0
+    }
+  }
+}
