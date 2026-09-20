@@ -199,8 +199,11 @@ scorer*.pkl*
 # Local service files
 simple-trader.service
 
-# Additional
-.env
+# Web / Frontend artifacts
+web/node_modules/
+web/dist/
+web/.cache/
+
 .env.*
 .venv/
 venv/
