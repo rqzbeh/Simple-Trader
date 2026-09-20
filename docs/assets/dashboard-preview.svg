@@ -1,0 +1,228 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 580" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGradPreview" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0b0f19" />
+      <stop offset="100%" stop-color="#020617" />
+    </linearGradient>
+    <linearGradient id="chartLineGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#0ea5e9" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0.0" />
+    </linearGradient>
+    <filter id="shadowPreview" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.6" />
+    </filter>
+  </defs>
+
+  <style>
+    .font-sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .font-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+  </style>
+
+  <!-- Frame Background -->
+  <rect width="1000" height="580" rx="14" fill="url(#bgGradPreview)" stroke="#1e293b" stroke-width="2" />
+
+  <!-- Window Chrome Header -->
+  <rect width="1000" height="42" rx="14" fill="#0f172a" />
+  <rect y="38" width="1000" height="4" fill="#0f172a" />
+  <circle cx="24" cy="21" r="6" fill="#ef4444" />
+  <circle cx="44" cy="21" r="6" fill="#f59e0b" />
+  <circle cx="64" cy="21" r="6" fill="#10b981" />
+  <rect x="350" y="10" width="300" height="22" rx="6" fill="#1e293b" />
+  <text class="font-mono" font-size="11" fill="#94a3b8" x="420" y="25">https://localhost:3000</text>
+
+  <!-- Top Metrics Bar -->
+  <g transform="translate(24, 60)">
+    <rect width="952" height="60" rx="10" fill="#0f172a" stroke="#1e293b" stroke-width="1" />
+
+    <!-- Metric 1: Total Equity -->
+    <g transform="translate(20, 14)">
+      <text class="font-sans" font-size="11" font-weight="600" fill="#64748b">PORTFOLIO EQUITY</text>
+      <text class="font-mono" font-size="18" font-weight="700" fill="#ffffff" y="24">$102,450.00</text>
+      <text class="font-mono" font-size="11" font-weight="600" fill="#10b981" x="135" y="24">+2.45%</text>
+    </g>
+
+    <!-- Metric 2: Core vs Alpha Allocation Bar -->
+    <g transform="translate(260, 14)">
+      <text class="font-sans" font-size="11" font-weight="600" fill="#64748b">CAPITAL ALLOCATION (CORE 60% / ALPHA 40%)</text>
+      <g transform="translate(0, 14)">
+        <rect width="240" height="12" rx="6" fill="#1e293b" />
+        <rect width="144" height="12" rx="6" fill="#f59e0b" />
+        <rect x="144" width="96" height="12" rx="6" fill="#0ea5e9" />
+      </g>
+      <text class="font-mono" font-size="10" fill="#f59e0b" x="250" y="24">Core: $61.4k</text>
+      <text class="font-mono" font-size="10" fill="#0ea5e9" x="330" y="24">Alpha: $41.0k</text>
+    </g>
+
+    <!-- Metric 3: Circuit Breaker -->
+    <g transform="translate(730, 14)">
+      <rect width="200" height="34" rx="8" fill="#10b981" fill-opacity="0.1" stroke="#10b981" stroke-opacity="0.3" stroke-width="1" />
+      <circle cx="20" cy="17" r="4" fill="#10b981" />
+      <text class="font-sans" font-size="11" font-weight="700" fill="#10b981" x="32" y="21">CIRCUIT BREAKER: NORMAL</text>
+    </g>
+  </g>
+
+  <!-- Left: TradingView Chart Component -->
+  <g transform="translate(24, 134)" filter="url(#shadowPreview)">
+    <rect width="570" height="280" rx="10" fill="#0f172a" stroke="#1e293b" stroke-width="1" />
+
+    <!-- Chart Title Bar -->
+    <text class="font-sans" font-size="14" font-weight="700" fill="#ffffff" x="20" y="30">Gold Spot / US Dollar (XAU/USD)</text>
+    <text class="font-mono" font-size="14" font-weight="700" fill="#10b981" x="270" y="30">$2,980.50</text>
+    <text class="font-mono" font-size="11" fill="#64748b" x="350" y="30">1D • Yahoo Finance Feed</text>
+
+    <!-- Badges -->
+    <rect x="440" y="16" width="52" height="20" rx="4" fill="#1e293b" />
+    <text class="font-mono" font-size="10" fill="#f59e0b" x="450" y="30">CORE</text>
+
+    <rect x="500" y="16" width="55" height="20" rx="4" fill="#0284c7" fill-opacity="0.2" />
+    <text class="font-mono" font-size="10" fill="#38bdf8" x="508" y="30">15m TF</text>
+
+    <!-- Candlestick Visuals -->
+    <g transform="translate(20, 55)">
+      <!-- Grid lines -->
+      <line x1="0" y1="40" x2="530" y2="40" stroke="#1e293b" stroke-dasharray="2,2" />
+      <line x1="0" y1="90" x2="530" y2="90" stroke="#1e293b" stroke-dasharray="2,2" />
+      <line x1="0" y1="140" x2="530" y2="140" stroke="#1e293b" stroke-dasharray="2,2" />
+      <line x1="0" y1="180" x2="530" y2="180" stroke="#1e293b" stroke-dasharray="2,2" />
+
+      <!-- Area fill below trend -->
+      <path d="M 10 160 L 50 140 L 100 150 L 150 120 L 200 130 L 260 90 L 310 95 L 370 60 L 420 70 L 480 35 L 520 40 L 520 200 L 10 200 Z" fill="url(#chartLineGrad)" />
+
+      <!-- Candlesticks simulation -->
+      <!-- Green candle 1 -->
+      <line x1="50" y1="120" x2="50" y2="160" stroke="#10b981" stroke-width="1.5" />
+      <rect x="46" y="130" width="8" height="20" fill="#10b981" rx="1" />
+
+      <!-- Red candle 2 -->
+      <line x1="100" y1="130" x2="100" y2="165" stroke="#ef4444" stroke-width="1.5" />
+      <rect x="96" y="138" width="8" height="18" fill="#ef4444" rx="1" />
+
+      <!-- Green candle 3 -->
+      <line x1="150" y1="100" x2="150" y2="145" stroke="#10b981" stroke-width="1.5" />
+      <rect x="146" y="110" width="8" height="25" fill="#10b981" rx="1" />
+
+      <!-- Green candle 4 -->
+      <line x1="260" y1="70" x2="260" y2="115" stroke="#10b981" stroke-width="1.5" />
+      <rect x="256" y="78" width="8" height="28" fill="#10b981" rx="1" />
+
+      <!-- Green candle 5 -->
+      <line x1="370" y1="45" x2="370" y2="85" stroke="#10b981" stroke-width="1.5" />
+      <rect x="366" y="52" width="8" height="22" fill="#10b981" rx="1" />
+
+      <!-- SuperTrend breakout line -->
+      <path d="M 10 160 L 50 140 L 100 150 L 150 120 L 200 130 L 260 90 L 310 95 L 370 60 L 420 70 L 480 35 L 520 40" fill="none" stroke="#0ea5e9" stroke-width="2.5" />
+      <circle cx="520" cy="40" r="4" fill="#0ea5e9" />
+    </g>
+  </g>
+
+  <!-- Right: Live Asset Ticker Grid -->
+  <g transform="translate(608, 134)" filter="url(#shadowPreview)">
+    <rect width="368" height="280" rx="10" fill="#0f172a" stroke="#1e293b" stroke-width="1" />
+    <text class="font-sans" font-size="13" font-weight="700" fill="#ffffff" x="18" y="28">Live Global Asset Stream</text>
+    <text class="font-mono" font-size="10" fill="#10b981" x="280" y="28">● SSE LIVE</text>
+
+    <!-- Asset rows -->
+    <g transform="translate(16, 42)">
+      <!-- Row 1: Gold -->
+      <rect width="336" height="38" rx="6" fill="#1e293b" fill-opacity="0.4" />
+      <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">XAU/USD</text>
+      <text class="font-mono" font-size="11" fill="#94a3b8" x="80" y="24">Gold</text>
+      <text class="font-mono" font-size="12" font-weight="700" fill="#10b981" x="200" y="24">$2,980.50</text>
+      <text class="font-mono" font-size="11" fill="#10b981" x="285" y="24">+1.15%</text>
+
+      <!-- Row 2: Silver -->
+      <g transform="translate(0, 44)">
+        <rect width="336" height="38" rx="6" fill="#1e293b" fill-opacity="0.2" />
+        <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">XAG/USD</text>
+        <text class="font-mono" font-size="11" fill="#94a3b8" x="80" y="24">Silver</text>
+        <text class="font-mono" font-size="12" font-weight="700" fill="#ffffff" x="200" y="24">$34.25</text>
+        <text class="font-mono" font-size="11" fill="#ef4444" x="285" y="24">-0.42%</text>
+      </g>
+
+      <!-- Row 3: Bitcoin -->
+      <g transform="translate(0, 88)">
+        <rect width="336" height="38" rx="6" fill="#1e293b" fill-opacity="0.4" />
+        <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">BTC/USD</text>
+        <text class="font-mono" font-size="11" fill="#94a3b8" x="80" y="24">Bitcoin</text>
+        <text class="font-mono" font-size="12" font-weight="700" fill="#10b981" x="200" y="24">$92,450.00</text>
+        <text class="font-mono" font-size="11" fill="#10b981" x="285" y="24">+3.42%</text>
+      </g>
+
+      <!-- Row 4: Ethereum -->
+      <g transform="translate(0, 132)">
+        <rect width="336" height="38" rx="6" fill="#1e293b" fill-opacity="0.2" />
+        <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">ETH/USD</text>
+        <text class="font-mono" font-size="11" fill="#94a3b8" x="80" y="24">Ethereum</text>
+        <text class="font-mono" font-size="12" font-weight="700" fill="#10b981" x="200" y="24">$3,450.75</text>
+        <text class="font-mono" font-size="11" fill="#10b981" x="285" y="24">+2.18%</text>
+      </g>
+
+      <!-- Row 5: Crude Oil -->
+      <g transform="translate(0, 176)">
+        <rect width="336" height="38" rx="6" fill="#1e293b" fill-opacity="0.4" />
+        <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">WTI/USD</text>
+        <text class="font-mono" font-size="11" fill="#94a3b8" x="80" y="24">Oil</text>
+        <text class="font-mono" font-size="12" font-weight="700" fill="#ffffff" x="200" y="24">$72.80</text>
+        <text class="font-mono" font-size="11" fill="#ef4444" x="285" y="24">-0.85%</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- Bottom: Dynamic AI Indicator Weight Matrix Panel -->
+  <g transform="translate(24, 426)" filter="url(#shadowPreview)">
+    <rect width="952" height="135" rx="10" fill="#0f172a" stroke="#1e293b" stroke-width="1" />
+
+    <g transform="translate(20, 20)">
+      <text class="font-sans" font-size="13" font-weight="700" fill="#ffffff">Adaptive Indicator Weight Matrix</text>
+      <text class="font-mono" font-size="11" fill="#94a3b8" y="18">Dynamically calibrated in real time based on post-trade regret minimization [0.20x - 3.00x]</text>
+
+      <!-- Weight Badges Grid -->
+      <g transform="translate(0, 32)">
+        <!-- RSI -->
+        <rect width="138" height="48" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1" />
+        <text class="font-sans" font-size="11" font-weight="600" fill="#94a3b8" x="12" y="20">RSI (14-Wilder)</text>
+        <text class="font-mono" font-size="14" font-weight="700" fill="#38bdf8" x="12" y="38">1.35x</text>
+        <text class="font-mono" font-size="10" fill="#10b981" x="80" y="38">+35% boost</text>
+
+        <!-- MACD -->
+        <g transform="translate(152, 0)">
+          <rect width="138" height="48" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1" />
+          <text class="font-sans" font-size="11" font-weight="600" fill="#94a3b8" x="12" y="20">MACD (12/26)</text>
+          <text class="font-mono" font-size="14" font-weight="700" fill="#38bdf8" x="12" y="38">1.20x</text>
+          <text class="font-mono" font-size="10" fill="#10b981" x="80" y="38">+20% boost</text>
+        </g>
+
+        <!-- SuperTrend -->
+        <g transform="translate(304, 0)">
+          <rect width="138" height="48" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1" />
+          <text class="font-sans" font-size="11" font-weight="600" fill="#94a3b8" x="12" y="20">SuperTrend</text>
+          <text class="font-mono" font-size="14" font-weight="700" fill="#10b981" x="12" y="38">1.50x</text>
+          <text class="font-mono" font-size="10" fill="#10b981" x="80" y="38">+50% boost</text>
+        </g>
+
+        <!-- Bollinger -->
+        <g transform="translate(456, 0)">
+          <rect width="138" height="48" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1" />
+          <text class="font-sans" font-size="11" font-weight="600" fill="#94a3b8" x="12" y="20">Bollinger Bands</text>
+          <text class="font-mono" font-size="14" font-weight="700" fill="#f59e0b" x="12" y="38">0.85x</text>
+          <text class="font-mono" font-size="10" fill="#f59e0b" x="80" y="38">-15% penalty</text>
+        </g>
+
+        <!-- VWAP -->
+        <g transform="translate(608, 0)">
+          <rect width="138" height="48" rx="8" fill="#1e293b" stroke="#334155" stroke-width="1" />
+          <text class="font-sans" font-size="11" font-weight="600" fill="#94a3b8" x="12" y="20">VWAP</text>
+          <text class="font-mono" font-size="14" font-weight="700" fill="#38bdf8" x="12" y="38">1.40x</text>
+          <text class="font-mono" font-size="10" fill="#10b981" x="80" y="38">+40% boost</text>
+        </g>
+
+        <!-- Export JSONL Button -->
+        <g transform="translate(760, 0)">
+          <rect width="150" height="48" rx="8" fill="#0284c7" />
+          <text class="font-sans" font-size="11" font-weight="700" fill="#ffffff" x="22" y="22">Export ChatML JSONL</text>
+          <text class="font-mono" font-size="9" fill="#e0f2fe" x="22" y="36">Fine-Tuning Dataset</text>
+        </g>
+      </g>
+    </g>
+  </g>
+</svg>

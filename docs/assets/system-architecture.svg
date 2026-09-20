@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 620" width="100%" height="100%">
+  <defs>
+    <!-- Gradients -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#090d16" />
+      <stop offset="100%" stop-color="#0f172a" />
+    </linearGradient>
+
+    <linearGradient id="frontendGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0ea5e9" />
+      <stop offset="100%" stop-color="#2563eb" />
+    </linearGradient>
+
+    <linearGradient id="backendGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+
+    <linearGradient id="aiGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7" />
+      <stop offset="100%" stop-color="#7c3aed" />
+    </linearGradient>
+
+    <linearGradient id="dbGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#1d4ed8" />
+    </linearGradient>
+
+    <linearGradient id="redisGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ef4444" />
+      <stop offset="100%" stop-color="#b91c1c" />
+    </linearGradient>
+
+    <filter id="dropShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.5" />
+    </filter>
+  </defs>
+
+  <style>
+    .title { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-weight: 800; fill: #ffffff; }
+    .subtitle { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; fill: #94a3b8; }
+    .node-title { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 16px; font-weight: 700; fill: #ffffff; }
+    .node-subtitle { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 12px; fill: #cbd5e1; }
+    .badge { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; font-weight: 600; fill: #e2e8f0; }
+    .flow-line { stroke: #38bdf8; stroke-width: 2.5; stroke-dasharray: 6,4; fill: none; opacity: 0.85; }
+    .data-line { stroke: #64748b; stroke-width: 2; stroke-dasharray: 4,4; fill: none; opacity: 0.6; }
+  </style>
+
+  <!-- Canvas Background -->
+  <rect width="1000" height="620" rx="16" fill="url(#bgGrad)" />
+  <rect width="1000" height="620" rx="16" fill="none" stroke="#1e293b" stroke-width="2" />
+
+  <!-- Header Section -->
+  <g transform="translate(50, 45)">
+    <text class="title" font-size="24">Simple-Trader • System Architecture</text>
+    <text class="subtitle" y="24">Autonomous High-Throughput Quantitative Trading &amp; Adaptive AI Engine</text>
+  </g>
+
+  <!-- 1. Frontend Client Layer (PWA) -->
+  <g transform="translate(100, 100)" filter="url(#dropShadow)">
+    <rect width="800" height="95" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1.5" />
+    <rect x="0" y="0" width="800" height="6" rx="3" fill="url(#frontendGrad)" />
+
+    <circle cx="45" cy="48" r="22" fill="#0284c7" fill-opacity="0.2" />
+    <text x="37" y="55" font-family="sans-serif" font-size="20">📱</text>
+
+    <text class="node-title" x="80" y="42">React 18 + TypeScript Progressive Web App (Bun 1.2)</text>
+    <text class="node-subtitle" x="80" y="63">Lightweight Charts • Service Worker Precaching (sw.js) • SSE Live Stream • Dynamic Indicator Heatmap</text>
+
+    <!-- Badges -->
+    <rect x="660" y="32" width="115" height="26" rx="6" fill="#0369a1" />
+    <text class="badge" x="672" y="49">Nginx :80/:3000</text>
+  </g>
+
+  <!-- Middle Connection Line (SSE & REST) -->
+  <path d="M 500 195 L 500 245" class="flow-line" />
+  <g transform="translate(500, 220)">
+    <rect x="-85" y="-12" width="170" height="24" rx="12" fill="#0f172a" stroke="#0284c7" stroke-width="1.5" />
+    <text class="badge" x="-74" y="4" fill="#38bdf8">REST API &amp; Live SSE</text>
+  </g>
+
+  <!-- 2. Core Go Backend Engine Layer -->
+  <g transform="translate(100, 245)" filter="url(#dropShadow)">
+    <rect width="800" height="150" rx="14" fill="#1e293b" stroke="#334155" stroke-width="1.5" />
+    <rect x="0" y="0" width="800" height="6" rx="3" fill="url(#backendGrad)" />
+
+    <circle cx="45" cy="50" r="22" fill="#10b981" fill-opacity="0.2" />
+    <text x="37" y="57" font-family="sans-serif" font-size="20">⚡</text>
+
+    <text class="node-title" x="80" y="42">Pure Go 1.24 Autonomous Engine (Zero CGO, Sub-ms Loops)</text>
+    <text class="node-subtitle" x="80" y="63">Goroutine Worker Pools • Non-buffering SSE Broadcaster • Paper Execution Engine • Port :8080</text>
+
+    <!-- Sub-modules Grid inside Backend -->
+    <g transform="translate(30, 80)">
+      <!-- Module 1 -->
+      <rect width="230" height="50" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1" />
+      <text class="badge" x="12" y="24" fill="#34d399">Indicator Suite</text>
+      <text class="node-subtitle" font-size="10" x="12" y="40">RSI, MACD, BB, SuperTrend, VWAP</text>
+
+      <!-- Module 2 -->
+      <rect x="250" width="235" height="50" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1" />
+      <text class="badge" x="262" y="24" fill="#38bdf8">Capital Allocation</text>
+      <text class="node-subtitle" font-size="10" x="262" y="40">60% Core (Gold/Silver) vs 40% Alpha</text>
+
+      <!-- Module 3 -->
+      <rect x="505" width="235" height="50" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1" />
+      <text class="badge" x="517" y="24" fill="#f43f5e">Risk &amp; Circuit Breaker</text>
+      <text class="node-subtitle" font-size="10" x="517" y="40">Fixed 2% Risk, 10% Drawdown Halt</text>
+    </g>
+  </g>
+
+  <!-- Connectors from Engine to External Services -->
+  <path d="M 230 395 L 230 450" class="data-line" />
+  <path d="M 500 395 L 500 450" class="data-line" />
+  <path d="M 770 395 L 770 450" class="data-line" />
+
+  <!-- 3. Lower Tier: PostgreSQL, Redis, OpenAI -->
+  <!-- 3a. PostgreSQL 16 -->
+  <g transform="translate(100, 450)" filter="url(#dropShadow)">
+    <rect width="245" height="125" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5" />
+    <rect x="0" y="0" width="245" height="5" rx="2" fill="url(#dbGrad)" />
+
+    <text class="node-title" font-size="15" x="20" y="35">PostgreSQL 16</text>
+    <text class="badge" x="20" y="55" fill="#60a5fa">Durable Datastore</text>
+    <text class="node-subtitle" font-size="11" x="20" y="76">• Historical OHLCV Candles</text>
+    <text class="node-subtitle" font-size="11" x="20" y="93">• Executed Trades &amp; Signals</text>
+    <text class="node-subtitle" font-size="11" x="20" y="110">• pgxpool High-Speed Pooling</text>
+  </g>
+
+  <!-- 3b. Redis 7 -->
+  <g transform="translate(375, 450)" filter="url(#dropShadow)">
+    <rect width="250" height="125" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5" />
+    <rect x="0" y="0" width="250" height="5" rx="2" fill="url(#redisGrad)" />
+
+    <text class="node-title" font-size="15" x="20" y="35">Redis 7 In-Memory</text>
+    <text class="badge" x="20" y="55" fill="#f87171">Cache &amp; Pub/Sub</text>
+    <text class="node-subtitle" font-size="11" x="20" y="76">• Microsecond Ticker Cache</text>
+    <text class="node-subtitle" font-size="11" x="20" y="93">• Indicator Snapshot Storage</text>
+    <text class="node-subtitle" font-size="11" x="20" y="110">• Real-Time Pub/Sub Channels</text>
+  </g>
+
+  <!-- 3c. Unified OpenAI LLM Engine -->
+  <g transform="translate(655, 450)" filter="url(#dropShadow)">
+    <rect width="245" height="125" rx="12" fill="#1e293b" stroke="#334155" stroke-width="1.5" />
+    <rect x="0" y="0" width="245" height="5" rx="2" fill="url(#aiGrad)" />
+
+    <text class="node-title" font-size="15" x="20" y="35">OpenAI-Compatible AI</text>
+    <text class="badge" x="20" y="55" fill="#c084fc">Decision &amp; Learning</text>
+    <text class="node-subtitle" font-size="11" x="20" y="76">• OpenAI / Groq / vLLM / Ollama</text>
+    <text class="node-subtitle" font-size="11" x="20" y="93">• Dynamic Indicator Weights</text>
+    <text class="node-subtitle" font-size="11" x="20" y="110">• ChatML Fine-Tune Dataset</text>
+  </g>
+</svg>
