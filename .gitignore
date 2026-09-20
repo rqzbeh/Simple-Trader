@@ -210,6 +210,12 @@ web/node_modules/
 web/dist/
 web/.cache/
 
+# Internal AI Tooling & Scaffolding
+.claude/
+.specify/
+docs/superpowers/
+specs/
+
 .env.*
 .venv/
 venv/
