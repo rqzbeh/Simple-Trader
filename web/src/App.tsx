@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTheme } from './context/ThemeContext';
-import { Sun, Moon, Activity, TrendingUp, Cpu, Layers, SlidersHorizontal } from 'lucide-react';
+import { Sun, Moon, Activity, TrendingUp, Cpu, Layers, SlidersHorizontal, BarChart2 } from 'lucide-react';
 import { useSSE } from './hooks/useSSE';
 import { AssetTickerGrid } from './components/AssetTickerGrid';
 import { TradingViewChart } from './components/TradingViewChart';
@@ -8,7 +8,10 @@ import { AllocationGauge } from './components/AllocationGauge';
 import { PositionsTable } from './components/PositionsTable';
 import { AISignalFeed } from './components/AISignalFeed';
 import { AIWeightMatrix, INITIAL_WEIGHTS } from './components/AIWeightMatrix';
-import { AssetInfo, CandleData, TradePosition, IndicatorWeights } from './types';
+import { QuantDashboardView } from './components/QuantDashboardView';
+import { MicrostructureCard } from './components/MicrostructureCard';
+import { MacroCalendarPanel } from './components/MacroCalendarPanel';
+import { AssetInfo, CandleData, TradePosition, IndicatorWeights, MicrostructureState, MacroCalendarEvent } from './types';
 
 // Deterministic candle data generator for visual demonstration
 function generateCandles(basePrice: number): CandleData[] {
@@ -34,8 +37,40 @@ export const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const { isConnected, assets, signals, positions, summary, setPositions } = useSSE();
   const [selectedSymbol, setSelectedSymbol] = useState<string>('XAU/USD');
-  const [activeTab, setActiveTab] = useState<'terminal' | 'ai_weights'>('terminal');
+  const [activeTab, setActiveTab] = useState<'terminal' | 'ai_weights' | 'quant'>('terminal');
   const [weights, setWeights] = useState<IndicatorWeights>(INITIAL_WEIGHTS);
+
+  // Microstructure state for selected asset
+  const [microState] = useState<MicrostructureState>({
+    symbol: selectedSymbol,
+    obi: 0.38,
+    cvd: 4250,
+    divergence: 'BULLISH_ABSORPTION',
+    regime: 'NORMAL_TRENDING',
+    volRatio: 1.12,
+  });
+
+  // Macro events for circuit breaker monitoring
+  const [macroEvents] = useState<MacroCalendarEvent[]>([
+    {
+      id: 'FOMC-001',
+      title: 'FOMC Rate Decision',
+      currency: 'USD',
+      impact: 'HIGH',
+      scheduled_at: new Date(Date.now() + 1800000).toISOString(), // in 30 mins
+      forecast: '5.25%',
+      previous: '5.50%',
+    },
+    {
+      id: 'CPI-002',
+      title: 'US Core CPI YoY',
+      currency: 'USD',
+      impact: 'HIGH',
+      scheduled_at: new Date(Date.now() + 14400000).toISOString(),
+      forecast: '3.1%',
+      previous: '3.2%',
+    },
+  ]);
 
   const selectedAsset = assets.find((a: AssetInfo) => a.symbol === selectedSymbol) || assets[0];
   const candleData = React.useMemo(() => {
@@ -81,6 +116,17 @@ export const App: React.FC = () => {
               >
                 <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
                 <span>Market Terminal</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('quant')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
+                  activeTab === 'quant'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                <BarChart2 className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Quant Suite & Backtester</span>
               </button>
               <button
                 onClick={() => setActiveTab('ai_weights')}
@@ -235,7 +281,25 @@ export const App: React.FC = () => {
                 />
               </div>
             </div>
+
+            {/* Institutional Microstructure & Macro Circuit Breaker Panels */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <MicrostructureCard state={microState} />
+              <MacroCalendarPanel events={macroEvents} activeSymbol={selectedSymbol} />
+            </div>
           </>
+        ) : activeTab === 'quant' ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-slate-800 dark:text-slate-200">
+                Institutional Quant Analytics & Simulation Lab
+              </h2>
+              <span className="text-xs text-slate-400 font-mono">
+                Order Flow • Macro Halt • Monte Carlo Engine
+              </span>
+            </div>
+            <QuantDashboardView symbol={selectedSymbol} />
+          </div>
         ) : (
           <div className="space-y-4">
             <div className="flex items-center justify-between px-1">

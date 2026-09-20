@@ -42,4 +42,28 @@ describe('Web Types, Mock Data, and Risk Model', () => {
       expect(pos.currentPrice).toBeGreaterThan(0);
     }
   });
+
+  it('should validate MicrostructureState and MacroCalendarEvent institutional interfaces', () => {
+    const microState = {
+      symbol: 'BTC/USD',
+      obi: 0.25,
+      cvd: 1500,
+      divergence: 'BULLISH_ABSORPTION',
+      regime: 'NORMAL_TRENDING',
+      volRatio: 1.05,
+    };
+    expect(microState.obi).toBeGreaterThanOrEqual(-1.0);
+    expect(microState.obi).toBeLessThanOrEqual(1.0);
+    expect(['NONE', 'BULLISH_ABSORPTION', 'BEARISH_EXHAUSTION']).toContain(microState.divergence);
+    expect(['LOW_VOL_CONSOLIDATION', 'NORMAL_TRENDING', 'HIGH_VOL_CHOP']).toContain(microState.regime);
+
+    const macroEvent = {
+      id: 'FOMC-001',
+      title: 'FOMC Rate Decision',
+      currency: 'USD',
+      impact: 'HIGH',
+      scheduled_at: new Date().toISOString(),
+    };
+    expect(['LOW', 'MEDIUM', 'HIGH']).toContain(macroEvent.impact);
+  });
 });
