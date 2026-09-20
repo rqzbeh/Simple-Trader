@@ -1,31 +1,64 @@
 package trader
 
 import (
+	"errors"
 	"math"
 	"sync"
 )
 
-// AllocatorConfig sets the parameters for Core vs Alpha asset allocation and risk rules.
+var (
+	ErrExcessiveWithdrawal = errors.New("requested withdrawal exceeds Tier 1 unencumbered cash buffer")
+	ErrNegativeCapital     = errors.New("capital amounts must be non-negative")
+)
+
+// AllocatorConfig sets the parameters for 3-Tier capital allocation and risk rules.
 type AllocatorConfig struct {
 	TotalCapital       float64
-	CoreTargetPct      float64 // 0.0 - 1.0 (e.g. 0.60)
-	AlphaTargetPct     float64 // 0.0 - 1.0 (e.g. 0.40)
-	MaxRiskPerTradePct float64 // 0.0 - 1.0 (e.g. 0.02)
+	Tier1TargetPct     float64 // Target 0.15 (15% Cash/Withdrawal Buffer)
+	CoreTargetPct      float64 // Target 0.45 (45% Core Commodities: Gold/Silver)
+	AlphaTargetPct     float64 // Target 0.40 (40% Tactical Alpha Multi-Horizon)
+	MaxRiskPerTradePct float64 // e.g. 0.02 (2% max equity risk per trade)
+}
+
+// Default3TierConfig returns the institutional 3-tier liquidity configuration.
+func Default3TierConfig(totalCapital float64) AllocatorConfig {
+	return AllocatorConfig{
+		TotalCapital:       totalCapital,
+		Tier1TargetPct:     0.15, // 15% Unencumbered liquid cash
+		CoreTargetPct:      0.45, // 45% Core wealth preservation (Gold, Silver)
+		AlphaTargetPct:     0.40, // 40% Tactical alpha trading
+		MaxRiskPerTradePct: 0.02, // 2% risk limit
+	}
 }
 
 // CapitalAllocator is an alias for Allocator.
 type CapitalAllocator = Allocator
 
-// Allocator dynamically balances capital between Core (Gold, Silver) and Alpha (Crypto, Forex, Oil) buckets.
+// Allocator dynamically balances capital across the 3 Tiers:
+// Tier 1 (15% Liquid Cash Buffer), Tier 2 (45% Core Commodities), Tier 3 (40% Tactical Alpha)
 type Allocator struct {
-	mu     sync.RWMutex
-	config AllocatorConfig
+	mu        sync.RWMutex
+	config    AllocatorConfig
+	tier1Cash float64 // Actual held unencumbered cash reserve
 }
 
-// NewAllocator creates a capital allocator.
+// NewAllocator creates a 3-tier capital allocator.
 func NewAllocator(cfg AllocatorConfig) *Allocator {
+	if cfg.Tier1TargetPct <= 0 {
+		cfg.Tier1TargetPct = 0.15
+	}
+	if cfg.CoreTargetPct <= 0 {
+		cfg.CoreTargetPct = 0.45
+	}
+	if cfg.AlphaTargetPct <= 0 {
+		cfg.AlphaTargetPct = 0.40
+	}
+
+	initialTier1 := cfg.TotalCapital * cfg.Tier1TargetPct
+
 	return &Allocator{
-		config: cfg,
+		config:    cfg,
+		tier1Cash: initialTier1,
 	}
 }
 
@@ -39,8 +72,82 @@ func (a *Allocator) GetAvailableBuckets() (float64, float64) {
 	return core, alpha
 }
 
-// CalculatePositionSize computes the maximum position size based on fixed fractional risk.
-// riskPct is stop-loss distance percentage (e.g. 0.015 for 1.5%).
+// GetTier1CashReserve returns the current unencumbered liquid cash buffer.
+func (a *Allocator) GetTier1CashReserve() float64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.tier1Cash
+}
+
+// GetTotalCapital returns the total capital managed by the allocator.
+func (a *Allocator) GetTotalCapital() float64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.config.TotalCapital
+}
+
+// Get3TierBreakdown returns current allocation amounts and targets.
+func (a *Allocator) Get3TierBreakdown() map[string]interface{} {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	total := a.config.TotalCapital
+	core := total * a.config.CoreTargetPct
+	tactical := total * a.config.AlphaTargetPct
+
+	return map[string]interface{}{
+		"total_equity":               total,
+		"tier1_cash":                 math.Round(a.tier1Cash*100) / 100,
+		"tier1_target_pct":           a.config.Tier1TargetPct,
+		"tier2_core":                 math.Round(core*100) / 100,
+		"tier2_target_pct":           a.config.CoreTargetPct,
+		"tier3_tactical":             math.Round(tactical*100) / 100,
+		"tier3_target_pct":           a.config.AlphaTargetPct,
+		"available_for_withdrawal":   math.Round(a.tier1Cash*100) / 100,
+	}
+}
+
+// DebitTier1Cash deducts capital from Tier 1 unencumbered cash during an investor withdrawal.
+func (a *Allocator) DebitTier1Cash(amount float64) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if amount <= 0 {
+		return ErrNegativeCapital
+	}
+	if amount > a.tier1Cash {
+		return ErrExcessiveWithdrawal
+	}
+
+	a.tier1Cash -= amount
+	a.config.TotalCapital = math.Max(0, a.config.TotalCapital-amount)
+	return nil
+}
+
+// SweepProfitToTier1 transfers realized trading profits from tactical trades into Tier 1 cash buffer.
+func (a *Allocator) SweepProfitToTier1(profitAmount float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if profitAmount > 0 {
+		a.tier1Cash += profitAmount
+		a.config.TotalCapital += profitAmount
+	}
+}
+
+// AddCapital deposits new capital into the fund and recalculates buffers.
+func (a *Allocator) AddCapital(depositAmount float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if depositAmount > 0 {
+		a.config.TotalCapital += depositAmount
+		// Direct portion immediately to Tier 1 cash buffer
+		a.tier1Cash += depositAmount * a.config.Tier1TargetPct
+	}
+}
+
+// CalculatePositionSize computes maximum position size based on fixed fractional risk.
 func (a *Allocator) CalculatePositionSize(bucket string, entryPrice float64, riskPct float64) float64 {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -56,18 +163,13 @@ func (a *Allocator) CalculatePositionSize(bucket string, entryPrice float64, ris
 		bucketCapital = a.config.TotalCapital * a.config.AlphaTargetPct
 	}
 
-	// Maximum allowable dollar risk for this single trade
 	maxRiskDollars := a.config.TotalCapital * a.config.MaxRiskPerTradePct
-
-	// Dollar risk per single contract/unit
 	riskPerUnit := entryPrice * riskPct
 	if riskPerUnit <= 0 {
 		return 0
 	}
 
 	sizeByRisk := maxRiskDollars / riskPerUnit
-
-	// Cap by bucket capital allocation (cannot exceed 50% of bucket for a single trade)
 	maxDollarSize := bucketCapital * 0.50
 	sizeByCap := maxDollarSize / entryPrice
 
@@ -75,7 +177,7 @@ func (a *Allocator) CalculatePositionSize(bucket string, entryPrice float64, ris
 	return math.Round(units*10000) / 10000
 }
 
-// CalculateKellyPositionSize computes position size using the dynamic Half-Kelly criterion (FR-007).
+// CalculateKellyPositionSize computes position size using the dynamic Half-Kelly criterion.
 func (a *Allocator) CalculateKellyPositionSize(bucket string, entryPrice, stopLoss, takeProfit, winProb float64) float64 {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
@@ -100,16 +202,12 @@ func (a *Allocator) CalculateKellyPositionSize(bucket string, entryPrice, stopLo
 		bucketCapital = a.config.TotalCapital * a.config.AlphaTargetPct
 	}
 
-	// Maximum allowable dollar risk based on Half-Kelly
 	maxRiskDollars := a.config.TotalCapital * riskFraction
-
 	sizeByRisk := maxRiskDollars / slDistance
 
-	// Cap by 50% of bucket capital
 	maxDollarSize := bucketCapital * 0.50
 	sizeByCap := maxDollarSize / entryPrice
 
 	units := math.Min(sizeByRisk, sizeByCap)
 	return math.Round(units*10000) / 10000
 }
-

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/rqzbeh/simple-trader/internal/cache"
@@ -20,10 +21,13 @@ type BinanceFetcher struct {
 type binance24hrResponse struct {
 	Symbol             string `json:"symbol"`
 	LastPrice          string `json:"lastPrice"`
+	BidPrice           string `json:"bidPrice"`
+	AskPrice           string `json:"askPrice"`
 	PriceChangePercent string `json:"priceChangePercent"`
 	HighPrice          string `json:"highPrice"`
 	LowPrice           string `json:"lowPrice"`
 	Volume             string `json:"volume"`
+	QuoteVolume        string `json:"quoteVolume"`
 	CloseTime          int64  `json:"closeTime"`
 }
 
@@ -40,6 +44,48 @@ func NewBinanceFetcherWithBaseURL(baseURL string) *BinanceFetcher {
 			Timeout: 5 * time.Second,
 		},
 	}
+}
+
+// Get24hStats implements MarketStatsProvider for DynamicCryptoScreener with real live metrics.
+func (b *BinanceFetcher) Get24hStats(symbol string) (price float64, volume24h float64, spreadBps float64, err error) {
+	formatted := strings.ReplaceAll(symbol, "/", "")
+	formatted = strings.ReplaceAll(formatted, "USD", "USDT")
+
+	url := fmt.Sprintf("%s/api/v3/ticker/24hr?symbol=%s", b.baseURL, formatted)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to create binance request: %w", err)
+	}
+
+	resp, err := b.httpClient.Do(req)
+	if err != nil {
+		return 0, 0, 0, fmt.Errorf("binance request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return 0, 0, 0, fmt.Errorf("binance returned non-200 status: %d", resp.StatusCode)
+	}
+
+	var raw binance24hrResponse
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return 0, 0, 0, fmt.Errorf("failed to decode binance response: %w", err)
+	}
+
+	price, _ = strconv.ParseFloat(raw.LastPrice, 64)
+	bidPrice, _ := strconv.ParseFloat(raw.BidPrice, 64)
+	askPrice, _ := strconv.ParseFloat(raw.AskPrice, 64)
+	quoteVol, _ := strconv.ParseFloat(raw.QuoteVolume, 64)
+
+	spread := 2.5
+	if bidPrice > 0 && askPrice >= bidPrice {
+		spread = ((askPrice - bidPrice) / bidPrice) * 10000.0
+	}
+
+	return price, quoteVol, spread, nil
 }
 
 // FetchTicker fetches the latest 24hr ticker for a symbol (e.g. "BTCUSDT").

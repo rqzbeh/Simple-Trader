@@ -151,3 +151,78 @@ export interface MonteCarloSummary {
 
 export type MonteCarloRunResult = MonteCarloSummary;
 
+// Investor Capital Ledger Types (US1, FR-009, FR-010)
+export interface Investor {
+  id: string;
+  name: string;
+  contact_tag: string;
+  notes: string;
+  total_deposited: number;
+  total_withdrawn: number;
+  pool_units: number;
+  status: 'ACTIVE' | 'INACTIVE';
+  current_equity: number;
+  roi: number; // e.g. 0.0845 = 8.45%
+  pool_share_pct: number; // e.g. 24.50%
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CapitalTransaction {
+  id: string;
+  investor_id: string;
+  tx_type: 'DEPOSIT' | 'WITHDRAWAL';
+  amount: number;
+  units_transacted: number;
+  unit_nav_at_tx: number;
+  settled_tier1_cash: number;
+  notes: string;
+  timestamp: string;
+}
+
+export interface TierAllocationBreakdown {
+  tier1_cash: number;
+  tier1_pct: number;
+  tier2_core: number;
+  tier2_pct: number;
+  tier3_alpha: number;
+  tier3_pct: number;
+  total_capital: number;
+}
+
+// Live News Stream Types (FR-004)
+export interface NewsArticle {
+  id?: string;
+  content_hash: string;
+  title: string;
+  source: string;
+  url: string;
+  sentiment_score: number; // -1.0 to +1.0
+  polarity: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  key_phrases?: string[];
+  published_at: string;
+  ingested_at: string;
+}
+
+export interface NewsSentimentSummary {
+  score: number;
+  polarity: 'BULLISH' | 'BEARISH' | 'NEUTRAL';
+  headline_count: number;
+  bullish_count: number;
+  bearish_count: number;
+  neutral_count: number;
+  key_phrases?: string[];
+}
+
+// Dynamic Liquid Crypto Screener (FR-006)
+export interface ScreenedAsset {
+  symbol: string;
+  price: number;
+  volume_24h: number;
+  bid_ask_spread_bps: number;
+  status: 'ACTIVE' | 'DISQUALIFIED';
+  rejection_reason?: string;
+  screened_at: string;
+}
+
+

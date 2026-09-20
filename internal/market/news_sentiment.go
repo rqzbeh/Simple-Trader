@@ -26,12 +26,27 @@ var bullishTerms = []string{
 	"rate cut", "inflation cool", "inflation drops", "etf approved", "etf inflow",
 	"record high", "bullish", "stimulus", "accumulate", "reserve currency",
 	"breakout", "rally", "easing", "dovish", "liquidity surge", "halving",
+	// Whale & Institutional accumulation signals
+	"whale buy", "whale accumulation", "whale alert", "massive transfer to cold",
+	"institutional accumulation", "spot etf inflow", "billionaire buy", "treasury reserve",
+	"strategic bitcoin reserve", "whale loading", "holding supply",
+	// Politician & High-Profile Insiders
+	"trump crypto", "trump backing", "trump endorsement", "world liberty financial",
+	"trump son", "barron trump", "eric trump", "pelosi buy", "congressional buy",
+	"senator buy", "pro-crypto legislation", "insider accumulation",
 }
 
 var bearishTerms = []string{
 	"rate hike", "hawkish", "inflation surges", "war", "recession", "insolvency",
 	"bank run", "sec lawsuit", "sanction", "selloff", "crash", "bearish",
 	"liquidation cascade", "hack", "stolen", "contagion", "downgrade",
+	// Whale dump & Manipulation signals
+	"whale dump", "whale sell", "transfer to exchange", "whale liquidation",
+	"market manipulation", "pump and dump", "rug pull", "wash trading",
+	// Politician & Regulatory enforcement signals
+	"insider dump", "insider selling", "politician sell", "pelosi sell",
+	"congressional disclosure dump", "sec subpoena", "sec investigation",
+	"fraud charges", "crypto crackdown", "subpoena", "anti-crypto",
 }
 
 // AnalyzeNewsSentiment evaluates financial headlines using a quantitative financial lexicon.
@@ -42,7 +57,7 @@ func AnalyzeNewsSentiment(headlines []string) NewsSentimentReport {
 			Score:         0.0,
 			Polarity:      PolarityNeutral,
 			HeadlineCount: 0,
-			KeyPhrases:    nil,
+			KeyPhrases:    []string{},
 		}
 	}
 
@@ -77,6 +92,10 @@ func AnalyzeNewsSentiment(headlines []string) NewsSentimentReport {
 		polarity = PolarityBearish
 	} else {
 		polarity = PolarityNeutral
+	}
+
+	if keyPhrases == nil {
+		keyPhrases = []string{}
 	}
 
 	return NewsSentimentReport{

@@ -171,13 +171,19 @@ func (e *ExecutionEngine) CheckExit(symbol string, currentPrice float64) (*db.Tr
 }
 
 // GetTotalEquity returns cash plus unrealized marked-to-market position values.
-func (e *ExecutionEngine) GetTotalEquity(currentPrices map[string]float64) float64 {
+// Accepts optional currentPrices map for mark-to-market valuation.
+func (e *ExecutionEngine) GetTotalEquity(currentPrices ...map[string]float64) float64 {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
+	var prices map[string]float64
+	if len(currentPrices) > 0 {
+		prices = currentPrices[0]
+	}
+
 	equity := e.cash
 	for sym, pos := range e.positions {
-		currPrice, ok := currentPrices[sym]
+		currPrice, ok := prices[sym]
 		if !ok {
 			currPrice = pos.EntryPrice
 		}
