@@ -160,8 +160,11 @@ func (s *Server) GenerateFuturesSignalHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	// Broadcast signal via Telegram Bot if active
-	if s.telegramBot != nil {
+	if s.telegramBot != nil && s.telegramBot.GetConfig().Enabled {
 		s.telegramBot.BroadcastSignalEntry(sig)
+		if s.dbStore != nil && sig.ID > 0 {
+			_ = s.dbStore.MarkSignalDispatched(r.Context(), sig.ID)
+		}
 	}
 
 	json.NewEncoder(w).Encode(sig)
@@ -239,8 +242,11 @@ func (s *Server) CloseFuturesSignalHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	// Broadcast resolution via Telegram Bot if active
-	if s.telegramBot != nil {
+	if s.telegramBot != nil && s.telegramBot.GetConfig().Enabled {
 		s.telegramBot.BroadcastSignalResolution(targetSig, req.ExitPrice, req.ExitReason, pnl, roi)
+		if s.dbStore != nil && targetSig.ID > 0 {
+			_ = s.dbStore.MarkSignalResolved(r.Context(), targetSig.ID)
+		}
 	}
 
 	// Online Thompson Sampling fine-tuning for CPU-only VPS runtime

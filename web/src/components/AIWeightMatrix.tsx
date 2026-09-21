@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { IndicatorWeights } from '../types';
 import { Cpu, Sliders, Download, RefreshCw, CheckCircle2, ArrowRight } from 'lucide-react';
 
@@ -33,10 +33,40 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
 
-  // OpenAI Model Fine-tuning settings state
-  const [modelId, setModelId] = useState<string>('gpt-4o-mini');
-  const [endpointUrl, setEndpointUrl] = useState<string>('https://api.openai.com/v1');
+  // OpenAI Model Fine-tuning settings state (binds dynamically to live backend .env)
+  const [modelId, setModelId] = useState<string>(() => localStorage.getItem('st_ai_model') || 'gpt-4o-mini');
+  const [endpointUrl, setEndpointUrl] = useState<string>(() => localStorage.getItem('st_ai_endpoint') || 'https://api.openai.com/v1');
   const [apiKey, setApiKey] = useState<string>('');
+  const [envConfigLoaded, setEnvConfigLoaded] = useState<boolean>(false);
+  const [serverKeyMasked, setServerKeyMasked] = useState<string>('');
+  const [serverKeyConfigured, setServerKeyConfigured] = useState<boolean>(false);
+
+  useEffect(() => {
+    // Fetch live environment configuration from backend
+    fetch('/api/v1/system/config')
+      .then((res) => {
+        if (res.ok) return res.json();
+        return null;
+      })
+      .then((data) => {
+        if (data) {
+          setEnvConfigLoaded(true);
+          if (data.ai_model_id) {
+            setModelId(data.ai_model_id);
+          }
+          if (data.ai_base_url) {
+            setEndpointUrl(data.ai_base_url);
+          }
+          if (data.ai_api_key_configured) {
+            setServerKeyConfigured(true);
+            setServerKeyMasked(data.ai_api_key_masked || '••••••••');
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn('Could not fetch /api/v1/system/config:', err);
+      });
+  }, []);
 
   const handleSliderChange = (indicator: string, value: number) => {
     const updated = {
@@ -201,53 +231,75 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
       {/* OpenAI Settings & Continuous Fine-Tuning Console */}
       <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 p-5 shadow-sm flex flex-col justify-between">
         <div>
-          <div className="pb-3 border-b border-slate-100 dark:border-slate-800 mb-4">
-            <h3 className="font-bold text-sm tracking-tight text-slate-800 dark:text-slate-200 flex items-center space-x-2">
-              <Cpu className="w-4 h-4 text-indigo-500" />
-              <span>OpenAI API & Fine-Tuning</span>
-            </h3>
-            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-              Unified /v1/chat/completions Endpoint
-            </span>
+          <div className="pb-3 border-b border-slate-100 dark:border-slate-800 mb-4 flex items-center justify-between">
+            <div>
+              <h3 className="font-bold text-sm tracking-tight text-slate-800 dark:text-slate-200 flex items-center space-x-2">
+                <Cpu className="w-4 h-4 text-indigo-500" />
+                <span>AI Gateway & Fine-Tuning</span>
+              </h3>
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                Unified /v1/chat/completions Endpoint
+              </span>
+            </div>
+            {envConfigLoaded && (
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                Synced with .env
+              </span>
+            )}
           </div>
 
           <form onSubmit={handleSaveSettings} className="space-y-3 text-xs font-mono">
             <div>
-              <label className="block text-slate-600 dark:text-slate-400 mb-1">
-                API Base URL
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-slate-600 dark:text-slate-400">
+                  API Base URL
+                </label>
+                {envConfigLoaded && (
+                  <span className="text-[10px] text-slate-400 font-mono">Backend live default</span>
+                )}
+              </div>
               <input
                 type="text"
                 value={endpointUrl}
                 onChange={(e) => setEndpointUrl(e.target.value)}
                 placeholder="https://api.openai.com/v1"
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono"
               />
             </div>
 
             <div>
-              <label className="block text-slate-600 dark:text-slate-400 mb-1">
-                Model ID
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-slate-600 dark:text-slate-400">
+                  Model ID
+                </label>
+                {envConfigLoaded && (
+                  <span className="text-[10px] text-slate-400 font-mono">Active model</span>
+                )}
+              </div>
               <input
                 type="text"
                 value={modelId}
                 onChange={(e) => setModelId(e.target.value)}
-                placeholder="gpt-4o-mini / ft:gpt-4o:custom"
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                placeholder="antigravity/gemini-3.8-flash-tiered"
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono"
               />
             </div>
 
             <div>
-              <label className="block text-slate-600 dark:text-slate-400 mb-1">
-                API Secret Key
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-slate-600 dark:text-slate-400">
+                  API Key Status
+                </label>
+                {serverKeyConfigured && (
+                  <span className="text-[10px] text-emerald-500 font-mono">Configured in .env</span>
+                )}
+              </div>
               <input
-                type="password"
-                value={apiKey}
+                type="text"
+                value={apiKey || serverKeyMasked}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="sk-proj-..."
-                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                placeholder={serverKeyConfigured ? serverKeyMasked : "sk-..."}
+                className="w-full px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono"
               />
             </div>
 
