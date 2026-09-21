@@ -8,7 +8,7 @@ import (
 // CandleBar represents an OHLCV candlestick bar.
 type CandleBar struct {
 	Symbol    string    `json:"symbol"`
-	Timeframe string    `json:"timeframe"` // e.g. "3h"
+	Timeframe string    `json:"timeframe"` // e.g. "2h"
 	StartTime time.Time `json:"start_time"`
 	EndTime   time.Time `json:"end_time"`
 	Open      float64   `json:"open"`
@@ -22,19 +22,24 @@ type CandleBar struct {
 
 // AggregatorConfig sets parameters for multi-horizon candlestick aggregation.
 type AggregatorConfig struct {
-	TimeframeSeconds int64 // Default 10800 for 3-Hour Bars
+	TimeframeSeconds int64 // Default 7200 for 2-Hour Bars
 	MaxHistoryBars   int   // Ring buffer size per symbol (e.g. 100 bars)
 }
 
-// Default3HourAggregatorConfig provides standard 3-hour swing settings.
-func Default3HourAggregatorConfig() AggregatorConfig {
+// Default2HourAggregatorConfig provides standard 2-hour swing settings.
+func Default2HourAggregatorConfig() AggregatorConfig {
 	return AggregatorConfig{
-		TimeframeSeconds: 10800, // 3 hours = 3 * 3600 = 10,800 seconds
+		TimeframeSeconds: 7200, // 2 hours = 2 * 3600 = 7,200 seconds
 		MaxHistoryBars:   100,
 	}
 }
 
-// CandleAggregator aggregates real-time price ticks into completed 3-hour OHLCV bars.
+// Default3HourAggregatorConfig provides backward-compatibility for 3-hour settings.
+func Default3HourAggregatorConfig() AggregatorConfig {
+	return Default2HourAggregatorConfig()
+}
+
+// CandleAggregator aggregates real-time price ticks into completed 2-hour OHLCV bars.
 type CandleAggregator struct {
 	mu           sync.RWMutex
 	cfg          AggregatorConfig
@@ -45,7 +50,7 @@ type CandleAggregator struct {
 // NewCandleAggregator initializes the multi-horizon aggregator.
 func NewCandleAggregator(cfg AggregatorConfig) *CandleAggregator {
 	if cfg.TimeframeSeconds <= 0 {
-		cfg.TimeframeSeconds = 10800
+		cfg.TimeframeSeconds = 7200
 	}
 	if cfg.MaxHistoryBars <= 0 {
 		cfg.MaxHistoryBars = 100
@@ -57,8 +62,8 @@ func NewCandleAggregator(cfg AggregatorConfig) *CandleAggregator {
 	}
 }
 
-// IngestTick processes an incoming price quote and updates or completes the 3-hour bar.
-// Returns (completedBar, true) if a 3-hour bar was just closed and completed.
+// IngestTick processes an incoming price quote and updates or completes the 2-hour bar.
+// Returns (completedBar, true) if a 2-hour bar was just closed and completed.
 func (a *CandleAggregator) IngestTick(symbol string, price float64, volume float64, tickTime time.Time) (*CandleBar, bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -80,7 +85,7 @@ func (a *CandleAggregator) IngestTick(symbol string, price float64, volume float
 		// First tick for symbol
 		a.currentBars[symbol] = &CandleBar{
 			Symbol:    symbol,
-			Timeframe: "3h",
+			Timeframe: "2h",
 			StartTime: slotStartTime,
 			EndTime:   slotEndTime,
 			Open:      price,
@@ -111,7 +116,7 @@ func (a *CandleAggregator) IngestTick(symbol string, price float64, volume float
 		// Initialize new current bar
 		a.currentBars[symbol] = &CandleBar{
 			Symbol:    symbol,
-			Timeframe: "3h",
+			Timeframe: "2h",
 			StartTime: slotStartTime,
 			EndTime:   slotEndTime,
 			Open:      price,
@@ -153,7 +158,7 @@ func (a *CandleAggregator) GetHistory(symbol string) []CandleBar {
 	return res
 }
 
-// GetCurrentBar returns the active, in-progress 3-hour bar.
+// GetCurrentBar returns the active, in-progress 2-hour bar.
 func (a *CandleAggregator) GetCurrentBar(symbol string) (*CandleBar, bool) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()

@@ -84,7 +84,7 @@ You operate as a Senior Hedge Fund Portfolio Manager and Quantitative Risk Offic
 PORTFOLIO ARCHITECTURE & CAPITAL MANDATE:
 - Tier 1 (15-25%% Cash Reserve): Absolute liquidity buffer dedicated solely to zero-slippage investor redemptions. Strictly NEVER allocate or risk funds from Tier 1.
 - Tier 2 (40-60%% Core Wealth Preservation): Strategic macro store-of-value assets (Gold XAU/USD, Silver XAG/USD) grounded in monetary base expansion, inflation hedging, and real-yield compression.
-- Tier 3 (15-40%% Tactical Alpha): High-turnover liquid assets (evaluated on 3-hour swing candlesticks and high-volume crypto pairs >$50M 24h turnover, <10 bps spread). Realized profits are systematically swept into Tier 1 cash buffer.
+- Tier 3 (15-40%% Tactical Alpha): High-turnover liquid assets (evaluated on 2-hour swing candlesticks and high-volume crypto pairs >$50M 24h turnover, <10 bps spread). Realized profits are systematically swept into Tier 1 cash buffer.
 
 STRICT COMPLIANCE DIRECTIVE:
 All Iranian assets and instruments are strictly disabled and prohibited. Focus exclusively on verified global liquid pairs.
@@ -95,11 +95,11 @@ CRITICAL ARCHITECTURAL MANDATE: NEWS CATALYST FIRST
 3. Two-Sided Futures Trading: The market is two-sided.
    - Bullish news catalyst (sentiment >= +0.25) -> Evaluate "BUY" (LONG futures contract).
    - Bearish news catalyst (sentiment <= -0.25) -> Evaluate "SELL" (SHORT futures contract).
-4. Role of Technical Indicators: Technical indicators (RSI, SuperTrend, MACD, Bollinger Bands, Order Book Confluence) MUST be used STRICTLY to:
-   - Identify pullback entry pricing (do not chase green/red spikes).
-   - Calculate exact Stop Loss and Take Profit levels enforcing Risk-to-Reward (R:R) >= 1.5 (Institutional target >= 2.0).
-   - Calibrate isolated margin leverage (1x to 10x max).
-5. Capital Sizing & Allocation: Suggest allocation_pct as percent of available tactical alpha (default 1.0%% to 2.0%% max per trade; NEVER risk > 2.0%% of equity on a single trade).
+4. Role of Technical Indicators (2-Hour Intraday Horizon): Technical indicators (RSI, SuperTrend, MACD, Bollinger Bands, Order Book Confluence) MUST be used STRICTLY to:
+   - Identify pullback entry pricing on 2-hour candles (do not chase green/red spikes).
+   - Calculate tight Stop Loss (0.8%% to 1.5%% from entry) and ambitious Take Profit (2.0%% to 4.5%% from entry) enforcing Risk-to-Reward (R:R) between 2.5:1 and 3:1.
+   - Calibrate isolated margin leverage between 5x and 10x (default 8x for liquid crypto futures). Trades must produce meaningful leveraged ROI (20%% to 40%%+ return on margin) to comfortably exceed transaction costs and justify market risk.
+5. Capital Sizing & Allocation: Account sizes start at $100 up to institutional scale. Suggest allocation_pct as percent of available tactical alpha (default 1.0%% to 2.0%% risk per trade, ensuring margin required is sustainable and bounded within Tier 3 Tactical Alpha).
 
 CURRENT ADAPTIVE INDICATOR WEIGHTS (Calibrated via Thompson Sampling / Regret Minimization):
 %s
@@ -114,10 +114,10 @@ SCHEMA:
   "confidence": <float between 0.0 and 1.0>,
   "reasoning": "<concise institutional quantitative analysis referencing primary news catalyst, technical entry/exit calibration, and risk/reward>",
   "catalyst": "<headline or catalyst summary that triggered this decision, or empty if HOLD>",
-  "leverage": <integer between 1 and 10>,
+  "leverage": <integer between 5 and 10>,
   "allocation_pct": <float between 0.5 and 2.0>,
-  "suggested_stop_loss_pct": <float between 0.5 and 5.0>,
-  "suggested_take_profit_pct": <float between 1.0 and 15.0>,
+  "suggested_stop_loss_pct": <float between 0.8 and 1.5>,
+  "suggested_take_profit_pct": <float between 2.0 and 5.0>,
   "regime": "BULL" | "BEAR" | "RANGING",
   "estimated_win_probability": <float between 0.0 and 1.0>
 }`, weightsStr.String())
@@ -143,7 +143,7 @@ TECHNICAL INDICATOR SNAPSHOT (For Entry Optimization, SL/TP Levels, and Leverage
 - MACD Histogram: %+.4f
 - Multi-Indicator Confluence Score: %.2f
 
-Analyze catalyst priority first. If no high-conviction news catalyst exists, output "HOLD". If a catalyst exists, evaluate direction (BUY for Long, SELL for Short) and calibrate SL/TP with R:R >= 1.5. Output strict JSON.`,
+Analyze catalyst priority first. If no high-conviction news catalyst exists, output "HOLD". If a catalyst exists, evaluate direction (BUY for Long, SELL for Short), calibrate isolated leverage (5x-10x), and tight SL/TP with 2-hour swing R:R between 2.5:1 and 3:1. Output strict JSON.`,
 		req.Symbol, req.Bucket, req.Quote.Price, req.Quote.Change24h,
 		newsSection,
 		req.IndicatorSnap.RSI, req.IndicatorSnap.SuperTrend, req.IndicatorSnap.Histogram,
@@ -245,15 +245,19 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (*DecisionRes
 	} else if decision.Confidence > 1.0 {
 		decision.Confidence = 1.0
 	}
-	if decision.SuggestedStopLossPct <= 0 {
-		decision.SuggestedStopLossPct = 1.5
+	if decision.Leverage < 5 || decision.Leverage > 10 {
+		decision.Leverage = 8 // Default 8x isolated leverage for 2h intraday crypto setups
 	}
-	if decision.SuggestedTakeProfitPct <= 0 {
-		decision.SuggestedTakeProfitPct = 3.0
+	if decision.SuggestedStopLossPct <= 0 || decision.SuggestedStopLossPct > 3.0 {
+		decision.SuggestedStopLossPct = 1.0 // 1.0% stop loss for 2h horizon
+	}
+	if decision.SuggestedTakeProfitPct <= 0 || decision.SuggestedTakeProfitPct > 10.0 {
+		decision.SuggestedTakeProfitPct = 3.0 // 3.0% take profit (3:1 R:R target)
 	}
 
-	log.Printf("[AI-CORE] OmniRoute %s signal for %s: %s (Confidence: %.2f, WinProb: %.2f, Regime: %s)",
-		c.cfg.ModelID, req.Symbol, decision.Decision, decision.Confidence, decision.EstimatedWinProbability, decision.Regime)
+	log.Printf("[AI-CORE] OmniRoute %s signal for %s: %s (Confidence: %.2f, WinProb: %.2f, Regime: %s, Lev: %dx, SL: %.2f%%, TP: %.2f%%)",
+		c.cfg.ModelID, req.Symbol, decision.Decision, decision.Confidence, decision.EstimatedWinProbability, decision.Regime,
+		decision.Leverage, decision.SuggestedStopLossPct, decision.SuggestedTakeProfitPct)
 
 	return &decision, nil
 }
@@ -266,7 +270,7 @@ func (c *Client) fallbackHeuristic(req DecisionRequest) *DecisionResponse {
 	confidence := 0.5
 	catalyst := ""
 	reasoning := "No high-impact breaking news catalyst detected. Preserving capital in HOLD state."
-	lev := 1
+	lev := 8
 	alloc := 0.0
 
 	// Require at least one non-empty news headline as a catalyst
@@ -297,13 +301,13 @@ func (c *Client) fallbackHeuristic(req DecisionRequest) *DecisionResponse {
 			decision = "BUY"
 			confidence = 0.80
 			reasoning = fmt.Sprintf("Bullish catalyst (%s) confirmed by technical momentum.", catalyst)
-			lev = 5
+			lev = 8
 			alloc = 1.5
 		} else if isBearish {
 			decision = "SELL"
 			confidence = 0.80
 			reasoning = fmt.Sprintf("Bearish catalyst (%s) confirmed by downward technical momentum.", catalyst)
-			lev = 5
+			lev = 8
 			alloc = 1.5
 		} else {
 			decision = "HOLD"
@@ -319,7 +323,7 @@ func (c *Client) fallbackHeuristic(req DecisionRequest) *DecisionResponse {
 		Catalyst:                catalyst,
 		Leverage:                lev,
 		AllocationPct:           alloc,
-		SuggestedStopLossPct:    1.5,
+		SuggestedStopLossPct:    1.0,
 		SuggestedTakeProfitPct:  3.0,
 		Regime:                  snap.SuperTrend,
 		EstimatedWinProbability: confidence * 0.9,

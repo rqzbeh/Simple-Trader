@@ -265,7 +265,7 @@ export const MLTrainingView: React.FC<MLTrainingViewProps> = ({ apiBaseUrl = '' 
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500"
               >
                 <option value="1h">1 Hour (Short-Term Tactical)</option>
-                <option value="3h">3 Hours (Catalyst Swing Horizon)</option>
+                <option value="2h">2 Hours (Catalyst Swing Horizon)</option>
               </select>
             </div>
 
