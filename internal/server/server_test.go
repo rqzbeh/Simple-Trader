@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rqzbeh/simple-trader/internal/config"
+	"github.com/rqzbeh/simple-trader/internal/market"
 	"github.com/rqzbeh/simple-trader/internal/server"
 )
 
@@ -23,6 +24,23 @@ func TestHealthAndAssetsEndpoints(t *testing.T) {
 	}
 
 	srv := server.NewServer(cfg, nil, nil, nil, nil, nil)
+
+	// Inject deterministic mock candles to prevent test failures in georestricted CI environments
+	baseTime := time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC)
+	mockCandles := make([]market.HistoricalCandle, 500)
+	for i := 0; i < 500; i++ {
+		mockCandles[i] = market.HistoricalCandle{
+			OpenTime:  baseTime.Add(time.Duration(i) * time.Hour),
+			Open:      65000.0 + float64(i)*2,
+			High:      65100.0 + float64(i)*2,
+			Low:       64900.0 + float64(i)*2,
+			Close:     65050.0 + float64(i)*2,
+			Volume:    1000.0,
+			CloseTime: baseTime.Add(time.Duration(i+1) * time.Hour),
+		}
+	}
+	srv.SetCandleDownloader(&mockKlineDownloader{klines: mockCandles})
+
 	ts := httptest.NewServer(srv.Router())
 	defer ts.Close()
 
