@@ -28,9 +28,11 @@ func DefaultScreenerConfig() ScreenerConfig {
 			"BTC/USDT", "ETH/USDT", "SOL/USDT",
 			"BNB/USDT", "XRP/USDT", "ADA/USDT",
 			"DOGE/USDT", "AVAX/USDT", "LINK/USDT",
-			"PAXG/USDT", "EUR/USDT", "SUI/USDT",
-			"NEAR/USDT", "PEPE/USDT", "APT/USDT",
-			"ENA/USDT",
+			"PAXG/USDT", "SUI/USDT", "NEAR/USDT",
+			"APT/USDT", "DOT/USDT", "LTC/USDT",
+			"BCH/USDT", "UNI/USDT", "COPPER/USDT",
+			"XAU/USDT", "XAG/USDT", "XPT/USDT",
+			"XPD/USDT", "OIL/USDT", "ALU/USDT",
 		},
 	}
 }

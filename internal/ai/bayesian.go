@@ -185,17 +185,24 @@ func (ts *ThompsonSampler) RecordOutcome(outcome TradeOutcome) {
 	}
 }
 
-// GetPosteriorStats returns current Alpha, Beta, and expected win rates.
+// GetPosteriorStats returns current Alpha, Beta, expected win rates, and distribution variance.
 func (ts *ThompsonSampler) GetPosteriorStats() map[string]map[string]float64 {
 	ts.mu.RLock()
 	defer ts.mu.RUnlock()
 
 	stats := make(map[string]map[string]float64)
 	for name, post := range ts.posteriors {
+		total := post.Alpha + post.Beta
+		variance := 0.0
+		if total > 0 {
+			// Beta distribution variance: Var(X) = (alpha * beta) / ((alpha + beta)^2 * (alpha + beta + 1))
+			variance = (post.Alpha * post.Beta) / (math.Pow(total, 2) * (total + 1.0))
+		}
 		stats[name] = map[string]float64{
-			"alpha": post.Alpha,
-			"beta":  post.Beta,
-			"mean":  post.ExpectedValue(),
+			"alpha":    post.Alpha,
+			"beta":     post.Beta,
+			"mean":     post.ExpectedValue(),
+			"variance": variance,
 		}
 	}
 	return stats

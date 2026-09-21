@@ -119,10 +119,7 @@ func (e *AIStrategyEvaluator) Evaluate(ctx context.Context, symbol string, curre
 		}
 	}
 
-	bucket := "ALPHA"
-	if symbol == "PAXG/USDT" || symbol == "XAG/USDT" {
-		bucket = "CORE"
-	}
+	bucket := market.GetBucket(symbol)
 
 	decReq := ai.DecisionRequest{
 		Symbol: symbol,

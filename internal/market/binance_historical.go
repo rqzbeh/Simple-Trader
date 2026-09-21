@@ -31,21 +31,28 @@ type HistoricalKlineProvider interface {
 	FetchHistoricalKlines(ctx context.Context, symbol string, interval string, targetCount int) ([]HistoricalCandle, error)
 }
 
-// BinanceHistoricalDownloader fetches authentic continuous historical klines from Binance Public API.
+// BinanceHistoricalDownloader fetches authentic continuous historical klines from Binance Public API (Spot & Futures).
 type BinanceHistoricalDownloader struct {
-	baseURL    string
-	httpClient *http.Client
+	baseURL        string
+	futuresBaseURL string
+	httpClient     *http.Client
 }
 
 // NewBinanceHistoricalDownloader creates a historical downloader with default endpoints.
 func NewBinanceHistoricalDownloader() *BinanceHistoricalDownloader {
-	return NewBinanceHistoricalDownloaderWithBaseURL("https://api.binance.com")
+	return NewBinanceHistoricalDownloaderWithBaseURLs("https://api.binance.com", "https://fapi.binance.com")
 }
 
 // NewBinanceHistoricalDownloaderWithBaseURL creates a downloader with custom base URL.
 func NewBinanceHistoricalDownloaderWithBaseURL(baseURL string) *BinanceHistoricalDownloader {
+	return NewBinanceHistoricalDownloaderWithBaseURLs(baseURL, "https://fapi.binance.com")
+}
+
+// NewBinanceHistoricalDownloaderWithBaseURLs creates a downloader with custom Spot and Futures endpoints.
+func NewBinanceHistoricalDownloaderWithBaseURLs(baseURL, futuresBaseURL string) *BinanceHistoricalDownloader {
 	return &BinanceHistoricalDownloader{
-		baseURL: strings.TrimRight(baseURL, "/"),
+		baseURL:        strings.TrimRight(baseURL, "/"),
+		futuresBaseURL: strings.TrimRight(futuresBaseURL, "/"),
 		httpClient: &http.Client{
 			Timeout: 15 * time.Second,
 		},
@@ -103,21 +110,42 @@ func (d *BinanceHistoricalDownloader) FetchHistoricalKlines(
 		req.Header.Set("User-Agent", "SimpleTrader-GoHistorical/2.0")
 
 		resp, err := d.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("http request failed: %w", err)
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			resp.Body.Close()
-			return nil, fmt.Errorf("binance klines returned status %d", resp.StatusCode)
-		}
-
 		var raw [][]interface{}
-		if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+
+		// If Spot request fails (e.g. commodities like XAUUSDT, XAGUSDT only on Futures), fall back to Futures API
+		if err != nil || resp.StatusCode != http.StatusOK {
+			if resp != nil {
+				resp.Body.Close()
+			}
+
+			futuresURL := fmt.Sprintf("%s/fapi/v1/klines?symbol=%s&interval=%s&limit=%d&endTime=%d",
+				d.futuresBaseURL, cleanSymbol, interval, batchLimit, endTime)
+			reqF, errF := http.NewRequestWithContext(ctx, http.MethodGet, futuresURL, nil)
+			if errF != nil {
+				return nil, fmt.Errorf("failed to create futures request: %w", errF)
+			}
+			reqF.Header.Set("User-Agent", "SimpleTrader-GoHistorical/2.0")
+
+			respF, errF := d.httpClient.Do(reqF)
+			if errF != nil {
+				return nil, fmt.Errorf("http request failed on spot and futures: %w", errF)
+			}
+			if respF.StatusCode != http.StatusOK {
+				respF.Body.Close()
+				return nil, fmt.Errorf("binance klines returned non-200 status on spot and futures: %d", respF.StatusCode)
+			}
+			if err := json.NewDecoder(respF.Body).Decode(&raw); err != nil {
+				respF.Body.Close()
+				return nil, fmt.Errorf("failed to decode futures klines json: %w", err)
+			}
+			respF.Body.Close()
+		} else {
+			if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+				resp.Body.Close()
+				return nil, fmt.Errorf("failed to decode klines json: %w", err)
+			}
 			resp.Body.Close()
-			return nil, fmt.Errorf("failed to decode klines json: %w", err)
 		}
-		resp.Body.Close()
 
 		if len(raw) == 0 {
 			break
@@ -163,23 +191,9 @@ func (d *BinanceHistoricalDownloader) FetchHistoricalKlines(
 		endTime = firstCandleMs - 1
 
 		if len(raw) < batchLimit {
-			break // Reached beginning of available history
-		}
-
-		// Small delay to respect rate limits
-		time.Sleep(50 * time.Millisecond)
-	}
-
-	// Remove any duplicate timestamps and ensure chronological ordering
-	seen := make(map[int64]bool)
-	unique := make([]HistoricalCandle, 0, len(allCandles))
-	for _, c := range allCandles {
-		ts := c.OpenTime.UnixMilli()
-		if !seen[ts] {
-			seen[ts] = true
-			unique = append(unique, c)
+			break
 		}
 	}
 
-	return unique, nil
+	return allCandles, nil
 }

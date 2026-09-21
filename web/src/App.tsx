@@ -17,6 +17,7 @@ import { TelegramConfigModal } from './components/TelegramConfigModal';
 import { LoginModal } from './components/LoginModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { IOSInstallModal } from './components/IOSInstallModal';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { AssetInfo, CandleData, TradePosition, IndicatorWeights } from './types';
 
 export const App: React.FC = () => {
@@ -505,7 +506,9 @@ export const App: React.FC = () => {
                 CUDA Acceleration • Authentic Binance Kline Data • Thompson Sampling
               </span>
             </div>
-            <MLTrainingView />
+            <ErrorBoundary fallbackTitle="ML Engine Telemetry Offline">
+              <MLTrainingView />
+            </ErrorBoundary>
           </div>
         ) : (
           <div className="space-y-4">

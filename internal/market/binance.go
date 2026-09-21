@@ -12,10 +12,11 @@ import (
 	"github.com/rqzbeh/simple-trader/internal/cache"
 )
 
-// BinanceFetcher retrieves real-time crypto prices from Binance public REST endpoints.
+// BinanceFetcher retrieves real-time crypto and commodity prices from Binance public REST endpoints (Spot & Futures).
 type BinanceFetcher struct {
-	baseURL    string
-	httpClient *http.Client
+	baseURL        string
+	futuresBaseURL string
+	httpClient     *http.Client
 }
 
 type binance24hrResponse struct {
@@ -33,13 +34,19 @@ type binance24hrResponse struct {
 
 // NewBinanceFetcher creates a default Binance market fetcher.
 func NewBinanceFetcher() *BinanceFetcher {
-	return NewBinanceFetcherWithBaseURL("https://api.binance.com")
+	return NewBinanceFetcherWithBaseURLs("https://api.binance.com", "https://fapi.binance.com")
 }
 
 // NewBinanceFetcherWithBaseURL creates a Binance fetcher targeting a specific base URL (for testing or proxying).
 func NewBinanceFetcherWithBaseURL(baseURL string) *BinanceFetcher {
+	return NewBinanceFetcherWithBaseURLs(baseURL, "https://fapi.binance.com")
+}
+
+// NewBinanceFetcherWithBaseURLs creates a Binance fetcher targeting specific base URLs for Spot and Futures.
+func NewBinanceFetcherWithBaseURLs(baseURL, futuresBaseURL string) *BinanceFetcher {
 	return &BinanceFetcher{
-		baseURL: baseURL,
+		baseURL:        strings.TrimRight(baseURL, "/"),
+		futuresBaseURL: strings.TrimRight(futuresBaseURL, "/"),
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
@@ -49,6 +56,8 @@ func NewBinanceFetcherWithBaseURL(baseURL string) *BinanceFetcher {
 // Get24hStats implements MarketStatsProvider for DynamicCryptoScreener with real live metrics.
 func (b *BinanceFetcher) Get24hStats(symbol string) (price float64, volume24h float64, spreadBps float64, err error) {
 	formatted := strings.ReplaceAll(symbol, "/", "")
+	formatted = strings.ReplaceAll(formatted, "-", "")
+	formatted = strings.ReplaceAll(formatted, "_", "")
 	if strings.HasSuffix(formatted, "USD") && !strings.HasSuffix(formatted, "USDT") && !strings.HasSuffix(formatted, "USDC") {
 		formatted += "T"
 	}
@@ -63,14 +72,57 @@ func (b *BinanceFetcher) Get24hStats(symbol string) (price float64, volume24h fl
 	}
 
 	resp, err := b.httpClient.Do(req)
-	if err != nil {
-		return 0, 0, 0, fmt.Errorf("binance request failed: %w", err)
+	// If Spot call fails or returns non-200 (e.g. commodities like XAUUSDT/XAGUSDT on Futures), try Futures
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			resp.Body.Close()
+		}
+
+		futuresURL := fmt.Sprintf("%s/fapi/v1/ticker/24hr?symbol=%s", b.futuresBaseURL, formatted)
+		reqF, errF := http.NewRequestWithContext(ctx, http.MethodGet, futuresURL, nil)
+		if errF != nil {
+			return 0, 0, 0, fmt.Errorf("binance spot and futures request creation failed: %w", errF)
+		}
+		respF, errF := b.httpClient.Do(reqF)
+		if errF != nil {
+			return 0, 0, 0, fmt.Errorf("binance spot and futures requests failed: %w", errF)
+		}
+		defer respF.Body.Close()
+
+		if respF.StatusCode != http.StatusOK {
+			return 0, 0, 0, fmt.Errorf("binance spot & futures returned non-200 status: %d", respF.StatusCode)
+		}
+
+		var rawF binance24hrResponse
+		if err := json.NewDecoder(respF.Body).Decode(&rawF); err != nil {
+			return 0, 0, 0, fmt.Errorf("failed to decode binance futures response: %w", err)
+		}
+
+		price, _ = strconv.ParseFloat(rawF.LastPrice, 64)
+		quoteVol, _ := strconv.ParseFloat(rawF.QuoteVolume, 64)
+
+		spread := 2.5
+		bookURL := fmt.Sprintf("%s/fapi/v1/ticker/bookTicker?symbol=%s", b.futuresBaseURL, formatted)
+		if reqB, errB := http.NewRequestWithContext(ctx, http.MethodGet, bookURL, nil); errB == nil {
+			if respB, errB := b.httpClient.Do(reqB); errB == nil && respB.StatusCode == http.StatusOK {
+				defer respB.Body.Close()
+				var book struct {
+					BidPrice string `json:"bidPrice"`
+					AskPrice string `json:"askPrice"`
+				}
+				if err := json.NewDecoder(respB.Body).Decode(&book); err == nil {
+					bid, _ := strconv.ParseFloat(book.BidPrice, 64)
+					ask, _ := strconv.ParseFloat(book.AskPrice, 64)
+					if bid > 0 && ask >= bid {
+						spread = ((ask - bid) / bid) * 10000.0
+					}
+				}
+			}
+		}
+
+		return price, quoteVol, spread, nil
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return 0, 0, 0, fmt.Errorf("binance returned non-200 status: %d", resp.StatusCode)
-	}
 
 	var raw binance24hrResponse
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
@@ -90,9 +142,13 @@ func (b *BinanceFetcher) Get24hStats(symbol string) (price float64, volume24h fl
 	return price, quoteVol, spread, nil
 }
 
-// FetchTicker fetches the latest 24hr ticker for a symbol (e.g. "BTCUSDT").
+// FetchTicker fetches the latest 24hr ticker for a symbol (e.g. "BTCUSDT", "XAUUSDT").
 func (b *BinanceFetcher) FetchTicker(ctx context.Context, symbol string) (*cache.TickerQuote, error) {
-	url := fmt.Sprintf("%s/api/v3/ticker/24hr?symbol=%s", b.baseURL, symbol)
+	cleanSymbol := strings.ReplaceAll(symbol, "/", "")
+	cleanSymbol = strings.ReplaceAll(cleanSymbol, "-", "")
+	cleanSymbol = strings.ReplaceAll(cleanSymbol, "_", "")
+
+	url := fmt.Sprintf("%s/api/v3/ticker/24hr?symbol=%s", b.baseURL, cleanSymbol)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -100,14 +156,49 @@ func (b *BinanceFetcher) FetchTicker(ctx context.Context, symbol string) (*cache
 	}
 
 	resp, err := b.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("binance request failed: %w", err)
+	// If Spot returns non-200 or error, fall back to Futures
+	if err != nil || resp.StatusCode != http.StatusOK {
+		if resp != nil {
+			resp.Body.Close()
+		}
+
+		futuresURL := fmt.Sprintf("%s/fapi/v1/ticker/24hr?symbol=%s", b.futuresBaseURL, cleanSymbol)
+		reqF, errF := http.NewRequestWithContext(ctx, http.MethodGet, futuresURL, nil)
+		if errF != nil {
+			return nil, fmt.Errorf("failed to create binance futures request: %w", errF)
+		}
+		respF, errF := b.httpClient.Do(reqF)
+		if errF != nil {
+			return nil, fmt.Errorf("binance futures request failed: %w", errF)
+		}
+		defer respF.Body.Close()
+
+		if respF.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("binance futures returned non-200 status: %d", respF.StatusCode)
+		}
+
+		var rawF binance24hrResponse
+		if err := json.NewDecoder(respF.Body).Decode(&rawF); err != nil {
+			return nil, fmt.Errorf("failed to decode binance futures response: %w", err)
+		}
+
+		price, _ := strconv.ParseFloat(rawF.LastPrice, 64)
+		change, _ := strconv.ParseFloat(rawF.PriceChangePercent, 64)
+		high, _ := strconv.ParseFloat(rawF.HighPrice, 64)
+		low, _ := strconv.ParseFloat(rawF.LowPrice, 64)
+		vol, _ := strconv.ParseFloat(rawF.Volume, 64)
+
+		return &cache.TickerQuote{
+			Symbol:    rawF.Symbol,
+			Price:     price,
+			Change24h: change,
+			High24h:   high,
+			Low24h:    low,
+			Volume:    vol,
+			UpdatedAt: time.Now().Unix(),
+		}, nil
 	}
 	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("binance returned non-200 status: %d", resp.StatusCode)
-	}
 
 	var raw binance24hrResponse
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
