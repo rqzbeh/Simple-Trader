@@ -51,6 +51,7 @@ func FormatSignalEntry(sig *db.FuturesTradeSignal) string {
 		"🚨 *NEW TWO\\-SIDED FUTURES SIGNAL* 🚨\n\n"+
 			"*Asset:* `%s`\n"+
 			"*Direction:* %s *%s*\n"+
+			"*Timeframe:* *2\\-Hour Swing Setup*\n"+
 			"*Isolated Leverage:* *%dx*\n"+
 			"━━━━━━━━━━━━━━━━━━━━\n"+
 			"📍 *Entry Price:* $%s\n"+
@@ -62,7 +63,7 @@ func FormatSignalEntry(sig *db.FuturesTradeSignal) string {
 			"📰 *Primary News Catalyst:*\n"+
 			"_%s_\n"+
 			"🗞️ *Source:* %s  •  *Sentiment:* %s\n\n"+
-			"⚠️ *Risk Guard:* Max 2\\.0%% capital loss risk strictly enforced\\.",
+			"⚠️ *Risk Guard:* 2\\.5:1 to 3:1 R:R target with strict stop loss protection\\.",
 		EscapeMarkdownV2(sig.Symbol),
 		dirEmoji,
 		EscapeMarkdownV2(sig.Direction),
@@ -100,12 +101,16 @@ func FormatSignalResolution(sig *db.FuturesTradeSignal, exitPrice float64, exitR
 	switch exitReason {
 	case "TP1":
 		reasonLabel = "🎯 Target Take Profit 1 Hit"
+	case "TAKE_PROFIT":
+		reasonLabel = "🎯 Target Take Profit Hit"
 	case "TP2":
 		reasonLabel = "🎯 Target Take Profit 2 Hit"
-	case "SL":
+	case "SL", "STOP_LOSS":
 		reasonLabel = "🛡️ Protective Stop Loss Triggered"
-	case "MANUAL":
+	case "MANUAL", "MANUAL_EXIT":
 		reasonLabel = "⚙️ Manual Position Resolution"
+	default:
+		reasonLabel = EscapeMarkdownV2(exitReason)
 	}
 
 	// Calculate hold duration if exit time and created_at are available

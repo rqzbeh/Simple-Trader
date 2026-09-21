@@ -127,9 +127,9 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		}
 	}
 
-	// Portfolio equity and alpha capital
-	totalEquity := 10000.0
-	availableAlphaCapital := 5000.0
+	// Portfolio equity and alpha capital ($100 starting capital baseline supported up to institutional scale)
+	totalEquity := 100.0
+	availableAlphaCapital := 40.0
 	if s.cfg != nil {
 		if s.cfg.InitialCapital > 0 {
 			totalEquity = s.cfg.InitialCapital
@@ -151,6 +151,53 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		}
 	}
 
+	// 1. Calculate reserved capital across all currently ACTIVE signals and open positions
+	reservedCapital := 0.0
+	activeSignalsCount := 0
+	if s.dbStore != nil {
+		activeSignals, err := s.dbStore.ListFuturesSignals(ctx, "ACTIVE", 50)
+		if err == nil && activeSignals != nil {
+			activeSignalsCount = len(activeSignals)
+			for _, as := range activeSignals {
+				if as.Symbol != symbol {
+					reservedCapital += as.AllocatedCapitalUSD
+				}
+			}
+		}
+	}
+	if s.execEngine != nil {
+		for _, tr := range s.execEngine.GetOpenTrades() {
+			if tr != nil && tr.Symbol != symbol {
+				lev := tr.Leverage
+				if lev < 1 {
+					lev = 1
+				}
+				margin := (tr.PositionSize * tr.EntryPrice) / float64(lev)
+				reservedCapital += margin
+			}
+		}
+	}
+
+	// 2. Concurrency Gating: Max 3 concurrent active signals
+	if s.dbStore != nil {
+		existing, err := s.dbStore.GetActiveFuturesSignalBySymbol(ctx, symbol)
+		if err == nil && existing != nil {
+			// Signal already active for this symbol; return existing without duplicate notifications
+			return existing, nil
+		}
+		if activeSignalsCount >= 3 {
+			// Capital guard: at most 3 concurrent active trades permitted
+			return nil, nil // HOLD
+		}
+	}
+
+	// 3. Dynamic capital reservation
+	unreservedAlphaCapital := availableAlphaCapital - reservedCapital
+	minRequiredUnreserved := totalEquity * 0.05
+	if unreservedAlphaCapital < minRequiredUnreserved {
+		return nil, nil // HOLD - capital fully reserved in active trades
+	}
+
 	signalSvc := trader.NewSignalService(s.dbStore, s.aiClient)
 	sig, err := signalSvc.EvaluateMarketSignal(
 		ctx,
@@ -161,7 +208,7 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		nil,
 		headlines,
 		totalEquity,
-		availableAlphaCapital,
+		unreservedAlphaCapital,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("signal generation failed: %w", err)
@@ -171,18 +218,20 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		return nil, nil // HOLD
 	}
 
-	// Broadcast signal via SSE
-	if s.broadcaster != nil {
-		if sigBytes, err := json.Marshal(sig); err == nil {
-			s.broadcaster.Broadcast("futures_signal", string(sigBytes))
+	// Broadcast signal via SSE and Telegram ONLY if brand-new and not yet dispatched
+	if !sig.TelegramDispatched {
+		if s.broadcaster != nil {
+			if sigBytes, err := json.Marshal(sig); err == nil {
+				s.broadcaster.Broadcast("futures_signal", string(sigBytes))
+			}
 		}
-	}
 
-	// Broadcast signal via Telegram Bot if active
-	if s.telegramBot != nil && s.telegramBot.GetConfig().Enabled {
-		s.telegramBot.BroadcastSignalEntry(sig)
-		if s.dbStore != nil && sig.ID > 0 {
-			_ = s.dbStore.MarkSignalDispatched(ctx, sig.ID)
+		if s.telegramBot != nil && s.telegramBot.GetConfig().Enabled {
+			s.telegramBot.BroadcastSignalEntry(sig)
+			if s.dbStore != nil && sig.ID > 0 {
+				_ = s.dbStore.MarkSignalDispatched(ctx, sig.ID)
+				sig.TelegramDispatched = true
+			}
 		}
 	}
 
@@ -472,7 +521,12 @@ func (s *Server) CheckSignalExitForTick(tick cache.TickerQuote) {
 		return
 	}
 
-	// 1. Broadcast resolution via SSE
+	// 1. Mark signal as CLOSED in database
+	if sig.ID > 0 {
+		_ = s.dbStore.CloseFuturesSignal(ctx, sig.ID, tick.Price, exitReason, pnl, roi)
+	}
+
+	// 2. Broadcast resolution via SSE
 	if s.broadcaster != nil {
 		closePayload, _ := json.Marshal(map[string]interface{}{
 			"id":          sig.ID,
@@ -485,15 +539,16 @@ func (s *Server) CheckSignalExitForTick(tick cache.TickerQuote) {
 		s.broadcaster.Broadcast("futures_signal_closed", string(closePayload))
 	}
 
-	// 2. Broadcast resolution via Telegram Bot if active
-	if s.telegramBot != nil && s.telegramBot.GetConfig().Enabled {
+	// 3. Broadcast resolution via Telegram Bot if active and not already resolved
+	if s.telegramBot != nil && s.telegramBot.GetConfig().Enabled && !sig.TelegramResolved {
 		s.telegramBot.BroadcastSignalResolution(sig, tick.Price, exitReason, pnl, roi)
 		if sig.ID > 0 {
 			_ = s.dbStore.MarkSignalResolved(ctx, sig.ID)
+			sig.TelegramResolved = true
 		}
 	}
 
-	// 3. Online fine-tuning telemetry update
+	// 4. Online fine-tuning telemetry update
 	if s.sampler != nil {
 		side := "BUY"
 		if sig.Direction == "SHORT" {
@@ -542,6 +597,14 @@ func (s *Server) runBackgroundScan(ctx context.Context) {
 		return
 	}
 
+	// Concurrency guard: if 3 active signals are already open, skip background scan to prevent flooding
+	if s.dbStore != nil {
+		activeSignals, err := s.dbStore.ListFuturesSignals(ctx, "ACTIVE", 10)
+		if err == nil && len(activeSignals) >= 3 {
+			return
+		}
+	}
+
 	symbols := []string{
 		"BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT",
 		"BNB/USDT", "XRP/USDT", "LINK/USDT", "EUR/USDT",
@@ -565,6 +628,13 @@ func (s *Server) runBackgroundScan(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
+		}
+
+		// Skip if symbol already has an active signal
+		if s.dbStore != nil {
+			if existing, err := s.dbStore.GetActiveFuturesSignalBySymbol(ctx, sym); err == nil && existing != nil {
+				continue
+			}
 		}
 
 		bucket := "ALPHA"

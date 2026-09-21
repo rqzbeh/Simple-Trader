@@ -133,7 +133,7 @@ Capital is governed by a scientific 3-tier macroeconomic model that adjusts port
 2. **Tier 2: Core Safe-Haven Capital Preservation (45.0% Baseline • $45,000)**
    - Macro inflation and geopolitical hedges: Tokenized Gold (PAXG/USDT), BNB/USDT, and core Bitcoin holdings (BTC/USDT).
 3. **Tier 3: Tactical Alpha Trading (40.0% Baseline • $40,000)**
-   - High-conviction news-catalyst entries on 3-hour candle setups using isolated futures leverage (1x-10x).
+   - High-conviction news-catalyst entries on 2-hour candle setups using isolated futures leverage (5x-10x, default 8x, with strict 2.5:1 to 3:1 R:R target, calibrated for accounts from $100 up to institutional scale).
 
 ### Automated Regime Shifting
 - **🚨 Crisis / Escalation Regime**: Triggered when geopolitical conflict stress spikes or war breaks out. Shifts portfolio defensively: **Cash 30% • Core Gold 55% • Alpha 15%**.

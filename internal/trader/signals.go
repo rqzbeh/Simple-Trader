@@ -57,10 +57,10 @@ func (s *SignalService) EvaluateMarketSignal(
 		return nil, errors.New("invalid quote price: must be positive")
 	}
 	if totalEquity <= 0 {
-		totalEquity = 100000.0 // Default baseline equity
+		totalEquity = 100.0 // Default baseline equity supporting $100 starting accounts
 	}
 	if availableAlphaCapital <= 0 {
-		availableAlphaCapital = totalEquity * 0.40 // 40% Tier 3 Alpha default
+		availableAlphaCapital = totalEquity * 0.40 // 40% Tier 3 Alpha default ($40 on $100 account)
 	}
 
 	// 1. Check if an ACTIVE signal already exists for this symbol
@@ -100,15 +100,15 @@ func (s *SignalService) EvaluateMarketSignal(
 		return nil, nil
 	}
 
-	// 4. Calculate protective price bounds (Stop Loss & Take Profit)
+	// 4. Calculate protective price bounds (Stop Loss & Take Profit) for 2-hour swing setups
 	entryPrice := quote.Price
 	slPct := aiResp.SuggestedStopLossPct
-	if slPct <= 0 || slPct > 10.0 {
-		slPct = 1.5
+	if slPct < 0.6 || slPct > 2.5 {
+		slPct = 1.0 // 1.0% Stop Loss default for 2-hour intraday setups
 	}
 	tpPct := aiResp.SuggestedTakeProfitPct
-	if tpPct <= 0 || tpPct > 30.0 {
-		tpPct = 3.5
+	if tpPct < 1.5 || tpPct > 8.0 {
+		tpPct = 3.0 // 3.0% Take Profit default (3:1 R:R target)
 	}
 
 	var stopLoss, takeProfit float64
@@ -120,27 +120,28 @@ func (s *SignalService) EvaluateMarketSignal(
 		takeProfit = entryPrice * (1.0 - (tpPct / 100.0))
 	}
 
-	// 5. Validate & Enforce Risk-Reward Ratio >= 1.5 (Institutional target >= 2.0)
+	// 5. Validate & Enforce Risk-Reward Ratio between 2.5:1 and 3:1
 	rr, err := CalculateRiskRewardRatio(entryPrice, stopLoss, takeProfit, dir)
-	if err != nil || rr < 1.5 {
-		// Enforce institutional minimum R:R = 2.0
+	if err != nil || rr < 2.5 {
+		// Enforce institutional minimum R:R = 2.75:1 (justifies transaction fees and risk)
+		targetRR := 2.75
 		riskDist := math.Abs(entryPrice - stopLoss)
 		if dir == DirectionLong {
-			takeProfit = entryPrice + (2.0 * riskDist)
+			takeProfit = entryPrice + (targetRR * riskDist)
 		} else {
-			takeProfit = entryPrice - (2.0 * riskDist)
+			takeProfit = entryPrice - (targetRR * riskDist)
 		}
-		rr = 2.0
+		rr = targetRR
 	}
 
-	// 6. Leverage and Capital Sizing
+	// 6. Leverage and Capital Sizing for 2-Hour Trades
 	leverage := aiResp.Leverage
-	if leverage < 1 || leverage > 10 {
-		leverage = 3 // Safe institutional default
+	if leverage < 5 || leverage > 10 {
+		leverage = 8 // Default 8x isolated leverage for liquid crypto futures
 	}
 
-	// Institutional constraint: max 2.0% equity risk per trade
-	maxRiskPct := 0.02
+	// Institutional constraint: 1.5% equity risk per trade (supports accounts from $100 to institutional scale)
+	maxRiskPct := 0.015
 	_, marginRequired, _, err := CalculatePositionSizing(
 		totalEquity,
 		maxRiskPct,
@@ -151,6 +152,15 @@ func (s *SignalService) EvaluateMarketSignal(
 	)
 	if err != nil {
 		return nil, fmt.Errorf("position sizing calculation failed: %w", err)
+	}
+
+	// Bound margin required to at most 20% of total equity and within available Alpha capital
+	maxTradeMargin := totalEquity * 0.20
+	if marginRequired > maxTradeMargin {
+		marginRequired = maxTradeMargin
+	}
+	if marginRequired > availableAlphaCapital {
+		marginRequired = availableAlphaCapital
 	}
 
 	allocatedCapitalUSD := marginRequired

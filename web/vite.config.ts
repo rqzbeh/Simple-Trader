@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -15,6 +17,21 @@ export default defineConfig({
   },
   plugins: [
     react(),
+    {
+      name: 'cfasync-disabler',
+      enforce: 'post',
+      transformIndexHtml(html: string) {
+        return html.replaceAll('<script', '<script data-cfasync="false"');
+      },
+      closeBundle() {
+        const indexPath = path.resolve(__dirname, 'dist/index.html');
+        if (fs.existsSync(indexPath)) {
+          let html = fs.readFileSync(indexPath, 'utf-8');
+          html = html.replace(/<script\b(?![^>]*data-cfasync)/gi, '<script data-cfasync="false"');
+          fs.writeFileSync(indexPath, html);
+        }
+      },
+    },
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],

@@ -248,7 +248,7 @@ export const InvestorLedgerView: React.FC = () => {
               <span>Tier 3: Tactical Alpha (40%)</span>
             </span>
             <span className="px-2 py-0.5 rounded text-[10px] bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 font-bold">
-              3h Swing Bars
+              2h Swing Bars
             </span>
           </div>
           <div className="text-2xl font-bold font-mono text-indigo-600 dark:text-indigo-400">
