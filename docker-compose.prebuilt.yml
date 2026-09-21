@@ -12,8 +12,9 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./migrations/000001_init_schema.up.sql:/docker-entrypoint-initdb.d/001_init_schema.sql:ro
       - ./migrations/000002_investor_ledger.up.sql:/docker-entrypoint-initdb.d/002_investor_ledger.sql:ro
+      - ./migrations/000003_futures_auth_telegram.up.sql:/docker-entrypoint-initdb.d/003_futures_auth_telegram.sql:ro
     ports:
-      - "5432:5432"
+      - "127.0.0.1:15432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-trader} -d ${POSTGRES_DB:-simple_trader}"]
       interval: 5s
@@ -29,7 +30,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      - "127.0.0.1:16379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -65,7 +66,7 @@ services:
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       ENV: "production"
     ports:
-      - "8080:8080"
+      - "127.0.0.1:18080:8080"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/health | grep healthy || exit 1"]
       interval: 10s
