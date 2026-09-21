@@ -11,6 +11,7 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
   const [signals, setSignals] = useState<FuturesTradeSignal[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [evaluating, setEvaluating] = useState<boolean>(false);
+  const [evaluatingAll, setEvaluatingAll] = useState<boolean>(false);
   const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC/USDT');
   const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'CLOSED'>('ACTIVE');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -52,7 +53,6 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
       if (data.status === 'HOLD') {
         alert(`AI Decision: HOLD for ${selectedSymbol}\n\n${data.message}`);
       } else if (data.id) {
-        // Refresh signals list
         fetchSignals();
       }
     } catch (err: any) {
@@ -62,14 +62,38 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
     }
   };
 
-  const handleCloseSignal = async (id: number, exitPrice: number = 0) => {
-    if (!confirm(`Are you sure you want to close signal #${id} at market price?`)) return;
+  const handleEvaluateAll = async () => {
     try {
+      setEvaluatingAll(true);
+      setErrorMsg(null);
+      const res = await fetch(`${apiBaseUrl}/api/v1/signals/futures/decide-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bucket: 'ALPHA' }),
+      });
+      const data = await res.json();
+      fetchSignals();
+      if (data.signals_count > 0) {
+        alert(`Scan Complete: Evaluated ${data.scanned_count} assets simultaneously. Generated ${data.signals_count} actionable signals!`);
+      } else {
+        alert(`Scan Complete: Evaluated ${data.scanned_count} assets simultaneously. No breaking catalyst found (HOLD).`);
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to trigger batch evaluation');
+    } finally {
+      setEvaluatingAll(false);
+    }
+  };
+
+  const handleCloseSignal = async (id: number, symbol: string) => {
+    if (!confirm(`Are you sure you want to close signal #${id} (${symbol}) at market price?`)) return;
+    try {
+      const exitPrice = (selectedSymbol === symbol && currentPrice > 0) ? currentPrice : 0;
       const res = await fetch(`${apiBaseUrl}/api/v1/signals/futures/${id}/close`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          exit_price: exitPrice > 0 ? exitPrice : 0,
+          exit_price: exitPrice,
           exit_reason: 'MANUAL_CLOSE',
         }),
       });
@@ -111,12 +135,22 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
           </select>
 
           <button
+            onClick={handleEvaluateAll}
+            disabled={evaluatingAll || evaluating}
+            className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-all disabled:opacity-50 font-mono"
+            title="Scan breaking news catalysts across all crypto assets simultaneously"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${evaluatingAll ? 'animate-spin' : ''}`} />
+            <span>{evaluatingAll ? 'Scanning All Universe...' : 'Scan All Assets'}</span>
+          </button>
+
+          <button
             onClick={handleEvaluate}
-            disabled={evaluating}
+            disabled={evaluating || evaluatingAll}
             className="px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-all disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${evaluating ? 'animate-spin' : ''}`} />
-            <span>{evaluating ? 'Evaluating News Catalyst...' : 'Analyze Breaking News & Signals'}</span>
+            <span>{evaluating ? 'Evaluating...' : `Scan ${selectedSymbol}`}</span>
           </button>
         </div>
       </div>
@@ -268,7 +302,7 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
 
                   {sig.status === 'ACTIVE' && (
                     <button
-                      onClick={() => handleCloseSignal(sig.id, currentPrice)}
+                      onClick={() => handleCloseSignal(sig.id, sig.symbol)}
                       className="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 text-[11px] font-semibold transition-colors flex items-center gap-1"
                     >
                       <XCircle className="w-3 h-3" />

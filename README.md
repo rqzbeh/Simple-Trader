@@ -110,7 +110,9 @@ Technical indicators alone do not justify opening trades. In Simple-Trader, **br
 - **Isolated Leverage**: Multipliers dynamically calibrated between **1x and 10x** based on market volatility.
 - **Strict Risk Sizing**: Position equity risk is hard-capped at **2.0% of Tier 3 Alpha Capital**.
 - **Asymmetric Payoff**: Guaranteed minimum **Risk-to-Reward Ratio ($R:R$) of 1:1.50** (averaging 1:2.20+).
-- **Automated Telegram Alerts**: Instant broadcast of actionable entry levels (Entry, Stop Loss, Take Profit 1 & 2) and completion cards with realized ROI % to your private Telegram channel.
+- **Batch & Transparent Background Scanning**: Multi-threaded parallel asset scanning evaluates catalysts across the entire liquid universe (`POST /api/v1/signals/futures/decide-all`), backed by an automated 2-minute transparent background scanning daemon.
+- **Tick-Driven Autonomous Trade Resolution**: Ingested high-frequency ticks continuously test active signals against target bounds, automatically executing Take Profit or Stop Loss without manual intervention.
+- **Automated Telegram Alerts**: Instant broadcast of actionable entry levels (Entry, Stop Loss, Take Profit 1 & 2) and completion cards with realized ROI % to your private Telegram channel with MarkdownV2 escaping and plain-text fallback.
 
 ---
 
@@ -246,7 +248,8 @@ Simple-Trader connects directly to any OpenAI-compatible AI gateway using standa
 | `GET` | `/api/v1/positions` | Live paper ledger open positions with dynamic mark-to-market valuations |
 | `GET` | `/api/v1/portfolio/summary` | Real-time portfolio equity, 3-tier allocations, and drawdown metrics |
 | `GET` | `/api/v1/signals/futures` | List active or closed two-sided trade signals (BUY/LONG & SELL/SHORT) |
-| `POST` | `/api/v1/signals/futures/decide` | Trigger AI market evaluation driven by breaking news catalysts |
+| `POST` | `/api/v1/signals/futures/decide` | Trigger AI market evaluation for a single asset driven by breaking news catalysts |
+| `POST` | `/api/v1/signals/futures/decide-all` | Concurrent batch evaluation across all liquid crypto universe assets |
 | `POST` | `/api/v1/signals/futures/{id}/close` | Close signal position with realized PnL and trigger Bayesian fine-tuning |
 | `GET` | `/api/v1/macro/regime` | Dynamic macroeconomic regime state (Crisis / Normal / Dovish Expansion) |
 | `GET` | `/api/v1/telegram/config` | Retrieve configured Telegram bot and notification settings |
@@ -262,9 +265,6 @@ Simple-Trader connects directly to any OpenAI-compatible AI gateway using standa
 | `GET` | `/api/v1/investors/{id}` | Retrieve investor profile, current equity, and transaction history |
 | `POST` | `/api/v1/investors/{id}/deposit` | Deposit additional capital and mint pool units |
 | `POST` | `/api/v1/investors/{id}/withdraw` | Withdraw capital (protected by Tier 1 cash buffer) |
-| `GET` | `/api/v1/klines` | Authentic exchange candlestick klines (`?symbol=BTC/USDT&interval=1h&limit=48`) |
-| `GET` | `/api/v1/positions` | Active open paper trading positions with live mark-to-market valuations |
-| `GET` | `/api/v1/portfolio/summary` | Real-time portfolio totals, dynamic equity, core/alpha split, and drawdown |
 
 ---
 

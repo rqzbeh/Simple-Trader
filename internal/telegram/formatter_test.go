@@ -88,10 +88,10 @@ func TestFormatSignalResolution(t *testing.T) {
 	if !strings.Contains(msg, "Target Take Profit 1 Hit") {
 		t.Errorf("expected TP1 reason in message, got: %s", msg)
 	}
-	if !strings.Contains(msg, "+$800\\.00") && !strings.Contains(msg, "$800\\.00") {
+	if !strings.Contains(msg, "\\+$800\\.00") && !strings.Contains(msg, "$800\\.00") {
 		t.Errorf("expected realized PnL in message, got: %s", msg)
 	}
-	if !strings.Contains(msg, "40.00%") {
+	if !strings.Contains(msg, "40\\.00%") {
 		t.Errorf("expected realized ROI in message, got: %s", msg)
 	}
 }
@@ -103,5 +103,13 @@ func TestFormatTestMessage(t *testing.T) {
 	}
 	if !strings.Contains(msg, "SimpleTraderSignalsBot") {
 		t.Errorf("expected bot name in test message, got: %s", msg)
+	}
+}
+
+func TestStripMarkdownV2(t *testing.T) {
+	formatted := "*Asset:* `BTC/USDT`\\n\\*Take Profit 1:\\* $66400\\.00\\n"
+	plain := telegram.StripMarkdownV2(formatted)
+	if strings.Contains(plain, "*") || strings.Contains(plain, "`") || strings.Contains(plain, "\\.") {
+		t.Errorf("expected stripped plain text without markdown markers, got: %s", plain)
 	}
 }

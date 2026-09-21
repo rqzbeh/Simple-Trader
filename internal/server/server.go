@@ -112,7 +112,8 @@ func (s *Server) MarketData() *trader.LiveMarketData {
 	return s.marketData
 }
 
-// IngestTick updates the in-memory quote store, Redis (if active), and broadcasts the tick to SSE.
+// IngestTick updates the in-memory quote store, Redis (if active), broadcasts the tick to SSE,
+// and checks active futures signals for autonomous Take Profit / Stop Loss resolution.
 func (s *Server) IngestTick(tick cache.TickerQuote) {
 	if s.marketData != nil {
 		s.marketData.UpdateQuote(tick)
@@ -123,6 +124,9 @@ func (s *Server) IngestTick(tick cache.TickerQuote) {
 	if tickJSON, err := json.Marshal(tick); err == nil {
 		s.broadcaster.Broadcast("tick", string(tickJSON))
 	}
+
+	// Autonomously evaluate active futures signals against streaming ticks
+	go s.CheckSignalExitForTick(tick)
 }
 
 // Router returns the initialized chi router.
@@ -296,6 +300,20 @@ func (s *Server) setupRoutes() {
 			}
 			if s.cfg.AlphaTargetPct > 0 {
 				targetAlphaPct = s.cfg.AlphaTargetPct
+			}
+		}
+
+		// Root initial capital in PostgreSQL investor ledger if available
+		if s.dbStore != nil {
+			_, _, netCapital, activeInvestors, err := s.dbStore.GetTotalInvestorCapital(r.Context())
+			if err == nil {
+				if activeInvestors == 0 {
+					_, _ = s.dbStore.EnsureDefaultInvestorProfile(r.Context(), "General Partner / Treasury", "Genesis Capital Allocation & Liquidity Seed", initialEquity)
+					_, _, netCapital, _, _ = s.dbStore.GetTotalInvestorCapital(r.Context())
+				}
+				if netCapital > 0 {
+					initialEquity = netCapital
+				}
 			}
 		}
 
@@ -569,6 +587,7 @@ func (s *Server) setupRoutes() {
 	// Two-Sided Futures Trade Signals & News-First Execution (US1)
 	r.Get("/api/v1/signals/futures", s.ListFuturesSignalsHandler)
 	r.Post("/api/v1/signals/futures/decide", s.GenerateFuturesSignalHandler)
+	r.Post("/api/v1/signals/futures/decide-all", s.GenerateAllFuturesSignalsHandler)
 	r.Post("/api/v1/signals/futures/{id}/close", s.CloseFuturesSignalHandler)
 
 	// Dynamic Macroeconomic Regime & 3-Tier Allocation (US2, FR-004)

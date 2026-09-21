@@ -17,7 +17,10 @@ func (s *Server) getTotalPortfolioEquity() float64 {
 	if s.allocator != nil {
 		return s.allocator.GetTotalCapital()
 	}
-	return 100000.0
+	if s.cfg != nil && s.cfg.InitialCapital > 0 {
+		return s.cfg.InitialCapital
+	}
+	return 10000.0
 }
 
 // getTier1CashReserve returns the unencumbered cash reserve buffer.
@@ -25,7 +28,10 @@ func (s *Server) getTier1CashReserve() float64 {
 	if s.allocator != nil {
 		return s.allocator.GetTier1CashReserve()
 	}
-	return 15000.0
+	if s.cfg != nil && s.cfg.InitialCapital > 0 {
+		return s.cfg.InitialCapital * 0.15
+	}
+	return 1500.0
 }
 
 // ListInvestorsHandler returns all registered investors with dynamic pro-rata metrics.

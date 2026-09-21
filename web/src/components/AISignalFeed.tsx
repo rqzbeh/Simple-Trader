@@ -26,6 +26,7 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
   const [signals, setSignals] = useState<FuturesTradeSignal[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [evaluating, setEvaluating] = useState<boolean>(false);
+  const [evaluatingAll, setEvaluatingAll] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'CLOSED'>('ACTIVE');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -73,14 +74,39 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
     }
   };
 
-  const handleCloseSignal = async (id: number, exitPrice: number = 0) => {
-    if (!confirm(`Confirm market close for signal #${id}?`)) return;
+  const handleEvaluateAll = async () => {
     try {
+      setEvaluatingAll(true);
+      setErrorMsg(null);
+      const res = await fetch(`${apiBaseUrl}/api/v1/signals/futures/decide-all`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bucket: 'ALPHA' }),
+      });
+      const data = await res.json();
+      fetchSignals();
+      if (data.signals_count > 0) {
+        alert(`Scan Complete: Evaluated ${data.scanned_count} assets concurrently. Found ${data.signals_count} actionable signals!`);
+      } else {
+        alert(`Scan Complete: Evaluated ${data.scanned_count} assets concurrently. Capital preserved (HOLD).`);
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to trigger batch evaluation');
+    } finally {
+      setEvaluatingAll(false);
+    }
+  };
+
+  const handleCloseSignal = async (id: number, symbol: string) => {
+    if (!confirm(`Confirm market close for signal #${id} (${symbol})?`)) return;
+    try {
+      // If currentPrice belongs to this symbol, pass it; otherwise pass 0 to let backend retrieve live price
+      const exitPrice = (selectedSymbol === symbol && currentPrice > 0) ? currentPrice : 0;
       const res = await fetch(`${apiBaseUrl}/api/v1/signals/futures/${id}/close`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          exit_price: exitPrice > 0 ? exitPrice : 0,
+          exit_price: exitPrice,
           exit_reason: 'MANUAL_CLOSE',
         }),
       });
@@ -102,17 +128,29 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
           </h3>
         </div>
 
-        <button
-          onClick={handleEvaluate}
-          disabled={evaluating}
-          className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-semibold flex items-center gap-1 transition-all disabled:opacity-50"
-          title={`Scan breaking news & generate signal for ${selectedSymbol}`}
-        >
-          <RefreshCw className={`w-3 h-3 ${evaluating ? 'animate-spin' : ''}`} />
-          <span className="hidden sm:inline font-mono">
-            {evaluating ? 'Analyzing...' : `Scan ${selectedSymbol}`}
-          </span>
-        </button>
+        <div className="flex items-center space-x-1.5">
+          <button
+            onClick={handleEvaluateAll}
+            disabled={evaluatingAll || evaluating}
+            className="px-2 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 text-xs font-semibold flex items-center gap-1 transition-all disabled:opacity-50"
+            title="Scan breaking catalysts across all crypto assets simultaneously"
+          >
+            <Sparkles className={`w-3 h-3 ${evaluatingAll ? 'animate-spin' : ''}`} />
+            <span className="font-mono">{evaluatingAll ? 'Scanning All...' : 'Scan All Assets'}</span>
+          </button>
+
+          <button
+            onClick={handleEvaluate}
+            disabled={evaluating || evaluatingAll}
+            className="px-2.5 py-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-semibold flex items-center gap-1 transition-all disabled:opacity-50"
+            title={`Scan breaking news & generate signal for ${selectedSymbol}`}
+          >
+            <RefreshCw className={`w-3 h-3 ${evaluating ? 'animate-spin' : ''}`} />
+            <span className="hidden sm:inline font-mono">
+              {evaluating ? 'Analyzing...' : `Scan ${selectedSymbol}`}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* Filter Tabs & Counter */}
@@ -270,7 +308,7 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
                 {sig.status === 'ACTIVE' && (
                   <div className="pt-1 flex justify-end">
                     <button
-                      onClick={() => handleCloseSignal(sig.id, currentPrice)}
+                      onClick={() => handleCloseSignal(sig.id, sig.symbol)}
                       className="px-2 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 text-[10px] font-semibold transition-colors flex items-center gap-1"
                     >
                       <XCircle className="w-3 h-3" />

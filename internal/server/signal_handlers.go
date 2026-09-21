@@ -1,10 +1,15 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rqzbeh/simple-trader/internal/ai"
@@ -55,47 +60,44 @@ type GenerateFuturesSignalRequest struct {
 	NewsHeadlines []string `json:"news_headlines,omitempty"`
 }
 
-// GenerateFuturesSignalHandler handles POST /api/v1/signals/futures/decide
-func (s *Server) GenerateFuturesSignalHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
+// EvaluateSymbolSignal evaluates a single symbol against breaking news catalysts and technical confluence.
+// If high conviction is detected, it persists the signal, broadcasts via SSE and Telegram, and returns the signal.
+func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string, headlines []string) (*db.FuturesTradeSignal, error) {
 	if s.aiClient == nil {
-		http.Error(w, `{"error":"ai client not configured"}`, http.StatusServiceUnavailable)
-		return
+		return nil, errors.New("ai client not configured")
 	}
 
-	var req GenerateFuturesSignalRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Symbol == "" || req.Symbol == "BTC/USD" {
-		req.Symbol = "BTC/USDT"
+	if symbol == "" || symbol == "BTC/USD" {
+		symbol = "BTC/USDT"
 	}
-	if req.Bucket == "" {
-		req.Bucket = "ALPHA"
+	if bucket == "" {
+		bucket = "ALPHA"
 	}
 
 	// Ingest latest breaking news headlines from crawler if not provided
-	if len(req.NewsHeadlines) == 0 && s.newsCrawler != nil {
+	if len(headlines) == 0 && s.newsCrawler != nil {
 		latest := s.newsCrawler.GetLatestArticles()
 		for i := 0; i < len(latest) && i < 5; i++ {
-			req.NewsHeadlines = append(req.NewsHeadlines, latest[i].Title)
+			headlines = append(headlines, latest[i].Title)
 		}
 	}
 
 	// Fetch current market price
 	currentPrice := 0.0
 	if s.redisClient != nil {
-		if quote, err := s.redisClient.GetTicker(r.Context(), req.Symbol); err == nil && quote != nil && quote.Price > 0 {
+		if quote, err := s.redisClient.GetTicker(ctx, symbol); err == nil && quote != nil && quote.Price > 0 {
 			currentPrice = quote.Price
 		}
 	}
 	if currentPrice <= 0 && s.marketData != nil {
-		if p, err := s.marketData.GetLatestPrice(req.Symbol); err == nil && p > 0 {
+		if p, err := s.marketData.GetLatestPrice(symbol); err == nil && p > 0 {
 			currentPrice = p
 		}
 	}
 	if currentPrice <= 0 {
 		fetcher := market.NewBinanceFetcher()
-		cleanSym := strings.ReplaceAll(req.Symbol, "/", "")
-		if q, err := fetcher.FetchTicker(r.Context(), cleanSym); err == nil && q != nil && q.Price > 0 {
+		cleanSym := strings.ReplaceAll(symbol, "/", "")
+		if q, err := fetcher.FetchTicker(ctx, cleanSym); err == nil && q != nil && q.Price > 0 {
 			currentPrice = q.Price
 			if s.marketData != nil {
 				s.marketData.UpdateQuote(*q)
@@ -103,17 +105,16 @@ func (s *Server) GenerateFuturesSignalHandler(w http.ResponseWriter, r *http.Req
 		}
 	}
 	if currentPrice <= 0 {
-		http.Error(w, `{"error":"live market price unavailable for `+req.Symbol+`"}`, http.StatusServiceUnavailable)
-		return
+		return nil, fmt.Errorf("live market price unavailable for %s", symbol)
 	}
 
 	quote := cache.TickerQuote{
-		Symbol: req.Symbol,
+		Symbol: symbol,
 		Price:  currentPrice,
 	}
 
 	snap := cache.IndicatorSnapshot{
-		Symbol:          req.Symbol,
+		Symbol:          symbol,
 		RSI:             55.0,
 		SuperTrend:      "BULL",
 		Histogram:       1.5,
@@ -121,7 +122,7 @@ func (s *Server) GenerateFuturesSignalHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	if s.redisClient != nil {
-		if ind, err := s.redisClient.GetIndicatorSnapshot(r.Context(), req.Symbol); err == nil && ind != nil {
+		if ind, err := s.redisClient.GetIndicatorSnapshot(ctx, symbol); err == nil && ind != nil {
 			snap = *ind
 		}
 	}
@@ -152,28 +153,22 @@ func (s *Server) GenerateFuturesSignalHandler(w http.ResponseWriter, r *http.Req
 
 	signalSvc := trader.NewSignalService(s.dbStore, s.aiClient)
 	sig, err := signalSvc.EvaluateMarketSignal(
-		r.Context(),
-		req.Symbol,
-		req.Bucket,
+		ctx,
+		symbol,
+		bucket,
 		quote,
 		snap,
 		nil,
-		req.NewsHeadlines,
+		headlines,
 		totalEquity,
 		availableAlphaCapital,
 	)
 	if err != nil {
-		http.Error(w, `{"error":"signal generation failed: `+err.Error()+`"}`, http.StatusInternalServerError)
-		return
+		return nil, fmt.Errorf("signal generation failed: %w", err)
 	}
 
 	if sig == nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"status":  "HOLD",
-			"message": "No high-conviction breaking news catalyst detected. Capital preserved in HOLD.",
-			"symbol":  req.Symbol,
-		})
-		return
+		return nil, nil // HOLD
 	}
 
 	// Broadcast signal via SSE
@@ -187,11 +182,159 @@ func (s *Server) GenerateFuturesSignalHandler(w http.ResponseWriter, r *http.Req
 	if s.telegramBot != nil && s.telegramBot.GetConfig().Enabled {
 		s.telegramBot.BroadcastSignalEntry(sig)
 		if s.dbStore != nil && sig.ID > 0 {
-			_ = s.dbStore.MarkSignalDispatched(r.Context(), sig.ID)
+			_ = s.dbStore.MarkSignalDispatched(ctx, sig.ID)
 		}
 	}
 
+	return sig, nil
+}
+
+// GenerateFuturesSignalHandler handles POST /api/v1/signals/futures/decide
+func (s *Server) GenerateFuturesSignalHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if s.aiClient == nil {
+		http.Error(w, `{"error":"ai client not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	var req GenerateFuturesSignalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Symbol == "" || req.Symbol == "BTC/USD" {
+		req.Symbol = "BTC/USDT"
+	}
+	if req.Bucket == "" {
+		req.Bucket = "ALPHA"
+	}
+
+	sig, err := s.EvaluateSymbolSignal(r.Context(), req.Symbol, req.Bucket, req.NewsHeadlines)
+	if err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if sig == nil {
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "HOLD",
+			"message": "No high-conviction breaking news catalyst detected. Capital preserved in HOLD.",
+			"symbol":  req.Symbol,
+		})
+		return
+	}
+
 	json.NewEncoder(w).Encode(sig)
+}
+
+// GenerateAllFuturesSignalsRequest defines the payload for POST /api/v1/signals/futures/decide-all
+type GenerateAllFuturesSignalsRequest struct {
+	Symbols []string `json:"symbols,omitempty"`
+	Bucket  string   `json:"bucket,omitempty"`
+}
+
+// AssetScanResult provides the scan resolution for each asset in a batch scan.
+type AssetScanResult struct {
+	Symbol  string                 `json:"symbol"`
+	Status  string                 `json:"status"` // "SIGNAL", "HOLD", "ERROR"
+	Signal  *db.FuturesTradeSignal `json:"signal,omitempty"`
+	Message string                 `json:"message,omitempty"`
+	Error   string                 `json:"error,omitempty"`
+}
+
+// GenerateAllFuturesSignalsHandler handles POST /api/v1/signals/futures/decide-all
+func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	if s.aiClient == nil {
+		http.Error(w, `{"error":"ai client not configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	var req GenerateAllFuturesSignalsRequest
+	_ = json.NewDecoder(r.Body).Decode(&req)
+
+	symbols := req.Symbols
+	if len(symbols) == 0 {
+		if s.screener != nil {
+			symbols = s.screener.GetActiveUniverse()
+		}
+		if len(symbols) == 0 {
+			symbols = []string{
+				"BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT",
+				"BNB/USDT", "XRP/USDT", "LINK/USDT", "EUR/USDT",
+			}
+		}
+	}
+
+	bucket := req.Bucket
+	if bucket == "" {
+		bucket = "ALPHA"
+	}
+
+	// Ingest latest breaking news headlines once for the batch
+	var newsHeadlines []string
+	if s.newsCrawler != nil {
+		latest := s.newsCrawler.GetLatestArticles()
+		for i := 0; i < len(latest) && i < 8; i++ {
+			newsHeadlines = append(newsHeadlines, latest[i].Title)
+		}
+	}
+
+	results := make([]AssetScanResult, len(symbols))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 4) // concurrency limit
+
+	for i, sym := range symbols {
+		wg.Add(1)
+		go func(idx int, symbol string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			b := bucket
+			if symbol == "PAXG/USDT" || symbol == "XAG/USDT" {
+				b = "CORE"
+			}
+
+			sig, err := s.EvaluateSymbolSignal(r.Context(), symbol, b, newsHeadlines)
+			if err != nil {
+				results[idx] = AssetScanResult{
+					Symbol: symbol,
+					Status: "ERROR",
+					Error:  err.Error(),
+				}
+				return
+			}
+
+			if sig == nil {
+				results[idx] = AssetScanResult{
+					Symbol:  symbol,
+					Status:  "HOLD",
+					Message: "No breaking catalyst found; capital preserved.",
+				}
+			} else {
+				results[idx] = AssetScanResult{
+					Symbol: symbol,
+					Status: "SIGNAL",
+					Signal: sig,
+				}
+			}
+		}(i, sym)
+	}
+
+	wg.Wait()
+
+	signalsCount := 0
+	for _, res := range results {
+		if res.Status == "SIGNAL" {
+			signalsCount++
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"scanned_count": len(symbols),
+		"signals_count": signalsCount,
+		"results":       results,
+		"timestamp":     time.Now(),
+	})
 }
 
 // CloseFuturesSignalHandler handles POST /api/v1/signals/futures/{id}/close
@@ -306,4 +449,130 @@ func (s *Server) CloseFuturesSignalHandler(w http.ResponseWriter, r *http.Reques
 		"pnl_usd":     pnl,
 		"roi_pct":     roi,
 	})
+}
+
+// CheckSignalExitForTick inspects if an active futures signal exists for the incoming tick
+// and automatically executes Take Profit or Stop Loss resolution if triggered.
+func (s *Server) CheckSignalExitForTick(tick cache.TickerQuote) {
+	if s.dbStore == nil || tick.Price <= 0 {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	sig, err := s.dbStore.GetActiveFuturesSignalBySymbol(ctx, tick.Symbol)
+	if err != nil || sig == nil || sig.Status != "ACTIVE" {
+		return
+	}
+
+	signalSvc := trader.NewSignalService(s.dbStore, s.aiClient)
+	resolved, exitReason, pnl, roi, err := signalSvc.CheckSignalResolution(ctx, sig, tick.Price)
+	if err != nil || !resolved {
+		return
+	}
+
+	// 1. Broadcast resolution via SSE
+	if s.broadcaster != nil {
+		closePayload, _ := json.Marshal(map[string]interface{}{
+			"id":          sig.ID,
+			"symbol":      sig.Symbol,
+			"exit_price":  tick.Price,
+			"exit_reason": exitReason,
+			"pnl_usd":     pnl,
+			"roi_pct":     roi,
+		})
+		s.broadcaster.Broadcast("futures_signal_closed", string(closePayload))
+	}
+
+	// 2. Broadcast resolution via Telegram Bot if active
+	if s.telegramBot != nil && s.telegramBot.GetConfig().Enabled {
+		s.telegramBot.BroadcastSignalResolution(sig, tick.Price, exitReason, pnl, roi)
+		if sig.ID > 0 {
+			_ = s.dbStore.MarkSignalResolved(ctx, sig.ID)
+		}
+	}
+
+	// 3. Online fine-tuning telemetry update
+	if s.sampler != nil {
+		side := "BUY"
+		if sig.Direction == "SHORT" {
+			side = "SELL"
+		}
+		s.sampler.RecordOutcome(ai.TradeOutcome{
+			Symbol:    sig.Symbol,
+			Side:      side,
+			Pnl:       pnl,
+			ReturnPct: roi,
+		})
+	}
+}
+
+// StartBackgroundSignalScanner runs transparent background scans across the active asset universe.
+func (s *Server) StartBackgroundSignalScanner(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = 2 * time.Minute
+	}
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+
+		// Run an initial scan shortly after startup (after feeds initialize)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(10 * time.Second):
+			s.runBackgroundScan(ctx)
+		}
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.runBackgroundScan(ctx)
+			}
+		}
+	}()
+}
+
+func (s *Server) runBackgroundScan(ctx context.Context) {
+	if s.aiClient == nil {
+		return
+	}
+
+	symbols := []string{
+		"BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT",
+		"BNB/USDT", "XRP/USDT", "LINK/USDT", "EUR/USDT",
+	}
+	if s.screener != nil {
+		if univ := s.screener.GetActiveUniverse(); len(univ) > 0 {
+			symbols = univ
+		}
+	}
+
+	var newsHeadlines []string
+	if s.newsCrawler != nil {
+		latest := s.newsCrawler.GetLatestArticles()
+		for i := 0; i < len(latest) && i < 8; i++ {
+			newsHeadlines = append(newsHeadlines, latest[i].Title)
+		}
+	}
+
+	for _, sym := range symbols {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+		}
+
+		bucket := "ALPHA"
+		if sym == "PAXG/USDT" || sym == "XAG/USDT" {
+			bucket = "CORE"
+		}
+
+		_, _ = s.EvaluateSymbolSignal(ctx, sym, bucket, newsHeadlines)
+		time.Sleep(500 * time.Millisecond)
+	}
 }
