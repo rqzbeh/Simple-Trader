@@ -23,7 +23,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           'Accept': 'application/json',
         },
       });
-      if (res.ok) {
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
         const data = await res.json();
         setIsAuthenticated(Boolean(data.authenticated));
         setTokenMasked(data.token_masked);
@@ -51,6 +52,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         },
         body: JSON.stringify({ password }),
       });
+
+      const contentType = res.headers.get('content-type') || '';
+      if (!contentType.includes('application/json')) {
+        return {
+          success: false,
+          error: `Server returned ${res.status} ${res.statusText || 'Error'}. Backend service may be starting or unavailable.`,
+        };
+      }
 
       const data = await res.json();
       if (!res.ok) {
