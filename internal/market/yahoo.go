@@ -5,12 +5,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rqzbeh/simple-trader/internal/cache"
 )
 
-// YahooFinanceFetcher retrieves commodity and forex prices from Yahoo Finance API.
+// YahooFinanceFetcher retrieves commodity prices from Yahoo Finance Chart API.
 type YahooFinanceFetcher struct {
 	baseURL    string
 	httpClient *http.Client
@@ -39,16 +40,47 @@ func NewYahooFinanceFetcher() *YahooFinanceFetcher {
 // NewYahooFinanceFetcherWithBaseURL creates a Yahoo Finance fetcher with a custom base URL.
 func NewYahooFinanceFetcherWithBaseURL(baseURL string) *YahooFinanceFetcher {
 	return &YahooFinanceFetcher{
-		baseURL: baseURL,
+		baseURL: strings.TrimRight(baseURL, "/"),
 		httpClient: &http.Client{
 			Timeout: 6 * time.Second,
 		},
 	}
 }
 
-// FetchQuote fetches commodity or forex quotes (e.g. "GC=F" for Gold, "SI=F" for Silver, "EURUSD=X" for Euro).
+// mapToYahooSymbol normalizes symbols to Yahoo Finance contract tickers.
+func mapToYahooSymbol(symbol string) string {
+	clean := strings.ToUpper(symbol)
+	switch clean {
+	case "OIL/USDT", "OILUSDT", "WTI/USDT", "WTI":
+		return "CL=F"
+	case "BRENT/USDT", "BRENT":
+		return "BZ=F"
+	case "ALU/USDT", "ALUUSDT", "ALUMINUM":
+		return "ALI=F"
+	case "COPPER/USDT", "COPPERUSDT":
+		return "HG=F"
+	case "XAU/USDT", "XAUUSDT", "GOLD":
+		return "GC=F"
+	case "XAG/USDT", "XAGUSDT", "SILVER":
+		return "SI=F"
+	case "XPT/USDT", "XPTUSDT", "PLATINUM":
+		return "PL=F"
+	case "XPD/USDT", "XPDUSDT", "PALLADIUM":
+		return "PA=F"
+	default:
+		return symbol
+	}
+}
+
+// FetchTicker implements TickerFetcher interface for Yahoo Finance.
+func (y *YahooFinanceFetcher) FetchTicker(ctx context.Context, symbol string) (*cache.TickerQuote, error) {
+	return y.FetchQuote(ctx, symbol)
+}
+
+// FetchQuote fetches commodity futures quotes (e.g. "GC=F" for Gold, "SI=F" for Silver, "CL=F" for Crude Oil, "ALI=F" for Aluminum).
 func (y *YahooFinanceFetcher) FetchQuote(ctx context.Context, symbol string) (*cache.TickerQuote, error) {
-	url := fmt.Sprintf("%s/v8/finance/chart/%s?interval=1d&range=1d", y.baseURL, symbol)
+	yahooSym := mapToYahooSymbol(symbol)
+	url := fmt.Sprintf("%s/v8/finance/chart/%s?interval=1d&range=1d", y.baseURL, yahooSym)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -82,7 +114,7 @@ func (y *YahooFinanceFetcher) FetchQuote(ctx context.Context, symbol string) (*c
 	}
 
 	return &cache.TickerQuote{
-		Symbol:    meta.Symbol,
+		Symbol:    symbol,
 		Price:     meta.RegularMarketPrice,
 		Change24h: change24h,
 		High24h:   meta.RegularMarketDayHigh,

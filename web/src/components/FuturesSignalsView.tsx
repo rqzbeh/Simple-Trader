@@ -127,11 +127,16 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
             <option value="BTC/USDT">BTC/USDT</option>
             <option value="ETH/USDT">ETH/USDT</option>
             <option value="SOL/USDT">SOL/USDT</option>
+            <option value="AVAX/USDT">AVAX/USDT</option>
+            <option value="DOGE/USDT">DOGE/USDT</option>
+            <option value="SUI/USDT">SUI/USDT</option>
             <option value="PAXG/USDT">PAXG/USDT (Tokenized Gold)</option>
+            <option value="XAUT/USDT">XAUT/USDT (Tether Gold)</option>
+            <option value="XAU/USDT">XAU/USDT (Gold Futures)</option>
+            <option value="XAG/USDT">XAG/USDT (Silver Futures)</option>
             <option value="BNB/USDT">BNB/USDT</option>
             <option value="XRP/USDT">XRP/USDT</option>
             <option value="LINK/USDT">LINK/USDT</option>
-            <option value="EUR/USDT">EUR/USDT</option>
           </select>
 
           <button

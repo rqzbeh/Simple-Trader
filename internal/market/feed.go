@@ -25,14 +25,18 @@ func (s *SimulatedFeed) Subscribe(ctx context.Context) <-chan cache.TickerQuote 
 	ch := make(chan cache.TickerQuote, 10)
 
 	basePrices := map[string]float64{
-		"BTC/USDT":  92500.0,
-		"ETH/USDT":  3450.0,
-		"SOL/USDT":  185.0,
-		"PAXG/USDT": 2980.0,
-		"BNB/USDT":  585.0,
-		"XRP/USDT":  0.5850,
-		"LINK/USDT": 12.80,
-		"EUR/USDT":  1.0850,
+		"BTC/USDT":    92500.0,
+		"ETH/USDT":    3450.0,
+		"SOL/USDT":    185.0,
+		"PAXG/USDT":   2980.0,
+		"XAU/USDT":    2980.0,
+		"XAG/USDT":    33.50,
+		"BNB/USDT":    585.0,
+		"XRP/USDT":    0.5850,
+		"LINK/USDT":   12.80,
+		"AVAX/USDT":   28.50,
+		"OIL/USDT":    72.50,
+		"COPPER/USDT": 4.15,
 	}
 
 	go func() {
@@ -40,7 +44,11 @@ func (s *SimulatedFeed) Subscribe(ctx context.Context) <-chan cache.TickerQuote 
 		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
 
-		symbols := []string{"BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT", "BNB/USDT", "XRP/USDT", "LINK/USDT", "EUR/USDT"}
+		symbols := []string{
+			"BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT",
+			"XAU/USDT", "XAG/USDT", "BNB/USDT", "XRP/USDT",
+			"LINK/USDT", "AVAX/USDT", "OIL/USDT", "COPPER/USDT",
+		}
 
 		for {
 			select {

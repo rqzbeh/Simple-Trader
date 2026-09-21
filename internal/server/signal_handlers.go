@@ -70,9 +70,7 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 	if symbol == "" || symbol == "BTC/USD" {
 		symbol = "BTC/USDT"
 	}
-	if bucket == "" {
-		bucket = "ALPHA"
-	}
+	bucket = market.GetBucket(symbol)
 
 	// Ingest latest breaking news headlines from crawler if not provided
 	if len(headlines) == 0 && s.newsCrawler != nil {
@@ -178,16 +176,37 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		}
 	}
 
-	// 2. Concurrency Gating: Max 3 concurrent active signals
+	// 2. Concurrency & Correlated Commodity Exposure Gating
 	if s.dbStore != nil {
 		existing, err := s.dbStore.GetActiveFuturesSignalBySymbol(ctx, symbol)
 		if err == nil && existing != nil {
 			// Signal already active for this symbol; return existing without duplicate notifications
 			return existing, nil
 		}
+
+		// Correlated Commodity Guard: prevent concurrent active signals across correlated assets in same exposure group
+		activeSignals, err := s.dbStore.ListFuturesSignals(ctx, "ACTIVE", 50)
+		if err == nil && activeSignals != nil {
+			for _, as := range activeSignals {
+				if market.AreCorrelatedCommodities(as.Symbol, symbol) {
+					// Correlated commodity (e.g. PAXG & XAUT) already active; prevent duplicate risk and cash splitting
+					return nil, nil // HOLD
+				}
+			}
+		}
+
 		if activeSignalsCount >= 3 {
 			// Capital guard: at most 3 concurrent active trades permitted
 			return nil, nil // HOLD
+		}
+	}
+
+	if s.execEngine != nil {
+		for _, tr := range s.execEngine.GetOpenTrades() {
+			if tr != nil && market.AreCorrelatedCommodities(tr.Symbol, symbol) {
+				// Correlated commodity already open in execution engine
+				return nil, nil // HOLD
+			}
 		}
 	}
 
@@ -308,7 +327,7 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 		if len(symbols) == 0 {
 			symbols = []string{
 				"BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT",
-				"BNB/USDT", "XRP/USDT", "LINK/USDT", "EUR/USDT",
+				"BNB/USDT", "XRP/USDT", "LINK/USDT", "AVAX/USDT",
 			}
 		}
 	}
@@ -338,10 +357,7 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
-			b := bucket
-			if symbol == "PAXG/USDT" || symbol == "XAG/USDT" {
-				b = "CORE"
-			}
+			b := market.GetBucket(symbol)
 
 			sig, err := s.EvaluateSymbolSignal(r.Context(), symbol, b, newsHeadlines)
 			if err != nil {
@@ -607,7 +623,7 @@ func (s *Server) runBackgroundScan(ctx context.Context) {
 
 	symbols := []string{
 		"BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT",
-		"BNB/USDT", "XRP/USDT", "LINK/USDT", "EUR/USDT",
+		"BNB/USDT", "XRP/USDT", "LINK/USDT", "AVAX/USDT",
 	}
 	if s.screener != nil {
 		if univ := s.screener.GetActiveUniverse(); len(univ) > 0 {
@@ -637,10 +653,7 @@ func (s *Server) runBackgroundScan(ctx context.Context) {
 			}
 		}
 
-		bucket := "ALPHA"
-		if sym == "PAXG/USDT" || sym == "XAG/USDT" {
-			bucket = "CORE"
-		}
+		bucket := market.GetBucket(sym)
 
 		_, _ = s.EvaluateSymbolSignal(ctx, sym, bucket, newsHeadlines)
 		time.Sleep(500 * time.Millisecond)

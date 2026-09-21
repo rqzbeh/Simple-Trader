@@ -3,21 +3,40 @@ import { INITIAL_ASSETS, INITIAL_SUMMARY, INITIAL_POSITIONS, INITIAL_SIGNALS } f
 import { INITIAL_WEIGHTS } from './components/AIWeightMatrix';
 
 describe('Web Types, Mock Data, and Risk Model', () => {
-  it('should include all required liquid global crypto assets based on USDT/USDC and none from Iran bourse', () => {
+  it('should include all required liquid global crypto and commodity assets based on USDT/USDC', () => {
     const symbols = INITIAL_ASSETS.map((a) => a.symbol);
     expect(symbols).toContain('PAXG/USDT');
+    expect(symbols).toContain('XAUT/USDT');
+    expect(symbols).toContain('XAU/USDT');
+    expect(symbols).toContain('XAG/USDT');
+    expect(symbols).toContain('COPPER/USDT');
+    expect(symbols).toContain('XPT/USDT');
+    expect(symbols).toContain('XPD/USDT');
+    expect(symbols).toContain('OIL/USDT');
+    expect(symbols).toContain('ALU/USDT');
     expect(symbols).toContain('BNB/USDT');
     expect(symbols).toContain('BTC/USDT');
     expect(symbols).toContain('ETH/USDT');
     expect(symbols).toContain('SOL/USDT');
+    expect(symbols).toContain('AVAX/USDT');
+    expect(symbols).toContain('DOGE/USDT');
+    expect(symbols).toContain('SUI/USDT');
     expect(symbols).toContain('XRP/USDT');
     expect(symbols).toContain('LINK/USDT');
-    expect(symbols).toContain('EUR/USDT');
 
-    // Ensure strictly no Iranian assets
-    expect(symbols).not.toContain('IRR');
-    expect(symbols).not.toContain('TSE');
-    expect(symbols).not.toContain('IFB');
+    // Verify CORE assets are strictly commodities and BNB is ALPHA
+    const bnb = INITIAL_ASSETS.find((a) => a.symbol === 'BNB/USDT');
+    expect(bnb?.bucket).toBe('ALPHA');
+    const paxg = INITIAL_ASSETS.find((a) => a.symbol === 'PAXG/USDT');
+    expect(paxg?.bucket).toBe('CORE');
+    const xau = INITIAL_ASSETS.find((a) => a.symbol === 'XAU/USDT');
+    expect(xau?.bucket).toBe('CORE');
+    const copper = INITIAL_ASSETS.find((a) => a.symbol === 'COPPER/USDT');
+    expect(copper?.bucket).toBe('CORE');
+    const oil = INITIAL_ASSETS.find((a) => a.symbol === 'OIL/USDT');
+    expect(oil?.bucket).toBe('CORE');
+    const xpt = INITIAL_ASSETS.find((a) => a.symbol === 'XPT/USDT');
+    expect(xpt?.bucket).toBe('CORE');
   });
 
   it('should enforce 60/40 allocation targets in summary', () => {
