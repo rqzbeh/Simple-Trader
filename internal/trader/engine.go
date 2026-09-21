@@ -25,6 +25,11 @@ type OrderRequest struct {
 	IsTaker           bool
 }
 
+// PriceProvider defines an abstraction for querying current online market prices.
+type PriceProvider interface {
+	GetLatestPrice(symbol string) (float64, error)
+}
+
 // ExecutionEngine simulates paper order execution and tracks open/closed positions in-memory.
 type ExecutionEngine struct {
 	mu            sync.RWMutex
@@ -34,6 +39,7 @@ type ExecutionEngine struct {
 	closedTrades  []*db.Trade
 	orderCounter  int64
 	friction      FrictionModel
+	priceProvider PriceProvider
 }
 
 // NewExecutionEngine initializes the paper execution engine with realistic friction.
@@ -45,6 +51,13 @@ func NewExecutionEngine(initialCapital float64) *ExecutionEngine {
 		closedTrades:  make([]*db.Trade, 0),
 		friction:      DefaultFrictionModel(),
 	}
+}
+
+// SetPriceProvider attaches an online market price provider for dynamic valuations.
+func (e *ExecutionEngine) SetPriceProvider(p PriceProvider) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.priceProvider = p
 }
 
 // SetFrictionModel sets custom friction parameters.
@@ -219,6 +232,12 @@ func (e *ExecutionEngine) GetTotalEquity(currentPrices ...map[string]float64) fl
 	equity := e.cash
 	for sym, pos := range e.positions {
 		currPrice, ok := prices[sym]
+		if !ok && e.priceProvider != nil {
+			if liveP, err := e.priceProvider.GetLatestPrice(sym); err == nil && liveP > 0 {
+				currPrice = liveP
+				ok = true
+			}
+		}
 		if !ok {
 			currPrice = pos.EntryPrice
 		}
@@ -251,3 +270,27 @@ func (e *ExecutionEngine) GetOpenTrades() []*db.Trade {
 	}
 	return trades
 }
+
+// GetCash returns the currently available unencumbered cash.
+func (e *ExecutionEngine) GetCash() float64 {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.cash
+}
+
+// GetInitialEquity returns the initial starting equity of the engine.
+func (e *ExecutionEngine) GetInitialEquity() float64 {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.initialEquity
+}
+
+// GetClosedTrades returns historical closed trades.
+func (e *ExecutionEngine) GetClosedTrades() []*db.Trade {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	trades := make([]*db.Trade, len(e.closedTrades))
+	copy(trades, e.closedTrades)
+	return trades
+}
+

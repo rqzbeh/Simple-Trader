@@ -1,11 +1,12 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -40,6 +41,8 @@ type Server struct {
 	gpuTrainer    *ai.GPUTrainer
 	realDataPipeline *ai.RealDataPipeline
 	router        *chi.Mux
+	marketData    *trader.LiveMarketData
+	candleDownloader market.HistoricalKlineProvider
 }
 
 // NewServer configures routes and dependency injection.
@@ -69,6 +72,11 @@ func NewServer(
 	sampler := ai.NewThompsonSampler(0)
 	gpuTrainer := ai.NewGPUTrainer("", "", sampler)
 	realDataPipeline := ai.NewRealDataPipeline(nil, sampler)
+	marketData := trader.NewLiveMarketData()
+	candleDownloader := market.NewBinanceHistoricalDownloader()
+	if execEngine != nil {
+		execEngine.SetPriceProvider(marketData)
+	}
 
 	s := &Server{
 		cfg:              cfg,
@@ -86,10 +94,35 @@ func NewServer(
 		realDataPipeline: realDataPipeline,
 		broadcaster:      NewSSEBroadcaster(),
 		router:           chi.NewRouter(),
+		marketData:       marketData,
+		candleDownloader: candleDownloader,
 	}
 
 	s.setupRoutes()
 	return s
+}
+
+// SetCandleDownloader injects a historical candle provider (useful for testing or alternative exchanges).
+func (s *Server) SetCandleDownloader(d market.HistoricalKlineProvider) {
+	s.candleDownloader = d
+}
+
+// MarketData returns the active live market data provider.
+func (s *Server) MarketData() *trader.LiveMarketData {
+	return s.marketData
+}
+
+// IngestTick updates the in-memory quote store, Redis (if active), and broadcasts the tick to SSE.
+func (s *Server) IngestTick(tick cache.TickerQuote) {
+	if s.marketData != nil {
+		s.marketData.UpdateQuote(tick)
+	}
+	if s.redisClient != nil {
+		_ = s.redisClient.SetTicker(context.Background(), tick.Symbol, &tick, 2*time.Minute)
+	}
+	if tickJSON, err := json.Marshal(tick); err == nil {
+		s.broadcaster.Broadcast("tick", string(tickJSON))
+	}
 }
 
 // Router returns the initialized chi router.
@@ -181,6 +214,147 @@ func (s *Server) setupRoutes() {
 		})
 	})
 
+	// Real Exchange Candlestick Klines (Authentic Binance Klines)
+	r.Get("/api/v1/klines", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		symbol := r.URL.Query().Get("symbol")
+		if symbol == "" {
+			symbol = "BTC/USDT"
+		}
+		interval := r.URL.Query().Get("interval")
+		if interval == "" {
+			interval = "1h"
+		}
+		limit := 48
+		if lStr := r.URL.Query().Get("limit"); lStr != "" {
+			if parsed, err := strconv.Atoi(lStr); err == nil && parsed > 0 && parsed <= 1000 {
+				limit = parsed
+			}
+		}
+
+		if s.candleDownloader == nil {
+			http.Error(w, `{"error":"historical candle downloader uninitialized"}`, http.StatusInternalServerError)
+			return
+		}
+
+		candles, err := s.candleDownloader.FetchHistoricalKlines(r.Context(), symbol, interval, limit)
+		if err != nil {
+			http.Error(w, `{"error":"failed to fetch authentic exchange klines: `+err.Error()+`"}`, http.StatusBadGateway)
+			return
+		}
+
+		type FormattedCandle struct {
+			Time   int64   `json:"time"`
+			Open   float64 `json:"open"`
+			High   float64 `json:"high"`
+			Low    float64 `json:"low"`
+			Close  float64 `json:"close"`
+			Volume float64 `json:"volume"`
+		}
+		formatted := make([]FormattedCandle, len(candles))
+		for i, c := range candles {
+			formatted[i] = FormattedCandle{
+				Time:   c.OpenTime.Unix(),
+				Open:   c.Open,
+				High:   c.High,
+				Low:    c.Low,
+				Close:  c.Close,
+				Volume: c.Volume,
+			}
+		}
+
+		json.NewEncoder(w).Encode(formatted)
+	})
+
+	// Live Open Paper Trading Positions
+	r.Get("/api/v1/positions", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if s.execEngine == nil {
+			json.NewEncoder(w).Encode([]interface{}{})
+			return
+		}
+		trades := s.execEngine.GetOpenTrades()
+		if trades == nil {
+			trades = []*db.Trade{}
+		}
+		json.NewEncoder(w).Encode(trades)
+	})
+
+	// Live Mark-to-Market Portfolio Summary
+	r.Get("/api/v1/portfolio/summary", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		initialEquity := 10000.0
+		targetCorePct := 0.50
+		targetAlphaPct := 0.50
+		if s.cfg != nil {
+			if s.cfg.InitialCapital > 0 {
+				initialEquity = s.cfg.InitialCapital
+			}
+			if s.cfg.CoreTargetPct > 0 {
+				targetCorePct = s.cfg.CoreTargetPct
+			}
+			if s.cfg.AlphaTargetPct > 0 {
+				targetAlphaPct = s.cfg.AlphaTargetPct
+			}
+		}
+
+		totalEquity := initialEquity
+		cash := initialEquity
+		coreEquity := totalEquity * targetCorePct
+		alphaEquity := totalEquity * targetAlphaPct
+
+		if s.execEngine != nil {
+			totalEquity = s.execEngine.GetTotalEquity()
+			cash = s.execEngine.GetCash()
+			initialEquity = s.execEngine.GetInitialEquity()
+		}
+
+		if s.allocator != nil {
+			breakdown := s.allocator.Get3TierBreakdown()
+			if te, ok := breakdown["total_equity"].(float64); ok && te > 0 {
+				totalEquity = te
+			}
+			if c, ok := breakdown["tier1_cash"].(float64); ok && c > 0 {
+				cash = c
+			}
+			if ce, ok := breakdown["tier2_core"].(float64); ok && ce > 0 {
+				coreEquity = ce
+			}
+			if ae, ok := breakdown["tier3_tactical"].(float64); ok && ae > 0 {
+				alphaEquity = ae
+			}
+			if tcp, ok := breakdown["tier2_target_pct"].(float64); ok && tcp > 0 {
+				targetCorePct = tcp
+			}
+			if tap, ok := breakdown["tier3_target_pct"].(float64); ok && tap > 0 {
+				targetAlphaPct = tap
+			}
+		}
+
+		drawdownPct := 0.0
+		peakEquity := totalEquity
+		if initialEquity > peakEquity {
+			peakEquity = initialEquity
+		}
+		if peakEquity > 0 && totalEquity < peakEquity {
+			drawdownPct = ((peakEquity - totalEquity) / peakEquity) * 100.0
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"totalEquity":          totalEquity,
+			"initialEquity":        initialEquity,
+			"coreEquity":           coreEquity,
+			"alphaEquity":          alphaEquity,
+			"targetCorePct":        targetCorePct,
+			"targetAlphaPct":       targetAlphaPct,
+			"cash":                 cash,
+			"peakEquity":           peakEquity,
+			"drawdownPct":          drawdownPct,
+			"circuitBreakerHalted": false,
+		})
+	})
+
 	// Dynamic Indicator Weights
 	r.Get("/api/v1/weights", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -242,8 +416,8 @@ func (s *Server) setupRoutes() {
 			InitialCapital float64 `json:"initial_capital"`
 			BarsCount      int     `json:"bars_count"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Symbol == "" {
-			req.Symbol = "BTC/USD"
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Symbol == "" || req.Symbol == "BTC/USD" {
+			req.Symbol = "BTC/USDT"
 		}
 		if req.InitialCapital <= 0 {
 			req.InitialCapital = 100000.0
@@ -252,28 +426,31 @@ func (s *Server) setupRoutes() {
 			req.BarsCount = 1000
 		}
 
-		now := time.Now().Add(-time.Duration(req.BarsCount) * time.Hour)
-		candles := make([]backtest.Candle, req.BarsCount)
-		price := 65000.0
-		if req.Symbol == "XAU/USD" {
-			price = 2650.0
-		} else if req.Symbol == "ETH/USD" {
-			price = 2800.0
+		if s.candleDownloader == nil {
+			http.Error(w, `{"error":"historical candle downloader uninitialized"}`, http.StatusInternalServerError)
+			return
 		}
-		for i := 0; i < req.BarsCount; i++ {
-			drift := math.Sin(float64(i)/30.0)*10.0 + 2.0
-			closeVal := price + drift
-			high := math.Max(price, closeVal) + 5.0
-			low := math.Min(price, closeVal) - 5.0
-			candles[i] = backtest.Candle{
-				Timestamp: now.Add(time.Duration(i) * time.Hour),
-				Open:      price,
-				High:      high,
-				Low:       low,
-				Close:     closeVal,
-				Volume:    150.0,
+
+		histCandles, err := s.candleDownloader.FetchHistoricalKlines(r.Context(), req.Symbol, "1h", req.BarsCount)
+		if err != nil || len(histCandles) == 0 {
+			errMsg := "unable to fetch live historical exchange klines for backtest"
+			if err != nil {
+				errMsg += ": " + err.Error()
 			}
-			price = closeVal
+			http.Error(w, `{"error":"`+errMsg+`"}`, http.StatusBadGateway)
+			return
+		}
+
+		candles := make([]backtest.Candle, len(histCandles))
+		for i, hc := range histCandles {
+			candles[i] = backtest.Candle{
+				Timestamp: hc.OpenTime,
+				Open:      hc.Open,
+				High:      hc.High,
+				Low:       hc.Low,
+				Close:     hc.Close,
+				Volume:    hc.Volume,
+			}
 		}
 		cfg := backtest.BacktestConfig{
 			Symbol:            req.Symbol,

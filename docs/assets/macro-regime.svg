@@ -52,7 +52,7 @@
       <rect width="520" height="95" rx="10" fill="#1e293b" fill-opacity="0.6" stroke="#f59e0b" stroke-width="1.5" stroke-opacity="0.4" />
       <rect x="16" y="16" width="6" height="63" rx="3" fill="url(#goldGrad)" />
       <text x="34" y="36" class="ui-text" font-size="14" font-weight="700" fill="#ffffff">TIER 2 • CORE SAFE-HAVEN PRESERVATION</text>
-      <text x="34" y="56" class="ui-text" font-size="12" fill="#cbd5e1">XAU/USD Gold Spot, XAG/USD Silver Spot, and macro Bitcoin holdings.</text>
+      <text x="34" y="56" class="ui-text" font-size="12" fill="#cbd5e1">PAXG/USDT Tokenized Gold, BNB/USDT, and macro Bitcoin holdings.</text>
       <text x="34" y="74" class="mono-text" font-size="11" font-weight="600" fill="#fbbf24">Target: 45.0% • Inflation &amp; War Hedge Portfolio ($45,000 baseline)</text>
       <text x="470" y="44" text-anchor="middle" class="mono-text" font-size="20" font-weight="800" fill="#fbbf24">45%</text>
     </g>

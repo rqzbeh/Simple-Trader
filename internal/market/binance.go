@@ -49,7 +49,9 @@ func NewBinanceFetcherWithBaseURL(baseURL string) *BinanceFetcher {
 // Get24hStats implements MarketStatsProvider for DynamicCryptoScreener with real live metrics.
 func (b *BinanceFetcher) Get24hStats(symbol string) (price float64, volume24h float64, spreadBps float64, err error) {
 	formatted := strings.ReplaceAll(symbol, "/", "")
-	formatted = strings.ReplaceAll(formatted, "USD", "USDT")
+	if strings.HasSuffix(formatted, "USD") && !strings.HasSuffix(formatted, "USDT") && !strings.HasSuffix(formatted, "USDC") {
+		formatted += "T"
+	}
 
 	url := fmt.Sprintf("%s/api/v3/ticker/24hr?symbol=%s", b.baseURL, formatted)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

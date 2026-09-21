@@ -66,9 +66,9 @@
     <rect width="570" height="280" rx="10" fill="#0f172a" stroke="#1e293b" stroke-width="1" />
 
     <!-- Chart Title Bar -->
-    <text class="font-sans" font-size="14" font-weight="700" fill="#ffffff" x="20" y="30">Gold Spot / US Dollar (XAU/USD)</text>
-    <text class="font-mono" font-size="14" font-weight="700" fill="#10b981" x="270" y="30">$2,980.50</text>
-    <text class="font-mono" font-size="11" fill="#64748b" x="350" y="30">1D • Yahoo Finance Feed</text>
+    <text class="font-sans" font-size="14" font-weight="700" fill="#ffffff" x="20" y="30">Bitcoin / Tether (BTC/USDT)</text>
+    <text class="font-mono" font-size="14" font-weight="700" fill="#10b981" x="270" y="30">$85,850.00</text>
+    <text class="font-mono" font-size="11" fill="#64748b" x="370" y="30">1H • Binance Live Feed</text>
 
     <!-- Badges -->
     <rect x="440" y="16" width="52" height="20" rx="4" fill="#1e293b" />
@@ -123,47 +123,47 @@
 
     <!-- Asset rows -->
     <g transform="translate(16, 42)">
-      <!-- Row 1: Gold -->
+      <!-- Row 1: Bitcoin -->
       <rect width="336" height="38" rx="6" fill="#1e293b" fill-opacity="0.4" />
-      <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">XAU/USD</text>
-      <text class="font-mono" font-size="11" fill="#94a3b8" x="80" y="24">Gold</text>
-      <text class="font-mono" font-size="12" font-weight="700" fill="#10b981" x="200" y="24">$2,980.50</text>
-      <text class="font-mono" font-size="11" fill="#10b981" x="285" y="24">+1.15%</text>
+      <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">BTC/USDT</text>
+      <text class="font-mono" font-size="11" fill="#94a3b8" x="85" y="24">Bitcoin</text>
+      <text class="font-mono" font-size="12" font-weight="700" fill="#10b981" x="195" y="24">$85,850.00</text>
+      <text class="font-mono" font-size="11" fill="#10b981" x="285" y="24">+6.39%</text>
 
-      <!-- Row 2: Silver -->
+      <!-- Row 2: Ethereum -->
       <g transform="translate(0, 44)">
         <rect width="336" height="38" rx="6" fill="#1e293b" fill-opacity="0.2" />
-        <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">XAG/USD</text>
-        <text class="font-mono" font-size="11" fill="#94a3b8" x="80" y="24">Silver</text>
-        <text class="font-mono" font-size="12" font-weight="700" fill="#ffffff" x="200" y="24">$34.25</text>
-        <text class="font-mono" font-size="11" fill="#ef4444" x="285" y="24">-0.42%</text>
+        <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">ETH/USDT</text>
+        <text class="font-mono" font-size="11" fill="#94a3b8" x="85" y="24">Ethereum</text>
+        <text class="font-mono" font-size="12" font-weight="700" fill="#10b981" x="195" y="24">$2,735.00</text>
+        <text class="font-mono" font-size="11" fill="#10b981" x="285" y="24">+5.30%</text>
       </g>
 
-      <!-- Row 3: Bitcoin -->
+      <!-- Row 3: Solana -->
       <g transform="translate(0, 88)">
         <rect width="336" height="38" rx="6" fill="#1e293b" fill-opacity="0.4" />
-        <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">BTC/USD</text>
-        <text class="font-mono" font-size="11" fill="#94a3b8" x="80" y="24">Bitcoin</text>
-        <text class="font-mono" font-size="12" font-weight="700" fill="#10b981" x="200" y="24">$92,450.00</text>
-        <text class="font-mono" font-size="11" fill="#10b981" x="285" y="24">+3.42%</text>
+        <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">SOL/USDT</text>
+        <text class="font-mono" font-size="11" fill="#94a3b8" x="85" y="24">Solana</text>
+        <text class="font-mono" font-size="12" font-weight="700" fill="#10b981" x="195" y="24">$117.50</text>
+        <text class="font-mono" font-size="11" fill="#10b981" x="285" y="24">+8.75%</text>
       </g>
 
-      <!-- Row 4: Ethereum -->
+      <!-- Row 4: PAX Gold -->
       <g transform="translate(0, 132)">
         <rect width="336" height="38" rx="6" fill="#1e293b" fill-opacity="0.2" />
-        <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">ETH/USD</text>
-        <text class="font-mono" font-size="11" fill="#94a3b8" x="80" y="24">Ethereum</text>
-        <text class="font-mono" font-size="12" font-weight="700" fill="#10b981" x="200" y="24">$3,450.75</text>
-        <text class="font-mono" font-size="11" fill="#10b981" x="285" y="24">+2.18%</text>
+        <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">PAXG/USDT</text>
+        <text class="font-mono" font-size="11" fill="#94a3b8" x="90" y="24">Gold</text>
+        <text class="font-mono" font-size="12" font-weight="700" fill="#ffffff" x="195" y="24">$4,350.00</text>
+        <text class="font-mono" font-size="11" fill="#94a3b8" x="285" y="24">-0.24%</text>
       </g>
 
-      <!-- Row 5: Crude Oil -->
+      <!-- Row 5: BNB -->
       <g transform="translate(0, 176)">
         <rect width="336" height="38" rx="6" fill="#1e293b" fill-opacity="0.4" />
-        <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">WTI/USD</text>
-        <text class="font-mono" font-size="11" fill="#94a3b8" x="80" y="24">Oil</text>
-        <text class="font-mono" font-size="12" font-weight="700" fill="#ffffff" x="200" y="24">$72.80</text>
-        <text class="font-mono" font-size="11" fill="#ef4444" x="285" y="24">-0.85%</text>
+        <text class="font-sans" font-size="12" font-weight="700" fill="#ffffff" x="12" y="24">BNB/USDT</text>
+        <text class="font-mono" font-size="11" fill="#94a3b8" x="85" y="24">BNB</text>
+        <text class="font-mono" font-size="12" font-weight="700" fill="#10b981" x="195" y="24">$802.00</text>
+        <text class="font-mono" font-size="11" fill="#10b981" x="285" y="24">+6.25%</text>
       </g>
     </g>
   </g>

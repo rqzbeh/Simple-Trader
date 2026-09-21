@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useTheme } from './context/ThemeContext';
 import { useAuth } from './context/AuthContext';
-import { Sun, Moon, Activity, TrendingUp, Cpu, Layers, SlidersHorizontal, Users, Newspaper, Filter, MessageSquare, LogOut, ShieldCheck } from 'lucide-react';
+import { Sun, Moon, Activity, TrendingUp, Layers, SlidersHorizontal, Users, Newspaper, Filter, MessageSquare, LogOut, ShieldCheck, Menu, X, Brain, Wallet } from 'lucide-react';
 import { useSSE } from './hooks/useSSE';
 import { AssetTickerGrid } from './components/AssetTickerGrid';
 import { TradingViewChart } from './components/TradingViewChart';
@@ -9,8 +9,7 @@ import { AllocationGauge } from './components/AllocationGauge';
 import { PositionsTable } from './components/PositionsTable';
 import { AISignalFeed } from './components/AISignalFeed';
 import { AIWeightMatrix, INITIAL_WEIGHTS } from './components/AIWeightMatrix';
-import { MicrostructureCard } from './components/MicrostructureCard';
-import { MacroCalendarPanel } from './components/MacroCalendarPanel';
+import { MLTrainingView } from './components/MLTrainingView';
 import { InvestorLedgerView } from './components/InvestorLedgerView';
 import { NewsStreamView } from './components/NewsStreamView';
 import { ScreenerView } from './components/ScreenerView';
@@ -18,74 +17,48 @@ import { TelegramConfigModal } from './components/TelegramConfigModal';
 import { LoginModal } from './components/LoginModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { IOSInstallModal } from './components/IOSInstallModal';
-import { AssetInfo, CandleData, TradePosition, IndicatorWeights, MicrostructureState, MacroCalendarEvent } from './types';
-
-// Deterministic candle data generator for visual demonstration
-function generateCandles(basePrice: number): CandleData[] {
-  const candles: CandleData[] = [];
-  let current = basePrice;
-  const now = Math.floor(Date.now() / 1000);
-  const periodSeconds = 3600; // 1h
-
-  for (let i = 48; i >= 0; i--) {
-    const time = now - i * periodSeconds;
-    const variation = (Math.sin(i / 3) * 0.008 + (Math.random() - 0.48) * 0.01) * basePrice;
-    const open = current;
-    const close = open + variation;
-    const high = Math.max(open, close) + Math.random() * 0.004 * basePrice;
-    const low = Math.min(open, close) - Math.random() * 0.004 * basePrice;
-    candles.push({ time, open, high, low, close });
-    current = close;
-  }
-  return candles;
-}
+import { AssetInfo, CandleData, TradePosition, IndicatorWeights } from './types';
 
 export const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const { isAuthenticated, tokenMasked, logout } = useAuth();
   const { isConnected, assets, positions, summary, setPositions } = useSSE();
-  const [selectedSymbol, setSelectedSymbol] = useState<string>('XAU/USD');
-  const [activeTab, setActiveTab] = useState<'terminal' | 'investors' | 'screener' | 'news' | 'ai_weights'>('terminal');
+  const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC/USDT');
+  const [activeTab, setActiveTab] = useState<'terminal' | 'investors' | 'screener' | 'news' | 'ai_weights' | 'ml'>('terminal');
   const [weights, setWeights] = useState<IndicatorWeights>(INITIAL_WEIGHTS);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
   const [isIOSGuideOpen, setIsIOSGuideOpen] = useState<boolean>(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+  const [candleData, setCandleData] = useState<CandleData[]>([]);
 
-  // Microstructure state for selected asset
-  const [microState] = useState<MicrostructureState>({
-    symbol: selectedSymbol,
-    obi: 0.38,
-    cvd: 4250,
-    divergence: 'BULLISH_ABSORPTION',
-    regime: 'NORMAL_TRENDING',
-    volRatio: 1.12,
-  });
+  // Fetch authentic online exchange Kline data for selected symbol
+  useEffect(() => {
+    let isMounted = true;
+    async function fetchKlines() {
+      try {
+        const res = await fetch(`/api/v1/klines?symbol=${encodeURIComponent(selectedSymbol)}&interval=1h&limit=48`);
+        if (res.ok) {
+          const data = await res.json();
+          if (isMounted && Array.isArray(data)) {
+            setCandleData(data);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch authentic klines', err);
+      }
+    }
+    fetchKlines();
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedSymbol]);
 
-  // Macro events for circuit breaker monitoring
-  const [macroEvents] = useState<MacroCalendarEvent[]>([
-    {
-      id: 'FOMC-001',
-      title: 'FOMC Rate Decision',
-      currency: 'USD',
-      impact: 'HIGH',
-      scheduled_at: new Date(Date.now() + 1800000).toISOString(), // in 30 mins
-      forecast: '5.25%',
-      previous: '5.50%',
-    },
-    {
-      id: 'CPI-002',
-      title: 'US Core CPI YoY',
-      currency: 'USD',
-      impact: 'HIGH',
-      scheduled_at: new Date(Date.now() + 14400000).toISOString(),
-      forecast: '3.1%',
-      previous: '3.2%',
-    },
-  ]);
+  // Dynamic Mark-to-Market Total Return Calculation from online summary
+  const baselineEquity = summary.initialEquity && summary.initialEquity > 0 ? summary.initialEquity : 10000.0;
+  const returnPct = baselineEquity > 0 ? ((summary.totalEquity - baselineEquity) / baselineEquity) * 100 : 0;
+  const isPositiveReturn = returnPct >= 0;
 
   const selectedAsset = assets.find((a: AssetInfo) => a.symbol === selectedSymbol) || assets[0];
-  const candleData = React.useMemo(() => {
-    return generateCandles(selectedAsset.price);
-  }, [selectedAsset.symbol]);
 
   const handleClosePosition = (id: string) => {
     setPositions((prev: TradePosition[]) => prev.filter((p: TradePosition) => p.id !== id));
@@ -114,8 +87,8 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Navigation Tabs */}
-            <nav className="hidden sm:flex items-center space-x-1 p-1 bg-slate-100 dark:bg-slate-800/60 rounded-xl">
+            {/* Navigation Tabs (Desktop) */}
+            <nav className="hidden lg:flex items-center space-x-1 p-1 bg-slate-100 dark:bg-slate-800/60 rounded-xl">
               <button
                 onClick={() => setActiveTab('terminal')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
@@ -171,13 +144,24 @@ export const App: React.FC = () => {
                 <SlidersHorizontal className="w-3.5 h-3.5 text-purple-500" />
                 <span>Weights</span>
               </button>
+              <button
+                onClick={() => setActiveTab('ml')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
+                  activeTab === 'ml'
+                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                }`}
+              >
+                <Brain className="w-3.5 h-3.5 text-indigo-500" />
+                <span>ML Engine</span>
+              </button>
             </nav>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-2 sm:space-x-3">
             {/* Live SSE status indicator */}
             <div
-              className={`flex items-center space-x-2 text-xs px-3 py-1.5 rounded-full border ${
+              className={`flex items-center space-x-2 text-xs px-2.5 sm:px-3 py-1.5 rounded-full border ${
                 isConnected
                   ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
                   : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
@@ -188,7 +172,7 @@ export const App: React.FC = () => {
                   isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
                 }`}
               ></span>
-              <span className="font-medium font-mono">
+              <span className="font-medium font-mono text-[11px] sm:text-xs">
                 {isConnected ? 'SSE Live Feed' : 'Connecting SSE...'}
               </span>
             </div>
@@ -200,7 +184,7 @@ export const App: React.FC = () => {
               title="Configure Telegram Bot"
             >
               <MessageSquare className="w-4 h-4 text-sky-500" />
-              <span className="hidden md:inline font-mono">Telegram Bot</span>
+              <span className="hidden xl:inline font-mono">Telegram Bot</span>
             </button>
 
             {/* Dark / Light Mode Toggle */}
@@ -234,8 +218,114 @@ export const App: React.FC = () => {
                 </button>
               </div>
             )}
+
+            {/* Mobile / Tablet Menu Hamburger Button */}
+            <button
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className="lg:hidden p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              aria-label="Toggle Navigation Menu"
+            >
+              {isMobileMenuOpen ? <X className="w-5 h-5 text-rose-500" /> : <Menu className="w-5 h-5" />}
+            </button>
           </div>
         </div>
+
+        {/* Mobile / Tablet Navigation Dropdown Drawer */}
+        {isMobileMenuOpen && (
+          <div className="lg:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-lg animate-in slide-in-from-top-2 duration-150">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => {
+                  setActiveTab('terminal');
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`p-2.5 rounded-xl text-xs font-semibold font-mono flex items-center space-x-2 transition-colors min-h-[44px] ${
+                  activeTab === 'terminal'
+                    ? 'bg-sky-500/15 text-sky-500 border border-sky-500/30'
+                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <TrendingUp className="w-4 h-4 text-emerald-500" />
+                <span>Terminal</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('investors');
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`p-2.5 rounded-xl text-xs font-semibold font-mono flex items-center space-x-2 transition-colors min-h-[44px] ${
+                  activeTab === 'investors'
+                    ? 'bg-sky-500/15 text-sky-500 border border-sky-500/30'
+                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Users className="w-4 h-4 text-sky-500" />
+                <span>Investor Ledger</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('screener');
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`p-2.5 rounded-xl text-xs font-semibold font-mono flex items-center space-x-2 transition-colors min-h-[44px] ${
+                  activeTab === 'screener'
+                    ? 'bg-sky-500/15 text-sky-500 border border-sky-500/30'
+                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Filter className="w-4 h-4 text-amber-500" />
+                <span>Screener</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('news');
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`p-2.5 rounded-xl text-xs font-semibold font-mono flex items-center space-x-2 transition-colors min-h-[44px] ${
+                  activeTab === 'news'
+                    ? 'bg-sky-500/15 text-sky-500 border border-sky-500/30'
+                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Newspaper className="w-4 h-4 text-rose-500" />
+                <span>News Stream</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('ai_weights');
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`p-2.5 rounded-xl text-xs font-semibold font-mono flex items-center space-x-2 transition-colors min-h-[44px] ${
+                  activeTab === 'ai_weights'
+                    ? 'bg-sky-500/15 text-sky-500 border border-sky-500/30'
+                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <SlidersHorizontal className="w-4 h-4 text-purple-500" />
+                <span>AI Weights</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('ml');
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`p-2.5 rounded-xl text-xs font-semibold font-mono flex items-center space-x-2 transition-colors min-h-[44px] ${
+                  activeTab === 'ml'
+                    ? 'bg-sky-500/15 text-sky-500 border border-sky-500/30'
+                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Brain className="w-4 h-4 text-indigo-500" />
+                <span>ML Engine</span>
+              </button>
+            </div>
+          </div>
+        )}
       </header>
 
       {/* Main Container */}
@@ -250,8 +340,8 @@ export const App: React.FC = () => {
             <div className="text-2xl font-bold font-mono tracking-tight">
               ${summary.totalEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
-            <div className="text-xs text-emerald-500 mt-1 font-medium font-mono flex items-center">
-              <span>+2.45% All-Time</span>
+            <div className={`text-xs mt-1 font-medium font-mono flex items-center ${isPositiveReturn ? 'text-emerald-500' : 'text-rose-500'}`}>
+              <span>{isPositiveReturn ? '+' : ''}{returnPct.toFixed(2)}% All-Time</span>
               <span className="mx-1.5 text-slate-300 dark:text-slate-700">•</span>
               <span className="text-slate-400">Paper Trading</span>
             </div>
@@ -259,7 +349,7 @@ export const App: React.FC = () => {
 
           <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-              <span>Core Allocation (Gold/Silver)</span>
+              <span>Core Allocation (Gold/Reserves)</span>
               <span className="text-amber-500 font-bold text-xs">Target: 60%</span>
             </div>
             <div className="text-2xl font-bold font-mono tracking-tight text-amber-600 dark:text-amber-400">
@@ -272,7 +362,7 @@ export const App: React.FC = () => {
 
           <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-              <span>Alpha Allocation (Crypto/Forex/Oil)</span>
+              <span>Alpha Allocation (Tactical Crypto Futures)</span>
               <span className="text-indigo-500 font-bold text-xs">Target: 40%</span>
             </div>
             <div className="text-2xl font-bold font-mono tracking-tight text-indigo-600 dark:text-indigo-400">
@@ -285,14 +375,14 @@ export const App: React.FC = () => {
 
           <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
-              <span>AI Learning & Regret Minimizer</span>
-              <Cpu className="w-4 h-4 text-sky-500" />
+              <span>Tier 1 Cash & Margin Buffer</span>
+              <Wallet className="w-4 h-4 text-sky-500" />
             </div>
             <div className="text-2xl font-bold font-mono tracking-tight text-sky-500">
-              Active Online
+              ${summary.cash.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-mono">
-              Dynamic Weights Calibrated
+              Peak DD: <span className={summary.drawdownPct > 5 ? 'text-rose-500 font-bold' : 'text-emerald-500 font-bold'}>{summary.drawdownPct.toFixed(2)}%</span> (Peak: ${summary.peakEquity.toLocaleString()})
             </div>
           </div>
         </div>
@@ -303,8 +393,8 @@ export const App: React.FC = () => {
             {/* Global Asset Ticker Selector Grid */}
             <div className="space-y-2">
               <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-mono px-1">
-                <span>SELECT GLOBAL ASSET TICKER:</span>
-                <span>REAL-TIME QUOTES</span>
+                <span className="font-semibold text-slate-700 dark:text-slate-300">Market Assets</span>
+                <span>Live Quotes (Binance Stream)</span>
               </div>
               <AssetTickerGrid
                 assets={assets}
@@ -319,7 +409,7 @@ export const App: React.FC = () => {
                 <TradingViewChart symbol={selectedSymbol} data={candleData} />
               </div>
               <div className="lg:col-span-1">
-                <AISignalFeed selectedSymbol={selectedSymbol} />
+                <AISignalFeed selectedSymbol={selectedSymbol} currentPrice={selectedAsset.price} />
               </div>
             </div>
 
@@ -330,23 +420,17 @@ export const App: React.FC = () => {
               </div>
               <div className="lg:col-span-2 space-y-2">
                 <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-mono px-1">
-                  <span className="flex items-center space-x-1.5">
+                  <span className="flex items-center space-x-1.5 font-semibold text-slate-700 dark:text-slate-300">
                     <Layers className="w-3.5 h-3.5 text-sky-500" />
-                    <span>OPEN POSITIONS & RISK PARAMETERS</span>
+                    <span>Active Positions</span>
                   </span>
-                  <span>SL/TP AUTOMATED EXITS</span>
+                  <span>Automated SL/TP</span>
                 </div>
                 <PositionsTable
                   positions={positions}
                   onClosePosition={handleClosePosition}
                 />
               </div>
-            </div>
-
-            {/* Institutional Microstructure & Macro Circuit Breaker Panels */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <MicrostructureCard state={microState} />
-              <MacroCalendarPanel events={macroEvents} activeSymbol={selectedSymbol} />
             </div>
           </>
         ) : activeTab === 'investors' ? (
@@ -384,6 +468,18 @@ export const App: React.FC = () => {
               </span>
             </div>
             <NewsStreamView />
+          </div>
+        ) : activeTab === 'ml' ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-slate-800 dark:text-slate-200">
+                GPU & Statistical Deep Learning Model Training
+              </h2>
+              <span className="text-xs text-slate-400 font-mono">
+                CUDA Acceleration • Authentic Binance Kline Data • Thompson Sampling
+              </span>
+            </div>
+            <MLTrainingView />
           </div>
         ) : (
           <div className="space-y-4">

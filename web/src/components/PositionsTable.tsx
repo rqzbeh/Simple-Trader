@@ -29,10 +29,12 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
           <tr>
             <th className="px-4 py-3">Asset</th>
             <th className="px-4 py-3">Side</th>
+            <th className="px-4 py-3">Leverage</th>
             <th className="px-4 py-3">Size</th>
             <th className="px-4 py-3">Entry Price</th>
             <th className="px-4 py-3">Current</th>
             <th className="px-4 py-3">SL / TP</th>
+            <th className="px-4 py-3">Liq. Price</th>
             <th className="px-4 py-3">Unrealized PnL</th>
             <th className="px-4 py-3 text-right">Action</th>
           </tr>
@@ -66,6 +68,11 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                     {pos.side}
                   </span>
                 </td>
+                <td className="px-4 py-3">
+                  <span className="font-semibold px-1.5 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                    {pos.leverage ? `${pos.leverage}x` : '1x'}
+                  </span>
+                </td>
                 <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
                   {pos.size}
                 </td>
@@ -79,6 +86,15 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                   <span className="text-rose-500 dark:text-rose-400">${pos.stopLoss < 10 ? pos.stopLoss.toFixed(4) : pos.stopLoss.toFixed(2)}</span>
                   {' / '}
                   <span className="text-emerald-500 dark:text-emerald-400">${pos.takeProfit < 10 ? pos.takeProfit.toFixed(4) : pos.takeProfit.toFixed(2)}</span>
+                </td>
+                <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
+                  {pos.liquidationPrice ? (
+                    <span className="text-amber-500/90 dark:text-amber-400/90">
+                      ${pos.liquidationPrice < 10 ? pos.liquidationPrice.toFixed(4) : pos.liquidationPrice.toFixed(2)}
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">--</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 font-bold">
                   <span className={isProfit ? 'text-emerald-500' : 'text-rose-500'}>

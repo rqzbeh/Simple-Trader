@@ -26,6 +26,11 @@ type HistoricalCandle struct {
 	TakerBuyQuoteVol float64   `json:"taker_buy_quote_vol"`
 }
 
+// HistoricalKlineProvider defines an authentic candlestick history interface.
+type HistoricalKlineProvider interface {
+	FetchHistoricalKlines(ctx context.Context, symbol string, interval string, targetCount int) ([]HistoricalCandle, error)
+}
+
 // BinanceHistoricalDownloader fetches authentic continuous historical klines from Binance Public API.
 type BinanceHistoricalDownloader struct {
 	baseURL    string

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -107,11 +106,22 @@ func main() {
 		log.Println("[INFO] Dynamic Liquid Crypto Screener started (evaluating $50M volume / 10bps spread).")
 	}
 
-	// 7. Start Market Simulated Ticker Feed Generator
+	// 7. Start Market Live Ticker Feed from Online Exchange APIs (Binance)
+	liveFeed := market.NewLiveMarketFeed(market.GetSupportedAssets())
+	ticks := liveFeed.Subscribe(ctx, 1*time.Second)
+	log.Println("[INFO] Real-time live exchange market feed active. Ingesting online fluctuating ticks...")
+
+	// 7b. Initialize Circuit Breaker & Autonomous Trading Daemon
+	circuit := trader.NewCircuitBreaker(cfg.InitialCapital, cfg.MaxDrawdownLimitPct)
+	strategyEvaluator := trader.NewAIStrategyEvaluator(aiClient, srv.NewsCrawler())
+	daemonCfg := trader.DaemonConfig{
+		TickInterval: 2 * time.Second,
+		Symbols:      []string{"BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT", "BNB/USDT", "XRP/USDT", "LINK/USDT", "EUR/USDT"},
+	}
+	daemon := trader.NewTradingDaemon(daemonCfg, execEngine, allocator, circuit, srv.MarketData(), strategyEvaluator)
+
+	// Ingest live online ticks into server, cache, SSE, and process daemon cycles
 	go func() {
-		feed := market.NewSimulatedFeed()
-		ticks := feed.Subscribe(ctx)
-		log.Println("[INFO] Market ingestion & tick feed active. Broadcasting ticks to SSE...")
 		for {
 			select {
 			case <-ctx.Done():
@@ -120,10 +130,11 @@ func main() {
 				if !ok {
 					return
 				}
-				tickJSON, err := json.Marshal(tick)
-				if err == nil {
-					srv.Broadcaster().Broadcast("tick", string(tickJSON))
-				}
+				// Ingest tick into thread-safe quote store, redis, and SSE stream
+				srv.IngestTick(tick)
+
+				// Run continuous autonomous daemon evaluation
+				daemon.ProcessTick(ctx)
 			}
 		}
 	}()

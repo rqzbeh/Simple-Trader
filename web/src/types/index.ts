@@ -34,6 +34,8 @@ export interface TradePosition {
   unrealizedPnL: number;
   pnlPercent: number;
   entryTime: string;
+  leverage?: number;
+  liquidationPrice?: number;
 }
 
 export interface AISignal {
@@ -68,9 +70,10 @@ export interface PortfolioSummary {
   totalEquity: number;
   coreEquity: number;
   alphaEquity: number;
-  targetCorePct: number; // 0.60
-  targetAlphaPct: number; // 0.40
+  targetCorePct: number;
+  targetAlphaPct: number;
   cash: number;
+  initialEquity?: number;
   peakEquity: number;
   drawdownPct: number;
   circuitBreakerHalted: boolean;

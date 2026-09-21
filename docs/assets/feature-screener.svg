@@ -80,45 +80,45 @@
       <text class="font-mono" font-size="10" font-weight="700" fill="#94a3b8" x="325" y="17">STATUS</text>
     </g>
 
-    <!-- Row 1: BTC/USD -->
+    <!-- Row 1: BTC/USDT -->
     <g transform="translate(20, 95)">
-      <text class="font-mono" font-size="12" font-weight="800" fill="#f8fafc" x="12">BTC/USD</text>
+      <text class="font-mono" font-size="12" font-weight="800" fill="#f8fafc" x="12">BTC/USDT</text>
       <text class="font-mono" font-size="11" fill="#38bdf8" x="120">$1.84B</text>
       <text class="font-mono" font-size="11" fill="#34d399" x="240">0.8 bps</text>
       <text class="font-mono" font-size="11" font-weight="700" fill="#10b981" x="325">QUALIFIED</text>
       <line x1="0" y1="12" x2="385" y2="12" stroke="#1e293b" stroke-width="1" />
     </g>
 
-    <!-- Row 2: ETH/USD -->
+    <!-- Row 2: ETH/USDT -->
     <g transform="translate(20, 130)">
-      <text class="font-mono" font-size="12" font-weight="800" fill="#f8fafc" x="12">ETH/USD</text>
+      <text class="font-mono" font-size="12" font-weight="800" fill="#f8fafc" x="12">ETH/USDT</text>
       <text class="font-mono" font-size="11" fill="#38bdf8" x="120">$840M</text>
       <text class="font-mono" font-size="11" fill="#34d399" x="240">1.2 bps</text>
       <text class="font-mono" font-size="11" font-weight="700" fill="#10b981" x="325">QUALIFIED</text>
       <line x1="0" y1="12" x2="385" y2="12" stroke="#1e293b" stroke-width="1" />
     </g>
 
-    <!-- Row 3: SOL/USD -->
+    <!-- Row 3: SOL/USDT -->
     <g transform="translate(20, 165)">
-      <text class="font-mono" font-size="12" font-weight="800" fill="#f8fafc" x="12">SOL/USD</text>
+      <text class="font-mono" font-size="12" font-weight="800" fill="#f8fafc" x="12">SOL/USDT</text>
       <text class="font-mono" font-size="11" fill="#38bdf8" x="120">$460M</text>
       <text class="font-mono" font-size="11" fill="#34d399" x="240">2.1 bps</text>
       <text class="font-mono" font-size="11" font-weight="700" fill="#10b981" x="325">QUALIFIED</text>
       <line x1="0" y1="12" x2="385" y2="12" stroke="#1e293b" stroke-width="1" />
     </g>
 
-    <!-- Row 4: DOGE/USD -->
+    <!-- Row 4: PAXG/USDT -->
     <g transform="translate(20, 200)">
-      <text class="font-mono" font-size="12" font-weight="800" fill="#f8fafc" x="12">DOGE/USD</text>
+      <text class="font-mono" font-size="12" font-weight="800" fill="#f8fafc" x="12">PAXG/USDT</text>
       <text class="font-mono" font-size="11" fill="#38bdf8" x="120">$120M</text>
-      <text class="font-mono" font-size="11" fill="#34d399" x="240">4.5 bps</text>
+      <text class="font-mono" font-size="11" fill="#34d399" x="240">3.2 bps</text>
       <text class="font-mono" font-size="11" font-weight="700" fill="#10b981" x="325">QUALIFIED</text>
       <line x1="0" y1="12" x2="385" y2="12" stroke="#1e293b" stroke-width="1" />
     </g>
 
     <!-- Row 5: ILLIQUID COIN -->
     <g transform="translate(20, 235)">
-      <text class="font-mono" font-size="12" font-weight="800" fill="#64748b" x="12">SHIB/USD</text>
+      <text class="font-mono" font-size="12" font-weight="800" fill="#64748b" x="12">ILLIQ/USDT</text>
       <text class="font-mono" font-size="11" fill="#64748b" x="120">$14M</text>
       <text class="font-mono" font-size="11" fill="#ef4444" x="240">18.5 bps</text>
       <text class="font-mono" font-size="11" font-weight="700" fill="#ef4444" x="325">REJECTED</text>
