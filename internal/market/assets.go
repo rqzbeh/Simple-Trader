@@ -2,83 +2,92 @@ package market
 
 // AssetDefinition details a tradeable asset in Simple-Trader.
 type AssetDefinition struct {
-	Symbol      string  `json:"symbol"`       // Standardized internal symbol (e.g., "BTC/USD", "XAU/USD")
-	Name        string  `json:"name"`         // Display name (e.g. "Bitcoin", "Gold Spot")
+	Symbol      string  `json:"symbol"`       // Standardized internal symbol (e.g., "BTC/USDT", "ETH/USDT")
+	Name        string  `json:"name"`         // Display name (e.g. "Bitcoin", "PAX Gold")
 	Bucket      string  `json:"bucket"`       // "CORE" or "ALPHA"
-	FeedSource  string  `json:"feed_source"`  // "BINANCE" or "YAHOO"
-	SourceParam string  `json:"source_param"` // Query parameter (e.g. "BTCUSDT", "GC=F")
+	FeedSource  string  `json:"feed_source"`  // "BINANCE"
+	SourceParam string  `json:"source_param"` // Query parameter for exchange API (e.g. "BTCUSDT")
 	MinSize     float64 `json:"min_size"`     // Minimum contract/token order quantity
 	Decimals    int     `json:"decimals"`     // Price formatting decimals
 }
 
-// SupportedAssets returns the list of active Core and Alpha global assets.
-// Iranian Bourse assets have been strictly excised.
+// SupportedAssets returns the list of active Core and Alpha global pure crypto assets.
+// All assets trade live online against real exchange order books and tickers (USDT/USDC).
 var SupportedAssets = []AssetDefinition{
-	// --- CORE ASSETS (Preservation / Hedging) ---
+	// --- CORE ASSETS (Preservation / Hedging / Large Cap Anchor) ---
 	{
-		Symbol:      "XAU/USD",
-		Name:        "Gold (Spot/Futures)",
+		Symbol:      "PAXG/USDT",
+		Name:        "PAX Gold (Tokenized Gold)",
 		Bucket:      "CORE",
-		FeedSource:  "YAHOO",
-		SourceParam: "GC=F",
-		MinSize:     0.01,
-		Decimals:    2,
-	},
-	{
-		Symbol:      "XAG/USD",
-		Name:        "Silver",
-		Bucket:      "CORE",
-		FeedSource:  "YAHOO",
-		SourceParam: "SI=F",
-		MinSize:     0.1,
-		Decimals:    3,
-	},
-
-	// --- ALPHA ASSETS (High Sharpe / Growth) ---
-	{
-		Symbol:      "BTC/USD",
-		Name:        "Bitcoin",
-		Bucket:      "ALPHA",
 		FeedSource:  "BINANCE",
-		SourceParam: "BTCUSDT",
+		SourceParam: "PAXGUSDT",
 		MinSize:     0.001,
 		Decimals:    2,
 	},
 	{
-		Symbol:      "ETH/USD",
+		Symbol:      "BNB/USDT",
+		Name:        "BNB",
+		Bucket:      "CORE",
+		FeedSource:  "BINANCE",
+		SourceParam: "BNBUSDT",
+		MinSize:     0.01,
+		Decimals:    2,
+	},
+
+	// --- ALPHA ASSETS (High Sharpe / High Liquidity / Growth) ---
+	{
+		Symbol:      "BTC/USDT",
+		Name:        "Bitcoin",
+		Bucket:      "ALPHA",
+		FeedSource:  "BINANCE",
+		SourceParam: "BTCUSDT",
+		MinSize:     0.0001,
+		Decimals:    2,
+	},
+	{
+		Symbol:      "ETH/USDT",
 		Name:        "Ethereum",
 		Bucket:      "ALPHA",
 		FeedSource:  "BINANCE",
 		SourceParam: "ETHUSDT",
-		MinSize:     0.01,
+		MinSize:     0.001,
 		Decimals:    2,
 	},
 	{
-		Symbol:      "SOL/USD",
+		Symbol:      "SOL/USDT",
 		Name:        "Solana",
 		Bucket:      "ALPHA",
 		FeedSource:  "BINANCE",
 		SourceParam: "SOLUSDT",
-		MinSize:     0.1,
+		MinSize:     0.01,
 		Decimals:    2,
 	},
 	{
-		Symbol:      "EUR/USD",
-		Name:        "Euro / US Dollar",
+		Symbol:      "XRP/USDT",
+		Name:        "XRP",
 		Bucket:      "ALPHA",
-		FeedSource:  "YAHOO",
-		SourceParam: "EURUSD=X",
-		MinSize:     100.0,
-		Decimals:    5,
-	},
-	{
-		Symbol:      "WTI/USD",
-		Name:        "Crude Oil (WTI)",
-		Bucket:      "ALPHA",
-		FeedSource:  "YAHOO",
-		SourceParam: "CL=F",
+		FeedSource:  "BINANCE",
+		SourceParam: "XRPUSDT",
 		MinSize:     1.0,
-		Decimals:    2,
+		Decimals:    4,
+	},
+	{
+		Symbol:      "LINK/USDT",
+		Name:        "Chainlink",
+		Bucket:      "ALPHA",
+		FeedSource:  "BINANCE",
+		SourceParam: "LINKUSDT",
+		MinSize:     0.1,
+		Decimals:    3,
+	},
+	{
+		Symbol:      "EUR/USDT",
+		Name:        "Euro / Tether",
+		Bucket:      "ALPHA",
+		FeedSource:  "BINANCE",
+		SourceParam: "EURUSDT",
+		MinSize:     1.0,
+		Decimals:    4,
 	},
 }
 

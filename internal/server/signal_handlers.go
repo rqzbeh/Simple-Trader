@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rqzbeh/simple-trader/internal/ai"
 	"github.com/rqzbeh/simple-trader/internal/cache"
 	"github.com/rqzbeh/simple-trader/internal/db"
+	"github.com/rqzbeh/simple-trader/internal/market"
 	"github.com/rqzbeh/simple-trader/internal/trader"
 )
 
@@ -63,8 +65,8 @@ func (s *Server) GenerateFuturesSignalHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	var req GenerateFuturesSignalRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Symbol == "" {
-		req.Symbol = "BTC/USD"
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Symbol == "" || req.Symbol == "BTC/USD" {
+		req.Symbol = "BTC/USDT"
 	}
 	if req.Bucket == "" {
 		req.Bucket = "ALPHA"
@@ -79,19 +81,30 @@ func (s *Server) GenerateFuturesSignalHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	// Fetch current market price
-	currentPrice := 65000.0
-	if req.Symbol == "XAU/USD" {
-		currentPrice = 2650.0
-	} else if req.Symbol == "ETH/USD" {
-		currentPrice = 2800.0
-	} else if req.Symbol == "SOL/USD" {
-		currentPrice = 145.0
-	}
-
+	currentPrice := 0.0
 	if s.redisClient != nil {
 		if quote, err := s.redisClient.GetTicker(r.Context(), req.Symbol); err == nil && quote != nil && quote.Price > 0 {
 			currentPrice = quote.Price
 		}
+	}
+	if currentPrice <= 0 && s.marketData != nil {
+		if p, err := s.marketData.GetLatestPrice(req.Symbol); err == nil && p > 0 {
+			currentPrice = p
+		}
+	}
+	if currentPrice <= 0 {
+		fetcher := market.NewBinanceFetcher()
+		cleanSym := strings.ReplaceAll(req.Symbol, "/", "")
+		if q, err := fetcher.FetchTicker(r.Context(), cleanSym); err == nil && q != nil && q.Price > 0 {
+			currentPrice = q.Price
+			if s.marketData != nil {
+				s.marketData.UpdateQuote(*q)
+			}
+		}
+	}
+	if currentPrice <= 0 {
+		http.Error(w, `{"error":"live market price unavailable for `+req.Symbol+`"}`, http.StatusServiceUnavailable)
+		return
 	}
 
 	quote := cache.TickerQuote{
@@ -114,8 +127,19 @@ func (s *Server) GenerateFuturesSignalHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	// Portfolio equity and alpha capital
-	totalEquity := 100000.0
-	availableAlphaCapital := 40000.0
+	totalEquity := 10000.0
+	availableAlphaCapital := 5000.0
+	if s.cfg != nil {
+		if s.cfg.InitialCapital > 0 {
+			totalEquity = s.cfg.InitialCapital
+		}
+		if s.cfg.AlphaTargetPct > 0 {
+			availableAlphaCapital = totalEquity * s.cfg.AlphaTargetPct
+		}
+	}
+	if s.execEngine != nil {
+		totalEquity = s.execEngine.GetTotalEquity()
+	}
 	if s.allocator != nil {
 		allocBreakdown := s.allocator.Get3TierBreakdown()
 		if te, ok := allocBreakdown["total_equity"].(float64); ok && te > 0 {
@@ -218,7 +242,17 @@ func (s *Server) CloseFuturesSignalHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	if req.ExitPrice <= 0 {
-		req.ExitPrice = targetSig.EntryPrice
+		if s.marketData != nil {
+			livePrice, err := s.marketData.GetLatestPrice(targetSig.Symbol)
+			if err == nil && livePrice > 0 {
+				req.ExitPrice = livePrice
+			}
+		}
+	}
+
+	if req.ExitPrice <= 0 {
+		http.Error(w, `{"error":"exit_price must be positive or live market price must be available"}`, http.StatusBadRequest)
+		return
 	}
 
 	signalSvc := trader.NewSignalService(s.dbStore, s.aiClient)

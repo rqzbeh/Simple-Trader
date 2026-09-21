@@ -39,7 +39,7 @@
   <rect x="750" y="16" width="180" height="22" rx="6" fill="#0284c7" fill-opacity="0.2" stroke="#0ea5e9" stroke-width="1" />
   <text x="840" y="31" text-anchor="middle" class="font-mono" font-size="10" font-weight="600" fill="#38bdf8">NEWS CATALYST DRIVEN</text>
 
-  <!-- Signal 1: LONG BTC/USD 5x Card -->
+  <!-- Signal 1: LONG BTC/USDT 5x Card -->
   <g transform="translate(36, 75)" filter="url(#shadow)">
     <rect width="425" height="375" rx="12" fill="url(#cardGrad)" stroke="#10b981" stroke-width="1.5" stroke-opacity="0.4" />
 
@@ -47,8 +47,8 @@
     <rect x="18" y="18" width="85" height="26" rx="6" fill="url(#longGrad)" />
     <text x="60" y="35" text-anchor="middle" class="font-mono" font-size="12" font-weight="800" fill="#ffffff">LONG 5x</text>
 
-    <text x="115" y="36" class="font-ui" font-size="17" font-weight="800" fill="#f8fafc">BTC / USD</text>
-    <text x="320" y="35" class="font-mono" font-size="12" font-weight="600" fill="#38bdf8">$65,000.00</text>
+    <text x="115" y="36" class="font-ui" font-size="17" font-weight="800" fill="#f8fafc">BTC / USDT</text>
+    <text x="320" y="35" class="font-mono" font-size="12" font-weight="600" fill="#38bdf8">$85,850.00</text>
 
     <!-- Breaking Catalyst Box -->
     <rect x="18" y="58" width="389" height="74" rx="8" fill="#0f172a" stroke="#334155" stroke-width="1" />
@@ -98,7 +98,7 @@
     <text x="50" y="330" class="font-mono" font-size="12" font-weight="700" fill="#34d399">ACTIVE POSITION • TELEGRAM BROADCASTED</text>
   </g>
 
-  <!-- Signal 2: SHORT ETH/USD 4x Card -->
+  <!-- Signal 2: SHORT ETH/USDT 4x Card -->
   <g transform="translate(498, 75)" filter="url(#shadow)">
     <rect width="425" height="375" rx="12" fill="url(#cardGrad)" stroke="#f43f5e" stroke-width="1.5" stroke-opacity="0.4" />
 
@@ -106,7 +106,7 @@
     <rect x="18" y="18" width="85" height="26" rx="6" fill="url(#shortGrad)" />
     <text x="60" y="35" text-anchor="middle" class="font-mono" font-size="12" font-weight="800" fill="#ffffff">SHORT 4x</text>
 
-    <text x="115" y="36" class="font-ui" font-size="17" font-weight="800" fill="#f8fafc">ETH / USD</text>
+    <text x="115" y="36" class="font-ui" font-size="17" font-weight="800" fill="#f8fafc">ETH / USDT</text>
     <text x="325" y="35" class="font-mono" font-size="12" font-weight="600" fill="#f43f5e">$2,840.00</text>
 
     <!-- Breaking Catalyst Box -->

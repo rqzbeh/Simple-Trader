@@ -4,13 +4,14 @@ import { Zap, TrendingUp, TrendingDown, ShieldAlert, Target, DollarSign, Clock, 
 
 interface FuturesSignalsViewProps {
   apiBaseUrl?: string;
+  currentPrice?: number;
 }
 
-export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseUrl = '' }) => {
+export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseUrl = '', currentPrice = 0 }) => {
   const [signals, setSignals] = useState<FuturesTradeSignal[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [evaluating, setEvaluating] = useState<boolean>(false);
-  const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC/USD');
+  const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC/USDT');
   const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'CLOSED'>('ACTIVE');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -61,14 +62,14 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
     }
   };
 
-  const handleCloseSignal = async (id: number, currentPrice: number) => {
+  const handleCloseSignal = async (id: number, exitPrice: number = 0) => {
     if (!confirm(`Are you sure you want to close signal #${id} at market price?`)) return;
     try {
       const res = await fetch(`${apiBaseUrl}/api/v1/signals/futures/${id}/close`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          exit_price: currentPrice,
+          exit_price: exitPrice > 0 ? exitPrice : 0,
           exit_reason: 'MANUAL_CLOSE',
         }),
       });
@@ -99,10 +100,14 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
             onChange={(e) => setSelectedSymbol(e.target.value)}
             className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
-            <option value="BTC/USD">BTC/USD</option>
-            <option value="ETH/USD">ETH/USD</option>
-            <option value="SOL/USD">SOL/USD</option>
-            <option value="XAU/USD">XAU/USD (Gold)</option>
+            <option value="BTC/USDT">BTC/USDT</option>
+            <option value="ETH/USDT">ETH/USDT</option>
+            <option value="SOL/USDT">SOL/USDT</option>
+            <option value="PAXG/USDT">PAXG/USDT (Tokenized Gold)</option>
+            <option value="BNB/USDT">BNB/USDT</option>
+            <option value="XRP/USDT">XRP/USDT</option>
+            <option value="LINK/USDT">LINK/USDT</option>
+            <option value="EUR/USDT">EUR/USDT</option>
           </select>
 
           <button
@@ -263,7 +268,7 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
 
                   {sig.status === 'ACTIVE' && (
                     <button
-                      onClick={() => handleCloseSignal(sig.id, sig.entry_price)}
+                      onClick={() => handleCloseSignal(sig.id, currentPrice)}
                       className="px-2.5 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 text-[11px] font-semibold transition-colors flex items-center gap-1"
                     >
                       <XCircle className="w-3 h-3" />

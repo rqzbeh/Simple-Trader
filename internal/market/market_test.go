@@ -126,10 +126,10 @@ func TestAssetUniverse(t *testing.T) {
 	hasCore := false
 	hasAlpha := false
 	for _, a := range assets {
-		if a.Bucket == "CORE" && (a.Symbol == "XAU/USD" || a.Symbol == "XAG/USD") {
+		if a.Bucket == "CORE" && (a.Symbol == "PAXG/USDT" || a.Symbol == "BNB/USDT") {
 			hasCore = true
 		}
-		if a.Bucket == "ALPHA" && a.Symbol == "BTC/USD" {
+		if a.Bucket == "ALPHA" && a.Symbol == "BTC/USDT" {
 			hasAlpha = true
 		}
 		// Confirm zero Iranian assets exist

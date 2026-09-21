@@ -129,9 +129,9 @@ Capital is governed by a scientific 3-tier macroeconomic model that adjusts port
    - Risk-free USD/USDC cash reserve.
    - Exclusively backs investor withdrawals and prevents liquidation of trading positions.
 2. **Tier 2: Core Safe-Haven Capital Preservation (45.0% Baseline • $45,000)**
-   - Macro inflation and geopolitical hedges: Spot Gold (XAU/USD), Spot Silver (XAG/USD), and core Bitcoin holdings.
+   - Macro inflation and geopolitical hedges: Tokenized Gold (PAXG/USDT), BNB/USDT, and core Bitcoin holdings (BTC/USDT).
 3. **Tier 3: Tactical Alpha Trading (40.0% Baseline • $40,000)**
-   - High-conviction news-catalyst entries on 3-hour candle setups using isolated futures leverage.
+   - High-conviction news-catalyst entries on 3-hour candle setups using isolated futures leverage (1x-10x).
 
 ### Automated Regime Shifting
 - **🚨 Crisis / Escalation Regime**: Triggered when geopolitical conflict stress spikes or war breaks out. Shifts portfolio defensively: **Cash 30% • Core Gold 55% • Alpha 15%**.
@@ -153,8 +153,8 @@ To prevent execution slippage in illiquid altcoins, Simple-Trader continuously s
 
 - **24-Hour Trading Volume Threshold**: Minimum **$50,000,000 USD** daily turnover.
 - **Bid-Ask Spread Threshold**: Maximum **10.0 basis points (0.10%)** spread.
-- **Active Trading Universe**: Only pairs satisfying both criteria simultaneously enter the tactical trading pool (e.g. `BTC/USD`, `ETH/USD`, `SOL/USD`, `BNB/USD`, `XRP/USD`, `DOGE/USD`, `AVAX/USD`, `LINK/USD`, `SUI/USD`, `NEAR/USD`).
-- **Live Provider**: Real-time order book analysis via live exchange websockets, caching snapshots to PostgreSQL and Redis.
+- **Active Trading Universe**: Only pairs satisfying both criteria simultaneously enter the tactical trading pool (e.g. `BTC/USDT`, `ETH/USDT`, `SOL/USDT`, `BNB/USDT`, `XRP/USDT`, `DOGE/USDT`, `AVAX/USDT`, `LINK/USDT`, `SUI/USDT`, `PAXG/USDT`).
+- **Live Provider**: Real-time order book and 24h ticker analysis via live exchange websockets (Binance/Bybit), caching snapshots to PostgreSQL and Redis with zero synthetic fallback prices.
 
 ---
 
@@ -242,6 +242,9 @@ Simple-Trader connects directly to any OpenAI-compatible AI gateway using standa
 | `POST` | `/api/v1/auth/logout` | Invalidate session token and clear authentication cookie |
 | `GET` | `/api/v1/events` | Real-time Server-Sent Events (SSE) live tick and signal stream |
 | `GET` | `/api/v1/assets` | Active tradable assets with current quotes |
+| `GET` | `/api/v1/klines` | Real-time authentic candlestick history from exchange (1h, 15m, 4h, 1d) |
+| `GET` | `/api/v1/positions` | Live paper ledger open positions with dynamic mark-to-market valuations |
+| `GET` | `/api/v1/portfolio/summary` | Real-time portfolio equity, 3-tier allocations, and drawdown metrics |
 | `GET` | `/api/v1/signals/futures` | List active or closed two-sided trade signals (BUY/LONG & SELL/SHORT) |
 | `POST` | `/api/v1/signals/futures/decide` | Trigger AI market evaluation driven by breaking news catalysts |
 | `POST` | `/api/v1/signals/futures/{id}/close` | Close signal position with realized PnL and trigger Bayesian fine-tuning |
@@ -259,6 +262,9 @@ Simple-Trader connects directly to any OpenAI-compatible AI gateway using standa
 | `GET` | `/api/v1/investors/{id}` | Retrieve investor profile, current equity, and transaction history |
 | `POST` | `/api/v1/investors/{id}/deposit` | Deposit additional capital and mint pool units |
 | `POST` | `/api/v1/investors/{id}/withdraw` | Withdraw capital (protected by Tier 1 cash buffer) |
+| `GET` | `/api/v1/klines` | Authentic exchange candlestick klines (`?symbol=BTC/USDT&interval=1h&limit=48`) |
+| `GET` | `/api/v1/positions` | Active open paper trading positions with live mark-to-market valuations |
+| `GET` | `/api/v1/portfolio/summary` | Real-time portfolio totals, dynamic equity, core/alpha split, and drawdown |
 
 ---
 

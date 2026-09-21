@@ -2,104 +2,31 @@ import { useEffect, useRef, useState } from 'react';
 import { AssetInfo, AISignal, TradePosition, PortfolioSummary } from '../types';
 
 export const INITIAL_ASSETS: AssetInfo[] = [
-  { symbol: 'XAU/USD', name: 'Gold Spot', bucket: 'CORE', type: 'Commodity', price: 2980.50, change24h: 1.15, high24h: 2995.00, low24h: 2965.20 },
-  { symbol: 'XAG/USD', name: 'Silver Spot', bucket: 'CORE', type: 'Commodity', price: 34.25, change24h: -0.42, high24h: 34.90, low24h: 33.80 },
-  { symbol: 'BTC/USD', name: 'Bitcoin', bucket: 'ALPHA', type: 'Crypto', price: 92450.00, change24h: 3.42, high24h: 93800.00, low24h: 89400.00 },
-  { symbol: 'ETH/USD', name: 'Ethereum', bucket: 'ALPHA', type: 'Crypto', price: 3450.75, change24h: 2.18, high24h: 3520.00, low24h: 3380.00 },
-  { symbol: 'SOL/USD', name: 'Solana', bucket: 'ALPHA', type: 'Crypto', price: 185.30, change24h: -1.25, high24h: 192.50, low24h: 181.00 },
-  { symbol: 'EUR/USD', name: 'Euro / US Dollar', bucket: 'ALPHA', type: 'Forex', price: 1.0845, change24h: 0.12, high24h: 1.0870, low24h: 1.0820 },
-  { symbol: 'WTI/USD', name: 'Crude Oil WTI', bucket: 'ALPHA', type: 'Commodity', price: 72.80, change24h: -0.85, high24h: 74.10, low24h: 71.90 },
+  { symbol: 'PAXG/USDT', name: 'PAX Gold (Tokenized Gold)', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
+  { symbol: 'BNB/USDT', name: 'BNB', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
+  { symbol: 'BTC/USDT', name: 'Bitcoin', bucket: 'ALPHA', type: 'Crypto', price: 0, change24h: 0 },
+  { symbol: 'ETH/USDT', name: 'Ethereum', bucket: 'ALPHA', type: 'Crypto', price: 0, change24h: 0 },
+  { symbol: 'SOL/USDT', name: 'Solana', bucket: 'ALPHA', type: 'Crypto', price: 0, change24h: 0 },
+  { symbol: 'XRP/USDT', name: 'XRP', bucket: 'ALPHA', type: 'Crypto', price: 0, change24h: 0 },
+  { symbol: 'LINK/USDT', name: 'Chainlink', bucket: 'ALPHA', type: 'Crypto', price: 0, change24h: 0 },
+  { symbol: 'EUR/USDT', name: 'Euro / Tether', bucket: 'ALPHA', type: 'Crypto', price: 0, change24h: 0 },
 ];
 
 export const INITIAL_SUMMARY: PortfolioSummary = {
-  totalEquity: 102450.00,
-  coreEquity: 61470.00,
-  alphaEquity: 40980.00,
+  totalEquity: 0,
+  coreEquity: 0,
+  alphaEquity: 0,
   targetCorePct: 0.60,
   targetAlphaPct: 0.40,
-  cash: 35200.00,
-  peakEquity: 104200.00,
-  drawdownPct: 1.68,
+  cash: 0,
+  initialEquity: 0,
+  peakEquity: 0,
+  drawdownPct: 0,
   circuitBreakerHalted: false,
 };
 
-export const INITIAL_POSITIONS: TradePosition[] = [
-  {
-    id: 'pos-1',
-    symbol: 'XAU/USD',
-    bucket: 'CORE',
-    side: 'BUY',
-    entryPrice: 2955.00,
-    currentPrice: 2980.50,
-    size: 15.5,
-    stopLoss: 2920.00,
-    takeProfit: 3040.00,
-    unrealizedPnL: 395.25,
-    pnlPercent: 0.86,
-    entryTime: new Date(Date.now() - 3600000 * 4).toLocaleTimeString(),
-  },
-  {
-    id: 'pos-2',
-    symbol: 'BTC/USD',
-    bucket: 'ALPHA',
-    side: 'BUY',
-    entryPrice: 90200.00,
-    currentPrice: 92450.00,
-    size: 0.25,
-    stopLoss: 88500.00,
-    takeProfit: 95000.00,
-    unrealizedPnL: 562.50,
-    pnlPercent: 2.49,
-    entryTime: new Date(Date.now() - 3600000 * 12).toLocaleTimeString(),
-  },
-  {
-    id: 'pos-3',
-    symbol: 'SOL/USD',
-    bucket: 'ALPHA',
-    side: 'SELL',
-    entryPrice: 189.40,
-    currentPrice: 185.30,
-    size: 40.0,
-    stopLoss: 194.00,
-    takeProfit: 178.00,
-    unrealizedPnL: 164.00,
-    pnlPercent: 2.16,
-    entryTime: new Date(Date.now() - 3600000 * 2).toLocaleTimeString(),
-  },
-];
-
-export const INITIAL_SIGNALS: AISignal[] = [
-  {
-    id: 'sig-1',
-    symbol: 'XAU/USD',
-    direction: 'BUY',
-    confluenceScore: 0.88,
-    rationale: 'RSI bullish continuation (58.4) with SuperTrend bull support above $2960 and positive macro flight to quality.',
-    regime: 'Bullish Trending',
-    timestamp: new Date().toLocaleTimeString(),
-    indicators: { rsi: 58.4, macd: 4.2, supertrend: 'BULL', bollinger: 'UPPER_EXPANSION' },
-  },
-  {
-    id: 'sig-2',
-    symbol: 'BTC/USD',
-    direction: 'BUY',
-    confluenceScore: 0.92,
-    rationale: 'Strong VWAP cross with MACD positive divergence; Alpha momentum favorable after volume expansion.',
-    regime: 'High Volatility Momentum',
-    timestamp: new Date(Date.now() - 120000).toLocaleTimeString(),
-    indicators: { rsi: 64.1, macd: 128.5, supertrend: 'BULL', bollinger: 'EXPANDING' },
-  },
-  {
-    id: 'sig-3',
-    symbol: 'EUR/USD',
-    direction: 'HOLD',
-    confluenceScore: 0.45,
-    rationale: 'Consolidation inside tight Bollinger squeeze; no clear macro divergence.',
-    regime: 'Rangebound',
-    timestamp: new Date(Date.now() - 300000).toLocaleTimeString(),
-    indicators: { rsi: 49.8, macd: -0.0004, supertrend: 'NEUTRAL', bollinger: 'SQUEEZE' },
-  },
-];
+export const INITIAL_POSITIONS: TradePosition[] = [];
+export const INITIAL_SIGNALS: AISignal[] = [];
 
 export function useSSE(endpoint: string = '/api/v1/events') {
   const [isConnected, setIsConnected] = useState<boolean>(false);
@@ -109,6 +36,75 @@ export function useSSE(endpoint: string = '/api/v1/events') {
   const [summary, setSummary] = useState<PortfolioSummary>(INITIAL_SUMMARY);
   const eventSourceRef = useRef<EventSource | null>(null);
 
+  // Fetch authentic online initial state on mount
+  useEffect(() => {
+    let isMounted = true;
+
+    async function fetchInitialState() {
+      try {
+        const [assetsRes, positionsRes, summaryRes] = await Promise.all([
+          fetch('/api/v1/assets').catch(() => null),
+          fetch('/api/v1/positions').catch(() => null),
+          fetch('/api/v1/portfolio/summary').catch(() => null),
+        ]);
+
+        if (assetsRes && assetsRes.ok) {
+          const data = await assetsRes.json();
+          if (isMounted && data.assets && Array.isArray(data.assets)) {
+            setAssets((prev) =>
+              data.assets.map((item: any) => {
+                const existing = prev.find((p) => p.symbol === item.symbol);
+                return {
+                  symbol: item.symbol,
+                  name: item.name,
+                  bucket: item.bucket,
+                  type: 'Crypto',
+                  price: existing?.price || 0,
+                  change24h: existing?.change24h || 0,
+                };
+              })
+            );
+          }
+        }
+
+        if (positionsRes && positionsRes.ok) {
+          const data = await positionsRes.json();
+          if (isMounted && Array.isArray(data)) {
+            setPositions(data);
+          }
+        }
+
+        if (summaryRes && summaryRes.ok) {
+          const data = await summaryRes.json();
+          if (isMounted && data && typeof data.totalEquity === 'number') {
+            setSummary((prev) => ({
+              ...prev,
+              totalEquity: data.totalEquity,
+              coreEquity: data.coreEquity,
+              alphaEquity: data.alphaEquity,
+              targetCorePct: data.targetCorePct ?? prev.targetCorePct,
+              targetAlphaPct: data.targetAlphaPct ?? prev.targetAlphaPct,
+              cash: data.cash ?? prev.cash,
+              initialEquity: data.initialEquity ?? data.totalEquity,
+              peakEquity: data.peakEquity ?? data.totalEquity,
+              drawdownPct: data.drawdownPct ?? 0,
+              circuitBreakerHalted: !!data.circuitBreakerHalted,
+            }));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch initial online state', err);
+      }
+    }
+
+    fetchInitialState();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  // Connect to SSE stream
   useEffect(() => {
     let reconnectTimeout: ReturnType<typeof setTimeout> | undefined;
 
@@ -127,19 +123,39 @@ export function useSSE(endpoint: string = '/api/v1/events') {
             const newPrice = Number(tick.price);
             if (!newPrice || isNaN(newPrice)) return;
 
-            setAssets((prev) =>
-              prev.map((a) => {
+            setAssets((prev) => {
+              const symbolExists = prev.some((a) => a.symbol === tick.symbol);
+              if (!symbolExists) {
+                return [
+                  ...prev,
+                  {
+                    symbol: tick.symbol,
+                    name: tick.symbol.split('/')[0] || tick.symbol,
+                    bucket: 'ALPHA',
+                    type: 'Crypto',
+                    price: newPrice,
+                    change24h: Number(tick.change24h || 0),
+                    high24h: Number(tick.high24h || newPrice),
+                    low24h: Number(tick.low24h || newPrice),
+                    volume: Number(tick.volume || 0),
+                  },
+                ];
+              }
+
+              return prev.map((a) => {
                 if (a.symbol === tick.symbol) {
-                  const diff = newPrice - a.price;
                   return {
                     ...a,
                     price: newPrice,
-                    change24h: Number((a.change24h + (diff / a.price) * 10).toFixed(2)),
+                    change24h: tick.change24h !== undefined ? Number(tick.change24h) : a.change24h,
+                    high24h: tick.high24h !== undefined ? Number(tick.high24h) : a.high24h,
+                    low24h: tick.low24h !== undefined ? Number(tick.low24h) : a.low24h,
+                    volume: tick.volume !== undefined ? Number(tick.volume) : a.volume,
                   };
                 }
                 return a;
-              })
-            );
+              });
+            });
 
             // Dynamically mark-to-market revalue open positions and update portfolio equity
             setPositions((prevPositions) => {
@@ -160,7 +176,6 @@ export function useSSE(endpoint: string = '/api/v1/events') {
                 return pos;
               });
 
-              // Recalculate dynamic Core and Alpha valuations
               if (updated) {
                 setSummary((prevSummary) => {
                   let corePnL = 0;
@@ -170,11 +185,11 @@ export function useSSE(endpoint: string = '/api/v1/events') {
                     else alphaPnL += p.unrealizedPnL;
                   });
 
-                  const baseCore = 61470.0;
-                  const baseAlpha = 40980.0;
+                  const baseCore = (prevSummary.initialEquity || prevSummary.totalEquity) * prevSummary.targetCorePct;
+                  const baseAlpha = (prevSummary.initialEquity || prevSummary.totalEquity) * prevSummary.targetAlphaPct;
                   const dynamicCore = Number((baseCore + corePnL).toFixed(2));
                   const dynamicAlpha = Number((baseAlpha + alphaPnL).toFixed(2));
-                  const dynamicTotal = Number((prevSummary.cash + dynamicCore + dynamicAlpha - (baseCore + baseAlpha - (102450.0 - prevSummary.cash))).toFixed(2));
+                  const dynamicTotal = Number((dynamicCore + dynamicAlpha).toFixed(2));
                   const peak = Math.max(prevSummary.peakEquity, dynamicTotal);
                   const dd = peak > 0 ? Number((((peak - dynamicTotal) / peak) * 100).toFixed(2)) : 0;
 

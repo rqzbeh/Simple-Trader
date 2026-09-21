@@ -25,13 +25,12 @@ func DefaultScreenerConfig() ScreenerConfig {
 		MaxSpreadBps: 10.0,        // 10 bps max spread
 		PollInterval: 5 * time.Minute,
 		CandidatePairs: []string{
-			"BTC/USD", "ETH/USD", "SOL/USD",
-			"BNB/USD", "XRP/USD", "ADA/USD",
-			"DOGE/USD", "AVAX/USD", "LINK/USD",
-			"DOT/USD", "NEAR/USD", "SUI/USD",
-			"LTC/USD", "BCH/USD", "PEPE/USD",
-			"SHIB/USD", "TRX/USD", "APT/USD",
-			"UNI/USD", "ENA/USD",
+			"BTC/USDT", "ETH/USDT", "SOL/USDT",
+			"BNB/USDT", "XRP/USDT", "ADA/USDT",
+			"DOGE/USDT", "AVAX/USDT", "LINK/USDT",
+			"PAXG/USDT", "EUR/USDT", "SUI/USDT",
+			"NEAR/USDT", "PEPE/USDT", "APT/USDT",
+			"ENA/USDT",
 		},
 	}
 }
@@ -80,7 +79,7 @@ func NewDynamicCryptoScreener(
 		redisClient:    redisClient,
 		dbStore:        dbStore,
 		screenedAssets: make([]db.ScreenedAsset, 0, len(cfg.CandidatePairs)),
-		activeUniverse: []string{"BTC/USD", "ETH/USD", "SOL/USD"},
+		activeUniverse: []string{"BTC/USDT", "ETH/USDT", "SOL/USDT"},
 		stopChan:       make(chan struct{}),
 	}
 }
@@ -94,6 +93,12 @@ func (s *DynamicCryptoScreener) EvaluateCandidate(symbol string, price, volume24
 		BidAskSpreadBps: spreadBps,
 		Status:          "ACTIVE",
 		ScreenedAt:      time.Now(),
+	}
+
+	if price <= 0 {
+		asset.Status = "DISQUALIFIED"
+		asset.RejectionReason = "invalid or non-positive live market price"
+		return asset
 	}
 
 	if volume24h < s.cfg.Min24hVolume {
@@ -120,21 +125,34 @@ func (s *DynamicCryptoScreener) RunScreeningCycle(ctx context.Context) []db.Scre
 	var qualified []string
 
 	for _, symbol := range s.cfg.CandidatePairs {
-		var price, vol, spread float64
-		if s.provider != nil {
-			p, v, sp, err := s.provider.Get24hStats(symbol)
-			if err != nil {
-				log.Printf("[Screener] Live fetch failed for %s (%v), using default baseline", symbol, err)
-				p = 100.0
-				v = 60000000.0
-				sp = 4.5
+		if s.provider == nil {
+			asset := db.ScreenedAsset{
+				Symbol:          symbol,
+				Price:           0,
+				Volume24h:       0,
+				BidAskSpreadBps: 0,
+				Status:          "DISQUALIFIED",
+				RejectionReason: "market stats provider uninitialized",
+				ScreenedAt:      time.Now(),
 			}
-			price, vol, spread = p, v, sp
-		} else {
-			// Mock fallback for testing or bootstrap
-			price = 100.0
-			vol = 60000000.0
-			spread = 4.5
+			evaluated = append(evaluated, asset)
+			continue
+		}
+
+		price, vol, spread, err := s.provider.Get24hStats(symbol)
+		if err != nil {
+			log.Printf("[Screener] Live fetch failed for %s (%v)", symbol, err)
+			asset := db.ScreenedAsset{
+				Symbol:          symbol,
+				Price:           0,
+				Volume24h:       0,
+				BidAskSpreadBps: 0,
+				Status:          "DISQUALIFIED",
+				RejectionReason: "Live exchange fetch failed: " + err.Error(),
+				ScreenedAt:      time.Now(),
+			}
+			evaluated = append(evaluated, asset)
+			continue
 		}
 
 		asset := s.EvaluateCandidate(symbol, price, vol, spread)

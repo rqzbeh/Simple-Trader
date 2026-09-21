@@ -25,11 +25,14 @@ func (s *SimulatedFeed) Subscribe(ctx context.Context) <-chan cache.TickerQuote 
 	ch := make(chan cache.TickerQuote, 10)
 
 	basePrices := map[string]float64{
-		"BTC/USD": 68000.0,
-		"ETH/USD": 3500.0,
-		"XAU/USD": 2680.0,
-		"XAG/USD": 31.50,
-		"SOL/USD": 160.0,
+		"BTC/USDT":  92500.0,
+		"ETH/USDT":  3450.0,
+		"SOL/USDT":  185.0,
+		"PAXG/USDT": 2980.0,
+		"BNB/USDT":  585.0,
+		"XRP/USDT":  0.5850,
+		"LINK/USDT": 12.80,
+		"EUR/USDT":  1.0850,
 	}
 
 	go func() {
@@ -37,7 +40,7 @@ func (s *SimulatedFeed) Subscribe(ctx context.Context) <-chan cache.TickerQuote 
 		ticker := time.NewTicker(50 * time.Millisecond)
 		defer ticker.Stop()
 
-		symbols := []string{"BTC/USD", "ETH/USD", "XAU/USD", "XAG/USD", "SOL/USD"}
+		symbols := []string{"BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT", "BNB/USDT", "XRP/USDT", "LINK/USDT", "EUR/USDT"}
 
 		for {
 			select {

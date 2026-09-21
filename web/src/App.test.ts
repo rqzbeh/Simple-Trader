@@ -3,15 +3,16 @@ import { INITIAL_ASSETS, INITIAL_SUMMARY, INITIAL_POSITIONS, INITIAL_SIGNALS } f
 import { INITIAL_WEIGHTS } from './components/AIWeightMatrix';
 
 describe('Web Types, Mock Data, and Risk Model', () => {
-  it('should include all required liquid global assets and none from Iran bourse', () => {
+  it('should include all required liquid global crypto assets based on USDT/USDC and none from Iran bourse', () => {
     const symbols = INITIAL_ASSETS.map((a) => a.symbol);
-    expect(symbols).toContain('XAU/USD');
-    expect(symbols).toContain('XAG/USD');
-    expect(symbols).toContain('BTC/USD');
-    expect(symbols).toContain('ETH/USD');
-    expect(symbols).toContain('SOL/USD');
-    expect(symbols).toContain('EUR/USD');
-    expect(symbols).toContain('WTI/USD');
+    expect(symbols).toContain('PAXG/USDT');
+    expect(symbols).toContain('BNB/USDT');
+    expect(symbols).toContain('BTC/USDT');
+    expect(symbols).toContain('ETH/USDT');
+    expect(symbols).toContain('SOL/USDT');
+    expect(symbols).toContain('XRP/USDT');
+    expect(symbols).toContain('LINK/USDT');
+    expect(symbols).toContain('EUR/USDT');
 
     // Ensure strictly no Iranian assets
     expect(symbols).not.toContain('IRR');
@@ -32,15 +33,9 @@ describe('Web Types, Mock Data, and Risk Model', () => {
     }
   });
 
-  it('should initialize valid mock trade positions and AI signals', () => {
-    expect(INITIAL_POSITIONS.length).toBeGreaterThan(0);
-    expect(INITIAL_SIGNALS.length).toBeGreaterThan(0);
-
-    for (const pos of INITIAL_POSITIONS) {
-      expect(['CORE', 'ALPHA']).toContain(pos.bucket);
-      expect(['BUY', 'SELL']).toContain(pos.side);
-      expect(pos.currentPrice).toBeGreaterThan(0);
-    }
+  it('should initialize empty trade positions and AI signals awaiting authentic live feeds', () => {
+    expect(INITIAL_POSITIONS.length).toBe(0);
+    expect(INITIAL_SIGNALS.length).toBe(0);
   });
 
   it('should validate MicrostructureState and MacroCalendarEvent institutional interfaces', () => {
@@ -65,5 +60,32 @@ describe('Web Types, Mock Data, and Risk Model', () => {
       scheduled_at: new Date().toISOString(),
     };
     expect(['LOW', 'MEDIUM', 'HIGH']).toContain(macroEvent.impact);
+  });
+
+  it('should accurately calculate position mark-to-market PnL and return % with isolated leverage', () => {
+    // 0.5 BTC LONG at $60,000 with 5x leverage ($6,000 margin required)
+    const position = {
+      entryPrice: 60000,
+      currentPrice: 66000, // +$6,000 per BTC (+10% asset move)
+      size: 0.5,
+      leverage: 5,
+    };
+    const margin = (position.entryPrice * position.size) / position.leverage;
+    expect(margin).toBe(6000);
+
+    const unrealizedPnL = (position.currentPrice - position.entryPrice) * position.size;
+    expect(unrealizedPnL).toBe(3000); // 0.5 * $6,000 = $3,000
+
+    const returnPct = (unrealizedPnL / margin) * 100;
+    expect(returnPct).toBe(50); // 10% asset gain * 5x leverage = 50% ROI
+  });
+
+  it('should calculate authentic dynamic return percentage against config-driven initial equity', () => {
+    const summary = {
+      initialEquity: 50000,
+      totalEquity: 55000,
+    };
+    const returnPct = ((summary.totalEquity - summary.initialEquity) / summary.initialEquity) * 100;
+    expect(returnPct).toBe(10);
   });
 });

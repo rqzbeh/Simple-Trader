@@ -15,11 +15,13 @@ import {
 interface AISignalFeedProps {
   selectedSymbol?: string;
   apiBaseUrl?: string;
+  currentPrice?: number;
 }
 
 export const AISignalFeed: React.FC<AISignalFeedProps> = ({
-  selectedSymbol = 'BTC/USD',
+  selectedSymbol = 'BTC/USDT',
   apiBaseUrl = '',
+  currentPrice = 0,
 }) => {
   const [signals, setSignals] = useState<FuturesTradeSignal[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -71,14 +73,14 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
     }
   };
 
-  const handleCloseSignal = async (id: number, currentPrice: number) => {
+  const handleCloseSignal = async (id: number, exitPrice: number = 0) => {
     if (!confirm(`Confirm market close for signal #${id}?`)) return;
     try {
       const res = await fetch(`${apiBaseUrl}/api/v1/signals/futures/${id}/close`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          exit_price: currentPrice,
+          exit_price: exitPrice > 0 ? exitPrice : 0,
           exit_reason: 'MANUAL_CLOSE',
         }),
       });
@@ -268,7 +270,7 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
                 {sig.status === 'ACTIVE' && (
                   <div className="pt-1 flex justify-end">
                     <button
-                      onClick={() => handleCloseSignal(sig.id, sig.entry_price)}
+                      onClick={() => handleCloseSignal(sig.id, currentPrice)}
                       className="px-2 py-0.5 rounded bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 text-[10px] font-semibold transition-colors flex items-center gap-1"
                     >
                       <XCircle className="w-3 h-3" />
