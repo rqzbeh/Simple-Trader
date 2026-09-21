@@ -285,6 +285,16 @@ func (e *ExecutionEngine) GetInitialEquity() float64 {
 	return e.initialEquity
 }
 
+// SetTotalEquity adjusts the capital basis grounded in the investor ledger.
+func (e *ExecutionEngine) SetTotalEquity(equity float64) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if equity > 0 {
+		e.initialEquity = equity
+		e.cash = equity
+	}
+}
+
 // GetClosedTrades returns historical closed trades.
 func (e *ExecutionEngine) GetClosedTrades() []*db.Trade {
 	e.mu.RLock()

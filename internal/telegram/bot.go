@@ -114,7 +114,12 @@ func (c *BotClient) processQueue() {
 				return
 			}
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-			_ = c.SendMessageWithRetry(ctx, msg)
+			err := c.SendMessageWithRetry(ctx, msg)
+			if err != nil {
+				log.Printf("[telegram] ERROR delivering message: %v", err)
+			} else {
+				log.Printf("[telegram] successfully delivered message to chat")
+			}
 			cancel()
 			// Telegram rate limit guideline: ~1 message/sec per group
 			time.Sleep(500 * time.Millisecond)
@@ -194,7 +199,29 @@ func (c *BotClient) SendMessageWithRetry(ctx context.Context, text string) error
 
 		lastErr = fmt.Errorf("telegram api error (status %d): %s", resp.StatusCode, string(respBytes))
 		if resp.StatusCode == http.StatusBadRequest {
-			// Bad request usually means MarkdownV2 syntax error, retrying won't help
+			log.Printf("[telegram] entity parse error (status 400: %s), retrying as plain text fallback...", string(respBytes))
+			fallbackPayload := map[string]interface{}{
+				"chat_id":                  chatID,
+				"text":                     StripMarkdownV2(text),
+				"disable_web_page_preview": true,
+			}
+			fbBytes, err := json.Marshal(fallbackPayload)
+			if err == nil {
+				fbReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(fbBytes))
+				if err == nil {
+					fbReq.Header.Set("Content-Type", "application/json")
+					fbResp, err := c.httpClient.Do(fbReq)
+					if err == nil {
+						defer fbResp.Body.Close()
+						if fbResp.StatusCode == http.StatusOK {
+							log.Printf("[telegram] plain text fallback delivery succeeded!")
+							return nil
+						}
+						fbRespBytes, _ := io.ReadAll(fbResp.Body)
+						log.Printf("[telegram] plain text fallback failed (status %d): %s", fbResp.StatusCode, string(fbRespBytes))
+					}
+				}
+			}
 			return lastErr
 		}
 

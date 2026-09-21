@@ -84,19 +84,38 @@ func main() {
 	_ = ai.NewWeightEngine()
 
 	// 5. Initialize Trading & Risk Allocator & Execution Engine
+	initialCap := 10000.0
+	if cfg != nil && cfg.InitialCapital > 0 {
+		initialCap = cfg.InitialCapital
+	}
+	if store != nil {
+		// Ground initial capital strictly in the PostgreSQL investor ledger
+		_, _, netCap, activeInvestors, err := store.GetTotalInvestorCapital(ctx)
+		if err == nil {
+			if activeInvestors == 0 {
+				_, _ = store.EnsureDefaultInvestorProfile(ctx, "General Partner / Treasury", "Genesis Capital Allocation & Liquidity Seed", initialCap)
+				_, _, netCap, _, _ = store.GetTotalInvestorCapital(ctx)
+			}
+			if netCap > 0 {
+				initialCap = netCap
+				log.Printf("[INFO] Master portfolio equity grounded in PostgreSQL investor ledger: $%.2f", initialCap)
+			}
+		}
+	}
+
 	allocatorConfig := trader.AllocatorConfig{
-		TotalCapital:       cfg.InitialCapital,
+		TotalCapital:       initialCap,
 		CoreTargetPct:      cfg.CoreTargetPct,
 		AlphaTargetPct:     cfg.AlphaTargetPct,
 		MaxRiskPerTradePct: cfg.MaxRiskPerTradePct,
 	}
 	allocator := trader.NewAllocator(allocatorConfig)
-	execEngine := trader.NewExecutionEngine(cfg.InitialCapital)
+	execEngine := trader.NewExecutionEngine(initialCap)
 
 	// 6. Initialize HTTP & SSE Broadcaster Server
 	srv := server.NewServer(cfg, store, rCache, aiClient, allocator, execEngine)
 
-	// 6b. Start Autonomous News Crawler and Dynamic Crypto Screener
+	// 6b. Start Autonomous News Crawler, Dynamic Crypto Screener, and Transparent Background Signal Scanner
 	if srv.NewsCrawler() != nil {
 		srv.NewsCrawler().Start(ctx)
 		log.Println("[INFO] Autonomous News Crawler started (polling financial & crypto RSS feeds).")
@@ -105,6 +124,9 @@ func main() {
 		srv.Screener().Start(ctx)
 		log.Println("[INFO] Dynamic Liquid Crypto Screener started (evaluating $50M volume / 10bps spread).")
 	}
+	// Transparent background scanning across all assets every 2 minutes
+	srv.StartBackgroundSignalScanner(ctx, 2*time.Minute)
+	log.Println("[INFO] Transparent Background Signal Scanner started (evaluating news catalysts across full universe).")
 
 	// 7. Start Market Live Ticker Feed from Online Exchange APIs (Binance)
 	liveFeed := market.NewLiveMarketFeed(market.GetSupportedAssets())

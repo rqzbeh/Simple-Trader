@@ -333,3 +333,60 @@ func (s *Store) RecordWithdrawal(ctx context.Context, investorID string, amount 
 
 	return &txRecord, nil
 }
+
+// GetTotalInvestorCapital computes the total net deposited capital across all active investors.
+func (s *Store) GetTotalInvestorCapital(ctx context.Context) (totalDeposited float64, totalWithdrawn float64, netCapital float64, activeInvestors int, err error) {
+	if s.Pool == nil {
+		return 0, 0, 0, 0, errors.New("database pool not initialized")
+	}
+
+	row := s.Pool.QueryRow(ctx, `
+		SELECT
+			COALESCE(SUM(total_deposited), 0),
+			COALESCE(SUM(total_withdrawn), 0),
+			COALESCE(COUNT(*), 0)
+		FROM investors
+		WHERE status = 'ACTIVE'
+	`)
+	var count int64
+	if err := row.Scan(&totalDeposited, &totalWithdrawn, &count); err != nil {
+		return 0, 0, 0, 0, fmt.Errorf("failed to calculate investor capital: %w", err)
+	}
+
+	netCapital = totalDeposited - totalWithdrawn
+	return totalDeposited, totalWithdrawn, netCapital, int(count), nil
+}
+
+// EnsureDefaultInvestorProfile verifies that at least one active investor profile exists in the ledger.
+// If the ledger is empty, it seeds the foundational Treasury / General Partner profile with initial capital.
+func (s *Store) EnsureDefaultInvestorProfile(ctx context.Context, defaultName, notes string, initialCapital float64) (*Investor, error) {
+	if s.Pool == nil {
+		return nil, errors.New("database pool not initialized")
+	}
+
+	var count int
+	err := s.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM investors WHERE status = 'ACTIVE'`).Scan(&count)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check existing investors: %w", err)
+	}
+
+	if count > 0 {
+		return nil, nil // Already initialized
+	}
+
+	if defaultName == "" {
+		defaultName = "Master Treasury / GP"
+	}
+	if notes == "" {
+		notes = "Foundational General Partner Capital Pool"
+	}
+	if initialCapital <= 0 {
+		initialCapital = 10000.0
+	}
+
+	inv, err := s.CreateInvestor(ctx, defaultName, "@treasury", notes, initialCapital, initialCapital)
+	if err != nil {
+		return nil, fmt.Errorf("failed to seed default investor profile: %w", err)
+	}
+	return inv, nil
+}

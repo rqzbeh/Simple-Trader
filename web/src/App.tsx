@@ -67,130 +67,130 @@ export const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-sky-500 selection:text-white transition-colors duration-200">
       {/* Top Navigation Bar */}
-      <header className="border-b border-slate-200 dark:border-slate-800 bg-white/80 dark:bg-slate-900/80 backdrop-blur sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center space-x-6">
-            <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20">
-                <TrendingUp className="w-5 h-5" />
-              </div>
-              <div>
-                <div className="flex items-center space-x-2">
-                  <h1 className="font-bold text-lg leading-tight tracking-tight">Simple-Trader</h1>
-                  <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-500 border border-sky-500/20">
-                    v2.0 PWA
-                  </span>
-                </div>
-                <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">
-                  Autonomous Go & AI Quant Terminal
+      <header className="border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md sticky top-0 z-50">
+        <div className="max-w-7xl mx-auto px-3 sm:px-4 h-16 flex items-center justify-between gap-2 sm:gap-4">
+          {/* Brand Logo & Title */}
+          <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20 shrink-0">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-1.5">
+                <h1 className="font-bold text-base sm:text-lg leading-tight tracking-tight whitespace-nowrap">Simple-Trader</h1>
+                <span className="text-[10px] uppercase font-bold font-mono tracking-wider px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-500 border border-sky-500/20">
+                  v2.0
                 </span>
               </div>
+              <span className="hidden 2xl:block text-[11px] text-slate-500 dark:text-slate-400 font-mono">
+                Autonomous Go & AI Quant Terminal
+              </span>
             </div>
-
-            {/* Navigation Tabs (Desktop) */}
-            <nav className="hidden lg:flex items-center space-x-1 p-1 bg-slate-100 dark:bg-slate-800/60 rounded-xl">
-              <button
-                onClick={() => setActiveTab('terminal')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
-                  activeTab === 'terminal'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Terminal</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('investors')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
-                  activeTab === 'investors'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5 text-sky-500" />
-                <span>Investor Ledger</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('screener')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
-                  activeTab === 'screener'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <Filter className="w-3.5 h-3.5 text-amber-500" />
-                <span>Liquid Screener</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('news')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
-                  activeTab === 'news'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <Newspaper className="w-3.5 h-3.5 text-rose-500" />
-                <span>News Trading</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('ai_weights')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
-                  activeTab === 'ai_weights'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-purple-500" />
-                <span>Weights</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('ml')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
-                  activeTab === 'ml'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <Brain className="w-3.5 h-3.5 text-indigo-500" />
-                <span>ML Engine</span>
-              </button>
-            </nav>
           </div>
 
-          <div className="flex items-center space-x-2 sm:space-x-3">
+          {/* Navigation Tabs (Desktop xl+) */}
+          <nav className="hidden xl:flex items-center space-x-1 p-1 bg-slate-100 dark:bg-slate-800/60 rounded-xl shrink-0">
+            <button
+              onClick={() => setActiveTab('terminal')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
+                activeTab === 'terminal'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Terminal</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('investors')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
+                activeTab === 'investors'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5 text-sky-500" />
+              <span>Investor Ledger</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('screener')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
+                activeTab === 'screener'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              <Filter className="w-3.5 h-3.5 text-amber-500" />
+              <span>Screener</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('news')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
+                activeTab === 'news'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              <Newspaper className="w-3.5 h-3.5 text-rose-500" />
+              <span>News Trading</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('ai_weights')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
+                activeTab === 'ai_weights'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5 text-purple-500" />
+              <span>Weights</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('ml')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
+                activeTab === 'ml'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              <Brain className="w-3.5 h-3.5 text-indigo-500" />
+              <span>ML Engine</span>
+            </button>
+          </nav>
+
+          {/* Action & Status Controls */}
+          <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
             {/* Live SSE status indicator */}
             <div
-              className={`flex items-center space-x-2 text-xs px-2.5 sm:px-3 py-1.5 rounded-full border ${
+              className={`flex items-center space-x-1.5 text-xs px-2.5 py-1.5 rounded-full border shrink-0 ${
                 isConnected
                   ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
                   : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20'
               }`}
             >
               <span
-                className={`w-2 h-2 rounded-full ${
+                className={`w-2 h-2 rounded-full shrink-0 ${
                   isConnected ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
                 }`}
               ></span>
-              <span className="font-medium font-mono text-[11px] sm:text-xs">
-                {isConnected ? 'SSE Live Feed' : 'Connecting SSE...'}
+              <span className="font-medium font-mono text-[11px] whitespace-nowrap">
+                {isConnected ? 'Live' : 'Connecting'}
               </span>
             </div>
 
-            {/* Telegram Bot Config Trigger */}
+            {/* Telegram Bot Config Trigger (Icon on mobile/tablet, labeled on 2xl) */}
             <button
               onClick={() => setIsTelegramModalOpen(true)}
-              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-sm flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200"
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-sm flex items-center gap-1.5 text-xs font-semibold text-slate-700 dark:text-slate-200 shrink-0"
               title="Configure Telegram Bot"
             >
               <MessageSquare className="w-4 h-4 text-sky-500" />
-              <span className="hidden xl:inline font-mono">Telegram Bot</span>
+              <span className="hidden 2xl:inline font-mono">Telegram</span>
             </button>
 
             {/* Dark / Light Mode Toggle */}
             <button
               onClick={toggleTheme}
-              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-sm"
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shadow-sm shrink-0"
               title="Toggle theme"
             >
               {theme === 'dark' ? (
@@ -202,27 +202,26 @@ export const App: React.FC = () => {
 
             {/* Admin Session Indicator & Logout */}
             {isAuthenticated && (
-              <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
-                <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono">
+              <div className="flex items-center gap-1.5 pl-1.5 border-l border-slate-200 dark:border-slate-800 shrink-0">
+                <div className="hidden lg:flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
                   <span>Admin</span>
                   {tokenMasked && <span className="text-[10px] text-emerald-600 dark:text-emerald-400">({tokenMasked})</span>}
                 </div>
                 <button
                   onClick={logout}
-                  className="p-2 rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors shadow-sm flex items-center gap-1 text-xs font-mono"
+                  className="p-2 rounded-xl border border-rose-500/20 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors shadow-sm flex items-center gap-1 text-xs font-mono shrink-0"
                   title="Logout Session"
                 >
                   <LogOut className="w-4 h-4" />
-                  <span className="hidden sm:inline">Logout</span>
                 </button>
               </div>
             )}
 
-            {/* Mobile / Tablet Menu Hamburger Button */}
+            {/* Mobile / Tablet Menu Hamburger Button (visible on screens < xl) */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="lg:hidden p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              className="xl:hidden p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 transition-colors shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500 shrink-0"
               aria-label="Toggle Navigation Menu"
             >
               {isMobileMenuOpen ? <X className="w-5 h-5 text-rose-500" /> : <Menu className="w-5 h-5" />}
@@ -232,8 +231,8 @@ export const App: React.FC = () => {
 
         {/* Mobile / Tablet Navigation Dropdown Drawer */}
         {isMobileMenuOpen && (
-          <div className="lg:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-lg animate-in slide-in-from-top-2 duration-150">
-            <div className="grid grid-cols-2 gap-2">
+          <div className="xl:hidden border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-lg animate-in slide-in-from-top-2 duration-150">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               <button
                 onClick={() => {
                   setActiveTab('terminal');
@@ -291,7 +290,7 @@ export const App: React.FC = () => {
                 }`}
               >
                 <Newspaper className="w-4 h-4 text-rose-500" />
-                <span>News Stream</span>
+                <span>News Trading</span>
               </button>
 
               <button
@@ -324,6 +323,33 @@ export const App: React.FC = () => {
                 <span>ML Engine</span>
               </button>
             </div>
+
+            {/* Mobile Drawer Footer Controls */}
+            <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+              <button
+                onClick={() => {
+                  setIsMobileMenuOpen(false);
+                  setIsTelegramModalOpen(true);
+                }}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono text-slate-700 dark:text-slate-300 flex items-center gap-1.5"
+              >
+                <MessageSquare className="w-3.5 h-3.5 text-sky-500" />
+                <span>Telegram Bot Settings</span>
+              </button>
+
+              {isAuthenticated && (
+                <button
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    logout();
+                  }}
+                  className="px-3 py-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 text-xs font-mono text-rose-500 flex items-center gap-1"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Logout</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
       </header>
@@ -350,26 +376,26 @@ export const App: React.FC = () => {
           <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
               <span>Core Allocation (Gold/Reserves)</span>
-              <span className="text-amber-500 font-bold text-xs">Target: 60%</span>
+              <span className="text-amber-500 font-bold text-xs">Target: {((summary.targetCorePct || 0.6) * 100).toFixed(0)}%</span>
             </div>
             <div className="text-2xl font-bold font-mono tracking-tight text-amber-600 dark:text-amber-400">
               ${summary.coreEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-mono">
-              Current: {((summary.coreEquity / summary.totalEquity) * 100).toFixed(1)}% of total
+              Current: {summary.totalEquity > 0 ? ((summary.coreEquity / summary.totalEquity) * 100).toFixed(1) : '0.0'}% of total
             </div>
           </div>
 
           <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 mb-1">
               <span>Alpha Allocation (Tactical Crypto Futures)</span>
-              <span className="text-indigo-500 font-bold text-xs">Target: 40%</span>
+              <span className="text-indigo-500 font-bold text-xs">Target: {((summary.targetAlphaPct || 0.4) * 100).toFixed(0)}%</span>
             </div>
             <div className="text-2xl font-bold font-mono tracking-tight text-indigo-600 dark:text-indigo-400">
               ${summary.alphaEquity.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
             <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-mono">
-              Current: {((summary.alphaEquity / summary.totalEquity) * 100).toFixed(1)}% of total
+              Current: {summary.totalEquity > 0 ? ((summary.alphaEquity / summary.totalEquity) * 100).toFixed(1) : '0.0'}% of total
             </div>
           </div>
 

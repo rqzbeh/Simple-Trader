@@ -11,7 +11,7 @@ import (
 // EscapeMarkdownV2 escapes characters reserved in Telegram MarkdownV2 format:
 // '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
 func EscapeMarkdownV2(text string) string {
-	reserved := []string{"_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"}
+	reserved := []string{"\\", "_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"}
 	result := text
 	for _, r := range reserved {
 		result = strings.ReplaceAll(result, r, "\\"+r)
@@ -44,6 +44,9 @@ func FormatSignalEntry(sig *db.FuturesTradeSignal) string {
 		tp2Line = fmt.Sprintf("\n🎯 *Take Profit 2:* $%s", EscapeMarkdownV2(fmt.Sprintf("%.2f", *sig.TakeProfit2)))
 	}
 
+	rrFormatted := EscapeMarkdownV2(fmt.Sprintf("1:%.2f", sig.RiskRewardRatio))
+	equityPctFormatted := EscapeMarkdownV2(fmt.Sprintf("%.2f%%", sig.AllocatedCapitalPct))
+
 	return fmt.Sprintf(
 		"🚨 *NEW TWO\\-SIDED FUTURES SIGNAL* 🚨\n\n"+
 			"*Asset:* `%s`\n"+
@@ -53,13 +56,13 @@ func FormatSignalEntry(sig *db.FuturesTradeSignal) string {
 			"📍 *Entry Price:* $%s\n"+
 			"🛡️ *Stop Loss:* $%s\n"+
 			"🎯 *Take Profit 1:* $%s%s\n"+
-			"⚖️ *Risk / Reward:* *1:%.2f*\n"+
-			"💵 *Capital Allocation:* $%s \\(%.2f%% Equity\\)\n"+
+			"⚖️ *Risk / Reward:* *%s*\n"+
+			"💵 *Capital Allocation:* $%s \\(%s Equity\\)\n"+
 			"━━━━━━━━━━━━━━━━━━━━\n"+
 			"📰 *Primary News Catalyst:*\n"+
 			"_%s_\n"+
 			"🗞️ *Source:* %s  •  *Sentiment:* %s\n\n"+
-			"⚠️ *Risk Guard:* Max 2.0%% capital loss risk strictly enforced\\.",
+			"⚠️ *Risk Guard:* Max 2\\.0%% capital loss risk strictly enforced\\.",
 		EscapeMarkdownV2(sig.Symbol),
 		dirEmoji,
 		EscapeMarkdownV2(sig.Direction),
@@ -68,9 +71,9 @@ func FormatSignalEntry(sig *db.FuturesTradeSignal) string {
 		EscapeMarkdownV2(fmt.Sprintf("%.2f", sig.StopLoss)),
 		EscapeMarkdownV2(fmt.Sprintf("%.2f", sig.TakeProfit1)),
 		tp2Line,
-		sig.RiskRewardRatio,
+		rrFormatted,
 		EscapeMarkdownV2(fmt.Sprintf("%.2f", sig.AllocatedCapitalUSD)),
-		sig.AllocatedCapitalPct,
+		equityPctFormatted,
 		EscapeMarkdownV2(headline),
 		EscapeMarkdownV2(source),
 		EscapeMarkdownV2(fmt.Sprintf("%+.2f", sig.CatalystSentiment)),
@@ -116,13 +119,22 @@ func FormatSignalResolution(sig *db.FuturesTradeSignal, exitPrice float64, exitR
 		}
 	}
 
-	signPnL := "+"
+	signPnL := "\\+"
 	if pnlUSD < 0 {
-		signPnL = ""
+		signPnL = "\\-"
 	}
-	signROI := "+"
+	absPnL := pnlUSD
+	if absPnL < 0 {
+		absPnL = -absPnL
+	}
+
+	signROI := "\\+"
 	if roiPct < 0 {
-		signROI = ""
+		signROI = "\\-"
+	}
+	absROI := roiPct
+	if absROI < 0 {
+		absROI = -absROI
 	}
 
 	return fmt.Sprintf(
@@ -136,7 +148,7 @@ func FormatSignalResolution(sig *db.FuturesTradeSignal, exitPrice float64, exitR
 			"⏱️ *Hold Duration:* %s\n"+
 			"━━━━━━━━━━━━━━━━━━━━\n"+
 			"💰 *Realized Net PnL:* *%s$%s*\n"+
-			"📈 *Realized ROI:* *%s%.2f%%*\n\n"+
+			"📈 *Realized ROI:* *%s%s*\n\n"+
 			"✅ *Settled directly to Portfolio Liquid Capital\\.*",
 		outcomeEmoji,
 		outcomeEmoji,
@@ -149,10 +161,24 @@ func FormatSignalResolution(sig *db.FuturesTradeSignal, exitPrice float64, exitR
 		EscapeMarkdownV2(fmt.Sprintf("%.2f", exitPrice)),
 		EscapeMarkdownV2(durationStr),
 		signPnL,
-		EscapeMarkdownV2(fmt.Sprintf("%.2f", pnlUSD)),
+		EscapeMarkdownV2(fmt.Sprintf("%.2f", absPnL)),
 		signROI,
-		roiPct,
+		EscapeMarkdownV2(fmt.Sprintf("%.2f%%", absROI)),
 	)
+}
+
+// StripMarkdownV2 removes Markdown formatting and backslashes for plain-text fallback.
+func StripMarkdownV2(s string) string {
+	reserved := []string{"\\", "_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!"}
+	result := s
+	for _, r := range reserved {
+		result = strings.ReplaceAll(result, "\\"+r, r)
+	}
+	styling := []string{"*", "_", "`", "~"}
+	for _, st := range styling {
+		result = strings.ReplaceAll(result, st, "")
+	}
+	return result
 }
 
 // FormatTestMessage generates an initial verification handshake message for Telegram Bot API verification.
