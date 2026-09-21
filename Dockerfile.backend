@@ -1,5 +1,5 @@
 # Frontend Build Stage with Bun
-FROM oven/bun:alpine AS frontend-builder
+FROM --platform=$BUILDPLATFORM oven/bun:alpine AS frontend-builder
 
 WORKDIR /web
 
@@ -10,7 +10,7 @@ COPY web/ ./
 RUN bun run build
 
 # Backend Go Build Stage
-FROM golang:alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:alpine AS builder
 
 WORKDIR /app
 
@@ -26,8 +26,11 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 COPY migrations/ ./migrations/
 
-# Compile static binary with zero CGO
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /app/simple-trader ./cmd/trader/main.go
+ARG TARGETOS
+ARG TARGETARCH
+
+# Compile static binary with zero CGO using Go native cross-compilation
+RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} go build -ldflags="-w -s" -o /app/simple-trader ./cmd/trader/main.go
 
 # Production Minimal Stage
 FROM alpine:3.20
