@@ -124,10 +124,12 @@ export function useSSE(endpoint: string = '/api/v1/events') {
         es.addEventListener('tick', (e: MessageEvent) => {
           try {
             const tick = JSON.parse(e.data);
+            const newPrice = Number(tick.price);
+            if (!newPrice || isNaN(newPrice)) return;
+
             setAssets((prev) =>
               prev.map((a) => {
                 if (a.symbol === tick.symbol) {
-                  const newPrice = Number(tick.price || a.price);
                   const diff = newPrice - a.price;
                   return {
                     ...a,
@@ -138,6 +140,57 @@ export function useSSE(endpoint: string = '/api/v1/events') {
                 return a;
               })
             );
+
+            // Dynamically mark-to-market revalue open positions and update portfolio equity
+            setPositions((prevPositions) => {
+              let updated = false;
+              const nextPositions = prevPositions.map((pos) => {
+                if (pos.symbol === tick.symbol) {
+                  updated = true;
+                  const diff = pos.side === 'BUY' ? newPrice - pos.entryPrice : pos.entryPrice - newPrice;
+                  const unrealizedPnL = Number((diff * pos.size).toFixed(2));
+                  const pnlPercent = Number(((diff / pos.entryPrice) * 100).toFixed(2));
+                  return {
+                    ...pos,
+                    currentPrice: newPrice,
+                    unrealizedPnL,
+                    pnlPercent,
+                  };
+                }
+                return pos;
+              });
+
+              // Recalculate dynamic Core and Alpha valuations
+              if (updated) {
+                setSummary((prevSummary) => {
+                  let corePnL = 0;
+                  let alphaPnL = 0;
+                  nextPositions.forEach((p) => {
+                    if (p.bucket === 'CORE') corePnL += p.unrealizedPnL;
+                    else alphaPnL += p.unrealizedPnL;
+                  });
+
+                  const baseCore = 61470.0;
+                  const baseAlpha = 40980.0;
+                  const dynamicCore = Number((baseCore + corePnL).toFixed(2));
+                  const dynamicAlpha = Number((baseAlpha + alphaPnL).toFixed(2));
+                  const dynamicTotal = Number((prevSummary.cash + dynamicCore + dynamicAlpha - (baseCore + baseAlpha - (102450.0 - prevSummary.cash))).toFixed(2));
+                  const peak = Math.max(prevSummary.peakEquity, dynamicTotal);
+                  const dd = peak > 0 ? Number((((peak - dynamicTotal) / peak) * 100).toFixed(2)) : 0;
+
+                  return {
+                    ...prevSummary,
+                    coreEquity: dynamicCore,
+                    alphaEquity: dynamicAlpha,
+                    totalEquity: dynamicTotal,
+                    peakEquity: peak,
+                    drawdownPct: dd,
+                  };
+                });
+              }
+
+              return nextPositions;
+            });
           } catch (err) {
             console.error('Failed to parse SSE tick', err);
           }

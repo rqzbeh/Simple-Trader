@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 )
 
 // SSEBroadcaster manages active HTTP connections for real-time Server-Sent Events.
@@ -49,11 +50,17 @@ func (b *SSEBroadcaster) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "event: ping\ndata: connected\n\n")
 	flusher.Flush()
 
+	heartbeat := time.NewTicker(15 * time.Second)
+	defer heartbeat.Stop()
+
 	notify := r.Context().Done()
 	for {
 		select {
 		case <-notify:
 			return
+		case <-heartbeat.C:
+			fmt.Fprintf(w, "event: ping\ndata: keep-alive\n\n")
+			flusher.Flush()
 		case msg, ok := <-msgChan:
 			if !ok {
 				return

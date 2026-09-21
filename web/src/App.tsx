@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useTheme } from './context/ThemeContext';
 import { useAuth } from './context/AuthContext';
-import { Sun, Moon, Activity, TrendingUp, Cpu, Layers, SlidersHorizontal, BarChart2, Users, Newspaper, Filter, Globe, MessageSquare, LogOut, ShieldCheck } from 'lucide-react';
+import { Sun, Moon, Activity, TrendingUp, Cpu, Layers, SlidersHorizontal, Users, Newspaper, Filter, MessageSquare, LogOut, ShieldCheck } from 'lucide-react';
 import { useSSE } from './hooks/useSSE';
 import { AssetTickerGrid } from './components/AssetTickerGrid';
 import { TradingViewChart } from './components/TradingViewChart';
@@ -9,13 +9,11 @@ import { AllocationGauge } from './components/AllocationGauge';
 import { PositionsTable } from './components/PositionsTable';
 import { AISignalFeed } from './components/AISignalFeed';
 import { AIWeightMatrix, INITIAL_WEIGHTS } from './components/AIWeightMatrix';
-import { QuantDashboardView } from './components/QuantDashboardView';
 import { MicrostructureCard } from './components/MicrostructureCard';
 import { MacroCalendarPanel } from './components/MacroCalendarPanel';
 import { InvestorLedgerView } from './components/InvestorLedgerView';
 import { NewsStreamView } from './components/NewsStreamView';
 import { ScreenerView } from './components/ScreenerView';
-import { MacroRegimeView } from './components/MacroRegimeView';
 import { TelegramConfigModal } from './components/TelegramConfigModal';
 import { LoginModal } from './components/LoginModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
@@ -47,7 +45,7 @@ export const App: React.FC = () => {
   const { isAuthenticated, tokenMasked, logout } = useAuth();
   const { isConnected, assets, positions, summary, setPositions } = useSSE();
   const [selectedSymbol, setSelectedSymbol] = useState<string>('XAU/USD');
-  const [activeTab, setActiveTab] = useState<'terminal' | 'macro' | 'investors' | 'screener' | 'news' | 'quant' | 'ai_weights'>('terminal');
+  const [activeTab, setActiveTab] = useState<'terminal' | 'investors' | 'screener' | 'news' | 'ai_weights'>('terminal');
   const [weights, setWeights] = useState<IndicatorWeights>(INITIAL_WEIGHTS);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
   const [isIOSGuideOpen, setIsIOSGuideOpen] = useState<boolean>(false);
@@ -130,17 +128,6 @@ export const App: React.FC = () => {
                 <span>Terminal</span>
               </button>
               <button
-                onClick={() => setActiveTab('macro')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
-                  activeTab === 'macro'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <Globe className="w-3.5 h-3.5 text-sky-500" />
-                <span>Macro Regime</span>
-              </button>
-              <button
                 onClick={() => setActiveTab('investors')}
                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
                   activeTab === 'investors'
@@ -172,17 +159,6 @@ export const App: React.FC = () => {
               >
                 <Newspaper className="w-3.5 h-3.5 text-rose-500" />
                 <span>News Trading</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('quant')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
-                  activeTab === 'quant'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
-                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-                }`}
-              >
-                <BarChart2 className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Quant Suite</span>
               </button>
               <button
                 onClick={() => setActiveTab('ai_weights')}
@@ -373,10 +349,6 @@ export const App: React.FC = () => {
               <MacroCalendarPanel events={macroEvents} activeSymbol={selectedSymbol} />
             </div>
           </>
-        ) : activeTab === 'macro' ? (
-          <div className="space-y-4">
-            <MacroRegimeView />
-          </div>
         ) : activeTab === 'investors' ? (
           <div className="space-y-4">
             <div className="flex items-center justify-between px-1">
@@ -412,18 +384,6 @@ export const App: React.FC = () => {
               </span>
             </div>
             <NewsStreamView />
-          </div>
-        ) : activeTab === 'quant' ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-slate-800 dark:text-slate-200">
-                Institutional Quant Analytics & Simulation Lab
-              </h2>
-              <span className="text-xs text-slate-400 font-mono">
-                Order Flow • Macro Halt • Monte Carlo Engine
-              </span>
-            </div>
-            <QuantDashboardView symbol={selectedSymbol} />
           </div>
         ) : (
           <div className="space-y-4">

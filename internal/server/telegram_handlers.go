@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/rqzbeh/simple-trader/internal/telegram"
@@ -132,7 +133,11 @@ func (s *Server) TestTelegramHandler(w http.ResponseWriter, r *http.Request) {
 
 	err := testClient.SendMessageWithRetry(ctx, testMessage)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(`{"error":"failed to transmit message via Telegram API: %s"}`, err.Error()), http.StatusBadGateway)
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "chat not found") {
+			errMsg = fmt.Sprintf("Chat not found for chat ID %s. Telegram requires that you initiate a conversation with the bot first: open Telegram, search for @IUST_Trader_Bot, and tap 'Start' or send /start.", chatID)
+		}
+		http.Error(w, fmt.Sprintf(`{"error":"failed to transmit message via Telegram API: %s"}`, errMsg), http.StatusBadGateway)
 		return
 	}
 
