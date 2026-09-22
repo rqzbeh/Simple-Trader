@@ -81,14 +81,14 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
       const res = await fetch(`${apiBaseUrl}/api/v1/signals/futures/decide-all`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bucket: 'ALPHA' }),
+        body: JSON.stringify({ bucket: 'ALL' }),
       });
       const data = await res.json();
       fetchSignals();
       if (data.signals_count > 0) {
-        alert(`Scan Complete: Evaluated ${data.scanned_count} assets concurrently. Found ${data.signals_count} actionable signals!`);
+        alert(`Scan Complete: Evaluated ${data.scanned_count} assets concurrently across entire portfolio. Found ${data.signals_count} actionable signals!`);
       } else {
-        alert(`Scan Complete: Evaluated ${data.scanned_count} assets concurrently. Capital preserved (HOLD).`);
+        alert(`Scan Complete: Evaluated ${data.scanned_count} assets concurrently across entire portfolio. Capital preserved (HOLD).`);
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to trigger batch evaluation');

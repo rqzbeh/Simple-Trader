@@ -15,17 +15,20 @@ import (
 	"github.com/rqzbeh/simple-trader/internal/cache"
 )
 
-// LiveMarketFeed polls live prices and order book ticks directly from online exchange APIs (e.g. Binance)
-// providing continuous, real-time market fluctuations with zero static hardcoded values.
+// LiveMarketFeed polls live prices and order book ticks directly from online exchange APIs
+// (Binance Spot, Binance Futures, Yahoo Finance) providing continuous, real-time market fluctuations
+// with zero static hardcoded values.
 type LiveMarketFeed struct {
-	httpClient *http.Client
-	baseURL    string
-	assets     []AssetDefinition
-	mu         sync.RWMutex
-	lastPrices map[string]float64
+	httpClient   *http.Client
+	spotBaseURL  string
+	fapiBaseURL  string
+	yahooFetcher *YahooFinanceFetcher
+	assets       []AssetDefinition
+	mu           sync.RWMutex
+	lastQuotes   map[string]cache.TickerQuote
 }
 
-// NewLiveMarketFeed creates a new live market feed connecting to real exchange endpoints.
+// NewLiveMarketFeed creates a new live market feed connecting to real multi-source exchange endpoints.
 func NewLiveMarketFeed(assets []AssetDefinition) *LiveMarketFeed {
 	if len(assets) == 0 {
 		assets = GetSupportedAssets()
@@ -34,52 +37,29 @@ func NewLiveMarketFeed(assets []AssetDefinition) *LiveMarketFeed {
 		httpClient: &http.Client{
 			Timeout: 5 * time.Second,
 		},
-		baseURL:    "https://api.binance.com",
-		assets:     assets,
-		lastPrices: make(map[string]float64),
+		spotBaseURL:  "https://api.binance.com",
+		fapiBaseURL:  "https://fapi.binance.com",
+		yahooFetcher: NewYahooFinanceFetcher(),
+		assets:       assets,
+		lastQuotes:   make(map[string]cache.TickerQuote),
 	}
 }
 
-// FetchLiveTick fetches a single live ticker from Binance.
-func (f *LiveMarketFeed) FetchLiveTick(ctx context.Context, asset AssetDefinition) (*cache.TickerQuote, error) {
-	symbol := asset.SourceParam
-	if symbol == "" {
-		symbol = strings.ReplaceAll(asset.Symbol, "/", "")
-	}
+// binanceRawTicker models the JSON response from Binance Spot and Futures 24hr ticker endpoints.
+type binanceRawTicker struct {
+	Symbol             string `json:"symbol"`
+	LastPrice          string `json:"lastPrice"`
+	PriceChangePercent string `json:"priceChangePercent"`
+	HighPrice          string `json:"highPrice"`
+	LowPrice           string `json:"lowPrice"`
+	Volume             string `json:"volume"`
+}
 
-	url := fmt.Sprintf("%s/api/v3/ticker/24hr?symbol=%s", f.baseURL, symbol)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := f.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("exchange API returned HTTP %d for %s", resp.StatusCode, symbol)
-	}
-
-	var raw struct {
-		Symbol             string `json:"symbol"`
-		LastPrice          string `json:"lastPrice"`
-		PriceChangePercent string `json:"priceChangePercent"`
-		HighPrice          string `json:"highPrice"`
-		LowPrice           string `json:"lowPrice"`
-		Volume             string `json:"volume"`
-		QuoteVolume        string `json:"quoteVolume"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, err
-	}
-
+// parseTickerQuote converts a raw ticker response into a normalized domain TickerQuote.
+func parseTickerQuote(symbol string, raw binanceRawTicker, now int64) (*cache.TickerQuote, error) {
 	price, err := strconv.ParseFloat(raw.LastPrice, 64)
 	if err != nil || price <= 0 {
-		return nil, fmt.Errorf("invalid price %q parsed from exchange", raw.LastPrice)
+		return nil, fmt.Errorf("invalid price %q for %s", raw.LastPrice, symbol)
 	}
 
 	change, _ := strconv.ParseFloat(raw.PriceChangePercent, 64)
@@ -87,99 +67,307 @@ func (f *LiveMarketFeed) FetchLiveTick(ctx context.Context, asset AssetDefinitio
 	low, _ := strconv.ParseFloat(raw.LowPrice, 64)
 	vol, _ := strconv.ParseFloat(raw.Volume, 64)
 
-	f.mu.Lock()
-	f.lastPrices[asset.Symbol] = price
-	f.mu.Unlock()
-
 	return &cache.TickerQuote{
-		Symbol:    asset.Symbol,
+		Symbol:    symbol,
 		Price:     price,
 		Change24h: change,
 		High24h:   high,
 		Low24h:    low,
 		Volume:    vol,
-		UpdatedAt: time.Now().Unix(),
+		UpdatedAt: now,
 	}, nil
 }
 
-// FetchAllLiveTicks queries Binance batch ticker endpoint for all pairs simultaneously.
-func (f *LiveMarketFeed) FetchAllLiveTicks(ctx context.Context) ([]cache.TickerQuote, error) {
-	var symbols []string
-	symbolToAsset := make(map[string]AssetDefinition)
-
-	for _, a := range f.assets {
-		s := a.SourceParam
-		if s == "" {
-			s = strings.ReplaceAll(a.Symbol, "/", "")
-		}
-		symbols = append(symbols, `"`+s+`"`)
-		symbolToAsset[s] = a
-	}
-
-	query := url.QueryEscape("[" + strings.Join(symbols, ",") + "]")
-	apiURL := fmt.Sprintf("%s/api/v3/ticker/24hr?symbols=%s", f.baseURL, query)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := f.httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("exchange API returned HTTP %d", resp.StatusCode)
-	}
-
-	var rawList []struct {
-		Symbol             string `json:"symbol"`
-		LastPrice          string `json:"lastPrice"`
-		PriceChangePercent string `json:"priceChangePercent"`
-		HighPrice          string `json:"highPrice"`
-		LowPrice           string `json:"lowPrice"`
-		Volume             string `json:"volume"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&rawList); err != nil {
-		return nil, err
-	}
-
-	var quotes []cache.TickerQuote
+// FetchLiveTick fetches a single live ticker from its appropriate feed source.
+func (f *LiveMarketFeed) FetchLiveTick(ctx context.Context, asset AssetDefinition) (*cache.TickerQuote, error) {
 	now := time.Now().Unix()
 
+	switch asset.FeedSource {
+	case "YAHOO":
+		q, err := f.yahooFetcher.FetchQuote(ctx, asset.Symbol)
+		if err != nil {
+			return nil, err
+		}
+		f.mu.Lock()
+		f.lastQuotes[asset.Symbol] = *q
+		f.mu.Unlock()
+		return q, nil
+
+	case "BINANCE_FUTURES":
+		param := asset.SourceParam
+		if param == "" {
+			param = strings.ReplaceAll(asset.Symbol, "/", "")
+		}
+		apiURL := fmt.Sprintf("%s/fapi/v1/ticker/24hr?symbol=%s", f.fapiBaseURL, param)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", "SimpleTrader/1.0")
+
+		resp, err := f.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("binance futures returned HTTP %d for %s", resp.StatusCode, param)
+		}
+
+		var raw binanceRawTicker
+		if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+			return nil, err
+		}
+
+		q, err := parseTickerQuote(asset.Symbol, raw, now)
+		if err != nil {
+			return nil, err
+		}
+
+		f.mu.Lock()
+		f.lastQuotes[asset.Symbol] = *q
+		f.mu.Unlock()
+		return q, nil
+
+	default: // BINANCE_SPOT
+		param := asset.SourceParam
+		if param == "" {
+			param = strings.ReplaceAll(asset.Symbol, "/", "")
+		}
+		apiURL := fmt.Sprintf("%s/api/v3/ticker/24hr?symbol=%s", f.spotBaseURL, param)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("User-Agent", "SimpleTrader/1.0")
+
+		resp, err := f.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("binance spot returned HTTP %d for %s", resp.StatusCode, param)
+		}
+
+		var raw binanceRawTicker
+		if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+			return nil, err
+		}
+
+		q, err := parseTickerQuote(asset.Symbol, raw, now)
+		if err != nil {
+			return nil, err
+		}
+
+		f.mu.Lock()
+		f.lastQuotes[asset.Symbol] = *q
+		f.mu.Unlock()
+		return q, nil
+	}
+}
+
+// FetchAllLiveTicks queries all exchange endpoints concurrently and aggregates live quotes for all assets.
+func (f *LiveMarketFeed) FetchAllLiveTicks(ctx context.Context) ([]cache.TickerQuote, error) {
+	var (
+		spotAssets    []AssetDefinition
+		futuresAssets []AssetDefinition
+		yahooAssets   []AssetDefinition
+	)
+
+	for _, a := range f.assets {
+		switch a.FeedSource {
+		case "YAHOO":
+			yahooAssets = append(yahooAssets, a)
+		case "BINANCE_FUTURES":
+			futuresAssets = append(futuresAssets, a)
+		default:
+			spotAssets = append(spotAssets, a)
+		}
+	}
+
+	var (
+		quotesMu sync.Mutex
+		quotes   []cache.TickerQuote
+		wg       sync.WaitGroup
+		now      = time.Now().Unix()
+	)
+
+	// 1. Fetch Binance Spot Batch
+	if len(spotAssets) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var symParams []string
+			paramToAsset := make(map[string]AssetDefinition)
+			for _, a := range spotAssets {
+				p := a.SourceParam
+				if p == "" {
+					p = strings.ReplaceAll(a.Symbol, "/", "")
+				}
+				symParams = append(symParams, p)
+				paramToAsset[p] = a
+			}
+
+			// Format compact JSON array without spaces: ["BTCUSDT","ETHUSDT"]
+			queryParam := `["` + strings.Join(symParams, `","`) + `"]`
+			apiURL := fmt.Sprintf("%s/api/v3/ticker/24hr?symbols=%s", f.spotBaseURL, url.QueryEscape(queryParam))
+
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+			if err != nil {
+				log.Printf("[LiveMarketFeed] Spot batch req build error: %v", err)
+				return
+			}
+			req.Header.Set("User-Agent", "SimpleTrader/1.0")
+
+			resp, err := f.httpClient.Do(req)
+			if err != nil {
+				log.Printf("[LiveMarketFeed] Spot batch HTTP error: %v", err)
+				return
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				log.Printf("[LiveMarketFeed] Spot batch returned HTTP %d", resp.StatusCode)
+				return
+			}
+
+			var rawList []binanceRawTicker
+			if err := json.NewDecoder(resp.Body).Decode(&rawList); err != nil {
+				log.Printf("[LiveMarketFeed] Spot batch decode error: %v", err)
+				return
+			}
+
+			quotesMu.Lock()
+			for _, raw := range rawList {
+				if asset, ok := paramToAsset[raw.Symbol]; ok {
+					if q, err := parseTickerQuote(asset.Symbol, raw, now); err == nil {
+						quotes = append(quotes, *q)
+					}
+				}
+			}
+			quotesMu.Unlock()
+		}()
+	}
+
+	// 2. Fetch Binance Futures Batch (Metals)
+	if len(futuresAssets) > 0 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			paramToAsset := make(map[string]AssetDefinition)
+			for _, a := range futuresAssets {
+				p := a.SourceParam
+				if p == "" {
+					p = strings.ReplaceAll(a.Symbol, "/", "")
+				}
+				paramToAsset[p] = a
+			}
+
+			apiURL := fmt.Sprintf("%s/fapi/v1/ticker/24hr", f.fapiBaseURL)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
+			if err != nil {
+				log.Printf("[LiveMarketFeed] Futures batch req build error: %v", err)
+				return
+			}
+			req.Header.Set("User-Agent", "SimpleTrader/1.0")
+
+			resp, err := f.httpClient.Do(req)
+			if err != nil {
+				log.Printf("[LiveMarketFeed] Futures batch HTTP error: %v", err)
+				return
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				log.Printf("[LiveMarketFeed] Futures batch returned HTTP %d", resp.StatusCode)
+				return
+			}
+
+			var rawList []binanceRawTicker
+			if err := json.NewDecoder(resp.Body).Decode(&rawList); err != nil {
+				log.Printf("[LiveMarketFeed] Futures batch decode error: %v", err)
+				return
+			}
+
+			quotesMu.Lock()
+			for _, raw := range rawList {
+				if asset, ok := paramToAsset[raw.Symbol]; ok {
+					if q, err := parseTickerQuote(asset.Symbol, raw, now); err == nil {
+						quotes = append(quotes, *q)
+					}
+				}
+			}
+			quotesMu.Unlock()
+		}()
+	}
+
+	// 3. Fetch Yahoo Commodities Concurrently
+	for _, a := range yahooAssets {
+		asset := a
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			q, err := f.yahooFetcher.FetchQuote(ctx, asset.Symbol)
+			if err != nil {
+				log.Printf("[LiveMarketFeed] Yahoo fetch error for %s: %v", asset.Symbol, err)
+				return
+			}
+			quotesMu.Lock()
+			quotes = append(quotes, *q)
+			quotesMu.Unlock()
+		}()
+	}
+
+	wg.Wait()
+
+	// Update in-memory quote cache
 	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	for _, raw := range rawList {
-		asset, ok := symbolToAsset[raw.Symbol]
-		if !ok {
-			continue
+	for _, q := range quotes {
+		f.lastQuotes[q.Symbol] = q
+	}
+	// If any asset failed in this pass, backfill from latest cached quote if present
+	if len(quotes) < len(f.assets) {
+		present := make(map[string]bool)
+		for _, q := range quotes {
+			present[q.Symbol] = true
 		}
-		price, err := strconv.ParseFloat(raw.LastPrice, 64)
-		if err != nil || price <= 0 {
-			continue
+		for _, a := range f.assets {
+			if !present[a.Symbol] {
+				if cached, ok := f.lastQuotes[a.Symbol]; ok {
+					quotes = append(quotes, cached)
+				}
+			}
 		}
-		change, _ := strconv.ParseFloat(raw.PriceChangePercent, 64)
-		high, _ := strconv.ParseFloat(raw.HighPrice, 64)
-		low, _ := strconv.ParseFloat(raw.LowPrice, 64)
-		vol, _ := strconv.ParseFloat(raw.Volume, 64)
+	}
+	f.mu.Unlock()
 
-		f.lastPrices[asset.Symbol] = price
-
-		quotes = append(quotes, cache.TickerQuote{
-			Symbol:    asset.Symbol,
-			Price:     price,
-			Change24h: change,
-			High24h:   high,
-			Low24h:    low,
-			Volume:    vol,
-			UpdatedAt: now,
-		})
+	if len(quotes) == 0 {
+		return nil, fmt.Errorf("failed to fetch any live quotes from multi-source feed")
 	}
 
 	return quotes, nil
+}
+
+// GetLastQuote retrieves the most recent quote for a symbol.
+func (f *LiveMarketFeed) GetLastQuote(symbol string) (cache.TickerQuote, bool) {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	q, ok := f.lastQuotes[symbol]
+	return q, ok
+}
+
+// GetLastQuotes returns all cached quotes.
+func (f *LiveMarketFeed) GetLastQuotes() []cache.TickerQuote {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+	var list []cache.TickerQuote
+	for _, q := range f.lastQuotes {
+		list = append(list, q)
+	}
+	return list
 }
 
 // Subscribe returns a channel that streams real-time live market ticks directly from the exchange.
@@ -188,7 +376,7 @@ func (f *LiveMarketFeed) Subscribe(ctx context.Context, interval time.Duration) 
 		interval = 1 * time.Second
 	}
 
-	ch := make(chan cache.TickerQuote, 100)
+	ch := make(chan cache.TickerQuote, 250)
 
 	go func() {
 		defer close(ch)

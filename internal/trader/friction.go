@@ -6,18 +6,37 @@ import (
 
 // FrictionModel defines exchange fees, spread, and liquidity impact slippage parameters.
 type FrictionModel struct {
-	MakerFeeRate float64 // e.g. 0.0002 (0.02%)
-	TakerFeeRate float64 // e.g. 0.0005 (0.05%)
-	ImpactFactor float64 // quadratic market impact coefficient (default: 0.05)
+	MakerFeeRate   float64 // e.g. 0.0002 (0.02%)
+	TakerFeeRate   float64 // e.g. 0.0005 (0.05%)
+	ImpactFactor   float64 // quadratic market impact coefficient (default: 0.05)
+	MaxSlippagePct float64 // dynamic slippage cap percentage (e.g. 0.05 for 5%)
+}
+
+// NewFrictionModel initializes friction settings with dynamic parameters.
+func NewFrictionModel(makerFee, takerFee, impactFactor, maxSlippagePct float64) FrictionModel {
+	if makerFee <= 0 {
+		makerFee = 0.0002
+	}
+	if takerFee <= 0 {
+		takerFee = 0.0005
+	}
+	if impactFactor <= 0 {
+		impactFactor = 0.05
+	}
+	if maxSlippagePct <= 0 {
+		maxSlippagePct = 0.05
+	}
+	return FrictionModel{
+		MakerFeeRate:   makerFee,
+		TakerFeeRate:   takerFee,
+		ImpactFactor:   impactFactor,
+		MaxSlippagePct: maxSlippagePct,
+	}
 }
 
 // DefaultFrictionModel returns standard institutional exchange friction settings.
 func DefaultFrictionModel() FrictionModel {
-	return FrictionModel{
-		MakerFeeRate: 0.0002, // 2 bps (maker)
-		TakerFeeRate: 0.0005, // 5 bps (taker)
-		ImpactFactor: 0.05,   // liquidity impact coefficient
-	}
+	return NewFrictionModel(0.0002, 0.0005, 0.05, 0.05)
 }
 
 // ExecutionQuote provides detailed execution pricing, spread, slippage, and fee breakdown.
@@ -56,8 +75,12 @@ func (f *FrictionModel) CalculateExecution(
 	// Slippage = midPrice * ImpactFactor * (quantity / availableDepth)^2
 	liquidityRatio := quantity / availableDepthQty
 	slippage := midPrice * f.ImpactFactor * math.Pow(liquidityRatio, 2)
-	// Cap slippage to at most 5% of price to avoid extreme synthetic anomalies
-	maxSlippage := midPrice * 0.05
+	// Cap slippage to at most MaxSlippagePct of price to avoid extreme synthetic anomalies
+	capPct := f.MaxSlippagePct
+	if capPct <= 0 {
+		capPct = 0.05
+	}
+	maxSlippage := midPrice * capPct
 	if slippage > maxSlippage {
 		slippage = maxSlippage
 	}

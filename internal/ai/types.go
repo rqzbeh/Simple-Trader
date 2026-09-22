@@ -45,5 +45,7 @@ type TradeOutcome struct {
 	SuperTrendTrend string
 	RSI             float64
 	MACDHistogram   float64
+	CMF             float64
+	KaufmanER       float64
 	HoldingDuration int64 // Seconds
 }

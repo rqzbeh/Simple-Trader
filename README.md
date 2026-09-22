@@ -54,6 +54,27 @@ cp .env.example .env
 docker compose up -d
 ```
 
+### Dynamic Environment Configuration (Zero Hardcoded Values)
+
+All quantitative trading, execution friction, and risk parameters are dynamic and loaded directly from `.env`:
+
+| Variable | Default | Description |
+|---|---|---|
+| `MIN_RISK_TO_REWARD_RATIO` | `2.5` | Minimum required Risk-to-Reward ratio ($R:R$) for signal execution |
+| `DEFAULT_LEVERAGE` | `8` | Default isolated margin leverage factor (1x-10x) |
+| `MIN_STOP_LOSS_PCT` | `0.6` | Minimum Stop Loss % distance from entry |
+| `MAX_STOP_LOSS_PCT` | `2.5` | Maximum Stop Loss % distance from entry |
+| `MIN_TAKE_PROFIT_PCT` | `1.5` | Minimum Take Profit % distance from entry |
+| `MAX_TAKE_PROFIT_PCT` | `8.0` | Maximum Take Profit % distance from entry |
+| `MAKER_FEE_RATE` | `0.0002` | Institutional maker fee rate (0.02%) |
+| `TAKER_FEE_RATE` | `0.0005` | Institutional taker fee rate (0.05%) |
+| `MAX_SLIPPAGE_PCT` | `0.05` | Dynamic quadratic market impact slippage cap (5%) |
+| `INITIAL_CAPITAL` | `100000.0` | Starting portfolio equity (calibrated for accounts from $100 upwards) |
+| `CORE_TARGET_PCT` | `0.45` | Target allocation for Tier 2 Safe-Haven Core |
+| `ALPHA_TARGET_PCT` | `0.40` | Target allocation for Tier 3 Tactical Alpha |
+| `MAX_DRAWDOWN_LIMIT_PCT` | `0.10` | Hard circuit breaker drawdown threshold (10%) |
+| `MAX_RISK_PER_TRADE_PCT` | `0.02` | Maximum risk per trade using Fractional Half-Kelly criterion (2%) |
+
 ### 2. Verify System Health
 
 ```bash
@@ -107,10 +128,12 @@ Technical indicators alone do not justify opening trades. In Simple-Trader, **br
 
 ### Key Signal Mechanics
 - **Two-Sided Execution**: The engine opens both **BUY / LONG** and **SELL / SHORT** positions on cryptocurrency futures markets.
-- **Isolated Leverage**: Multipliers dynamically calibrated between **1x and 10x** based on market volatility.
-- **Strict Risk Sizing**: Position equity risk is hard-capped at **2.0% of Tier 3 Alpha Capital**.
-- **Asymmetric Payoff**: Guaranteed minimum **Risk-to-Reward Ratio ($R:R$) of 1:1.50** (averaging 1:2.20+).
-- **Batch & Transparent Background Scanning**: Multi-threaded parallel asset scanning evaluates catalysts across the entire liquid universe (`POST /api/v1/signals/futures/decide-all`), backed by an automated 2-minute transparent background scanning daemon.
+- **Isolated Leverage**: Multipliers dynamically calibrated between **1x and 10x** (default `DEFAULT_LEVERAGE=8` configured via `.env`).
+- **Strict Risk Sizing**: Position equity risk is dynamically bounded (default `MAX_RISK_PER_TRADE_PCT=0.02` of Tier 3 Alpha Capital) and position-sized using Fractional Half-Kelly criterion.
+- **Asymmetric Payoff**: Strictly enforced minimum **Risk-to-Reward Ratio ($R:R$) of 1:2.50+** (`MIN_RISK_TO_REWARD_RATIO=2.5`), dynamically loaded from environment variables with no hardcoded constants.
+- **Dynamic Realistic Friction & Slippage**: Institutional maker/taker fee accounting (`MAKER_FEE_RATE=0.0002`, `TAKER_FEE_RATE=0.0005`) with quadratic market impact slippage capped dynamically (`MAX_SLIPPAGE_PCT=0.05`).
+- **25-Asset Reconciled Catalog**: Decoupled 8 Tier 2 Core Wealth Preservation assets (tokenized precious metals, energy, forex, and core stores of value) and 17 Tier 3 Tactical Alpha crypto assets with deduplication and continuous Binance tick synchronization.
+- **Batch & Transparent Background Scanning**: Multi-threaded parallel asset scanning evaluates catalysts across the entire 25-asset liquid universe (`POST /api/v1/signals/futures/decide-all`), backed by an automated 2-minute transparent background scanning daemon.
 - **Tick-Driven Autonomous Trade Resolution**: Ingested high-frequency ticks continuously test active signals against target bounds, automatically executing Take Profit or Stop Loss without manual intervention.
 - **Automated Telegram Alerts**: Instant broadcast of actionable entry levels (Entry, Stop Loss, Take Profit 1 & 2) and completion cards with realized ROI % to your private Telegram channel with MarkdownV2 escaping and plain-text fallback.
 

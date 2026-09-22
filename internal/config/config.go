@@ -7,26 +7,35 @@ import (
 
 // Config holds all environment settings for the Simple-Trader platform.
 type Config struct {
-	Port               string
-	DatabaseURL        string
-	RedisURL           string
-	AIBaseURL          string
-	AIAPIKey           string
-	AIModelID          string
-	AITemperature      float64
-	AITimeoutSeconds   int
-	AIReasoningEffort  string
-	InitialCapital     float64
-	CoreTargetPct      float64
-	AlphaTargetPct     float64
+	Port                string
+	DatabaseURL         string
+	RedisURL            string
+	AIBaseURL           string
+	AIAPIKey            string
+	AIModelID           string
+	AITemperature       float64
+	AITimeoutSeconds    int
+	AIReasoningEffort   string
+	InitialCapital      float64
+	CoreTargetPct       float64
+	AlphaTargetPct      float64
 	MaxDrawdownLimitPct float64
-	MaxRiskPerTradePct float64
-	LogLevel           string
-	IsProduction       bool
-	AdminPassword      string
-	AppSecret          string
-	TelegramBotToken   string
-	TelegramChatID     string
+	MaxRiskPerTradePct  float64
+	MinRiskRewardRatio  float64 // Minimum R:R ratio required for trade execution
+	DefaultLeverage     int     // Default isolated margin leverage factor
+	MinStopLossPct      float64 // Minimum Stop Loss % from entry
+	MaxStopLossPct      float64 // Maximum Stop Loss % from entry
+	MinTakeProfitPct    float64 // Minimum Take Profit % from entry
+	MaxTakeProfitPct    float64 // Maximum Take Profit % from entry
+	MakerFeeRate        float64 // Institutional maker fee rate (e.g. 0.0002)
+	TakerFeeRate        float64 // Institutional taker fee rate (e.g. 0.0005)
+	MaxSlippagePct      float64 // Cap on slippage percentage (e.g. 0.05 for 5%)
+	LogLevel            string
+	IsProduction        bool
+	AdminPassword       string
+	AppSecret           string
+	TelegramBotToken    string
+	TelegramChatID      string
 }
 
 func getEnv(key, defaultVal string) string {
@@ -71,6 +80,15 @@ func Load() (*Config, error) {
 		AlphaTargetPct:      getEnvFloat("ALPHA_TARGET_PCT", 0.50),
 		MaxDrawdownLimitPct: getEnvFloat("MAX_DRAWDOWN_LIMIT_PCT", 0.08),
 		MaxRiskPerTradePct:  getEnvFloat("MAX_RISK_PER_TRADE_PCT", 0.02),
+		MinRiskRewardRatio:  getEnvFloat("MIN_RISK_TO_REWARD_RATIO", 2.5),
+		DefaultLeverage:     getEnvInt("DEFAULT_LEVERAGE", 8),
+		MinStopLossPct:      getEnvFloat("MIN_STOP_LOSS_PCT", 0.6),
+		MaxStopLossPct:      getEnvFloat("MAX_STOP_LOSS_PCT", 2.5),
+		MinTakeProfitPct:    getEnvFloat("MIN_TAKE_PROFIT_PCT", 1.5),
+		MaxTakeProfitPct:    getEnvFloat("MAX_TAKE_PROFIT_PCT", 8.0),
+		MakerFeeRate:        getEnvFloat("MAKER_FEE_RATE", 0.0002),
+		TakerFeeRate:        getEnvFloat("TAKER_FEE_RATE", 0.0005),
+		MaxSlippagePct:      getEnvFloat("MAX_SLIPPAGE_PCT", 0.05),
 		LogLevel:            getEnv("LOG_LEVEL", "info"),
 		IsProduction:        getEnv("ENV", "development") == "production",
 		AdminPassword:       getEnv("ADMIN_PASSWORD", "SuperSecureAdminPassword2026!"),

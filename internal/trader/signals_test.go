@@ -176,3 +176,51 @@ func TestSignalService_CheckSignalResolution(t *testing.T) {
 		t.Errorf("expected positive ROI on TP hit, got %.2f%%", roi)
 	}
 }
+
+func TestSignalService_DynamicConfigEnforcement(t *testing.T) {
+	ctx := context.Background()
+
+	customCfg := trader.SignalConfig{
+		MinRiskRewardRatio: 3.0,
+		DefaultLeverage:    10,
+		MinStopLossPct:     1.0,
+		MaxStopLossPct:     3.0,
+		MinTakeProfitPct:   3.0,
+		MaxTakeProfitPct:   12.0,
+		MaxRiskPerTradePct: 0.02,
+	}
+
+	mockAI := &MockAIClient{
+		Response: &ai.DecisionResponse{
+			Decision:               "BUY",
+			Confidence:             0.95,
+			Reasoning:              "High momentum surge breaking historical resistance.",
+			Catalyst:               "Federal Reserve announces liquidity easing window.",
+			Leverage:               15, // AI requests 15, should be bounded to DefaultLeverage (10)
+			SuggestedStopLossPct:   0.2, // Below MinStopLossPct (1.0), should be adjusted
+			SuggestedTakeProfitPct: 2.0, // Low TP, will be forced by MinRiskRewardRatio (3.0)
+		},
+	}
+
+	service := trader.NewSignalService(nil, mockAI, customCfg)
+
+	quote := cache.TickerQuote{Symbol: "ETH/USDT", Price: 3000.0}
+	snap := cache.IndicatorSnapshot{Symbol: "ETH/USDT", RSI: 62.0}
+
+	sig, err := service.EvaluateMarketSignal(
+		ctx, "ETH/USDT", "ALPHA", quote, snap, nil, []string{"Federal Reserve liquidity announcement"}, 100000.0, 40000.0,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sig == nil {
+		t.Fatalf("expected non-nil signal")
+	}
+
+	if sig.Leverage != 10 {
+		t.Errorf("expected leverage bounded to 10, got %d", sig.Leverage)
+	}
+	if sig.RiskRewardRatio < 3.0 {
+		t.Errorf("expected dynamic R:R >= 3.0, got %f", sig.RiskRewardRatio)
+	}
+}

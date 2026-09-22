@@ -2,17 +2,16 @@ import { useEffect, useRef, useState } from 'react';
 import { AssetInfo, AISignal, TradePosition, PortfolioSummary } from '../types';
 
 export const INITIAL_ASSETS: AssetInfo[] = [
-  // CORE (Commodities)
-  { symbol: 'PAXG/USDT', name: 'PAX Gold', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
-  { symbol: 'XAUT/USDT', name: 'Tether Gold', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
-  { symbol: 'XAU/USDT', name: 'Gold / Tether', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
-  { symbol: 'XAG/USDT', name: 'Silver / Tether', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
+  // CORE (Commodities - 8 assets)
+  { symbol: 'PAXG/USDT', name: 'PAX Gold (Tokenized Gold)', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
+  { symbol: 'XAU/USDT', name: 'Gold Futures', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
+  { symbol: 'XAG/USDT', name: 'Silver Futures', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
   { symbol: 'COPPER/USDT', name: 'Copper Futures', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
-  { symbol: 'XPT/USDT', name: 'Platinum / Tether', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
-  { symbol: 'XPD/USDT', name: 'Palladium / Tether', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
+  { symbol: 'XPT/USDT', name: 'Platinum Futures', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
+  { symbol: 'XPD/USDT', name: 'Palladium Futures', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
   { symbol: 'OIL/USDT', name: 'WTI Crude Oil', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
   { symbol: 'ALU/USDT', name: 'Aluminum Futures', bucket: 'CORE', type: 'Crypto', price: 0, change24h: 0 },
-  // ALPHA (Crypto)
+  // ALPHA (Crypto - 17 assets)
   { symbol: 'BTC/USDT', name: 'Bitcoin', bucket: 'ALPHA', type: 'Crypto', price: 0, change24h: 0 },
   { symbol: 'ETH/USDT', name: 'Ethereum', bucket: 'ALPHA', type: 'Crypto', price: 0, change24h: 0 },
   { symbol: 'SOL/USDT', name: 'Solana', bucket: 'ALPHA', type: 'Crypto', price: 0, change24h: 0 },
@@ -29,6 +28,7 @@ export const INITIAL_ASSETS: AssetInfo[] = [
   { symbol: 'BCH/USDT', name: 'Bitcoin Cash', bucket: 'ALPHA', type: 'Crypto', price: 0, change24h: 0 },
   { symbol: 'UNI/USDT', name: 'Uniswap', bucket: 'ALPHA', type: 'Crypto', price: 0, change24h: 0 },
   { symbol: 'APT/USDT', name: 'Aptos', bucket: 'ALPHA', type: 'Crypto', price: 0, change24h: 0 },
+  { symbol: 'TON/USDT', name: 'Toncoin', bucket: 'ALPHA', type: 'Crypto', price: 0, change24h: 0 },
 ];
 
 export const INITIAL_SUMMARY: PortfolioSummary = {
@@ -78,8 +78,11 @@ export function useSSE(endpoint: string = '/api/v1/events') {
                   name: item.name,
                   bucket: item.bucket,
                   type: 'Crypto',
-                  price: existing?.price || 0,
-                  change24h: existing?.change24h || 0,
+                  price: typeof item.price === 'number' && item.price > 0 ? item.price : (existing?.price || 0),
+                  change24h: typeof item.change24h === 'number' ? item.change24h : (existing?.change24h || 0),
+                  high24h: typeof item.high24h === 'number' ? item.high24h : existing?.high24h,
+                  low24h: typeof item.low24h === 'number' ? item.low24h : existing?.low24h,
+                  volume: typeof item.volume === 'number' ? item.volume : existing?.volume,
                 };
               })
             );

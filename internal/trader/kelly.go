@@ -13,15 +13,35 @@ type KellyConfig struct {
 	DefaultWinLoss float64 // Prior baseline win/loss payoff ratio (e.g. 1.50)
 }
 
+// NewKellyConfig creates a custom or dynamically configured KellyConfig.
+func NewKellyConfig(fraction, minRiskPct, maxRiskPct, defaultWinRate, defaultWinLoss float64) KellyConfig {
+	if fraction <= 0 {
+		fraction = 0.50
+	}
+	if minRiskPct <= 0 {
+		minRiskPct = 0.005
+	}
+	if maxRiskPct <= 0 {
+		maxRiskPct = 0.020
+	}
+	if defaultWinRate <= 0 {
+		defaultWinRate = 0.52
+	}
+	if defaultWinLoss <= 0 {
+		defaultWinLoss = 1.60
+	}
+	return KellyConfig{
+		Fraction:       fraction,
+		MinRiskPct:     minRiskPct,
+		MaxRiskPct:     maxRiskPct,
+		DefaultWinRate: defaultWinRate,
+		DefaultWinLoss: defaultWinLoss,
+	}
+}
+
 // DefaultKellyConfig returns production Half-Kelly parameters conforming to FR-007.
 func DefaultKellyConfig() KellyConfig {
-	return KellyConfig{
-		Fraction:       0.50,  // Half-Kelly
-		MinRiskPct:     0.005, // 0.5%
-		MaxRiskPct:     0.020, // 2.0%
-		DefaultWinRate: 0.52,  // 52% baseline
-		DefaultWinLoss: 1.60,  // 1.6 R:R baseline
-	}
+	return NewKellyConfig(0.50, 0.005, 0.020, 0.52, 1.60)
 }
 
 // CalculateHalfKelly computes dynamic risk fraction using the Half-Kelly criterion:

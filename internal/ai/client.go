@@ -144,12 +144,21 @@ TECHNICAL INDICATOR SNAPSHOT (For Entry Optimization, SL/TP Levels, and Leverage
 - SuperTrend Indicator: %s
 - MACD Histogram: %+.4f
 - Multi-Indicator Confluence Score: %.2f
+- Market Regime: %s (VolRatio: %.2f)
+- Institutional Garman-Klass Volatility: %.4f
+- Institutional Parkinson Volatility: %.4f
+- Kaufman Efficiency Ratio (KER 10): %.2f (Trend signal-to-noise)
+- Chaikin Money Flow (CMF 20): %+.4f (Institutional accumulation/distribution)
+- Normalized ATR (NATR): %.2f%%
 
 Analyze catalyst priority first. If no high-conviction news catalyst exists, output "HOLD". If a catalyst exists, evaluate direction (BUY for Long, SELL for Short), calibrate isolated leverage (5x-10x), and tight SL/TP with 2-hour swing R:R between 2.5:1 and 3:1. Output strict JSON.`,
 		req.Symbol, req.Bucket, req.Quote.Price, req.Quote.Change24h,
 		newsSection,
 		req.IndicatorSnap.RSI, req.IndicatorSnap.SuperTrend, req.IndicatorSnap.Histogram,
-		req.IndicatorSnap.ConfluenceScore)
+		req.IndicatorSnap.ConfluenceScore,
+		req.IndicatorSnap.Regime, req.IndicatorSnap.VolRatio,
+		req.IndicatorSnap.GarmanKlass, req.IndicatorSnap.Parkinson,
+		req.IndicatorSnap.KaufmanER, req.IndicatorSnap.CMF, req.IndicatorSnap.NATR)
 }
 
 // Analyze requests trade analysis from the OpenAI-compatible engine with heuristic fallback.

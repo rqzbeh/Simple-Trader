@@ -128,11 +128,51 @@ def build_advanced_features(df):
     X_df["vol_surge"] = np.log1p(vol / (vol_sma + 1e-9))
     X_df["taker_ratio"] = (taker / (vol + 1e-9)) - 0.5
 
-    # 7. Volatility & Price Range
+    # 7. Institutional Volatility Estimators (Garman-Klass & Parkinson)
+    log_hl = np.log(high / (low + 1e-9))
+    log_co = np.log(close / (open_p + 1e-9))
+    gk_vol = 0.5 * (log_hl ** 2) - (2 * np.log(2) - 1) * (log_co ** 2)
+    parkinson_vol = (log_hl ** 2) / (4 * np.log(2))
+    X_df["gk_vol_norm"] = np.sqrt(np.maximum(gk_vol, 0))
+    X_df["parkinson_vol_norm"] = np.sqrt(np.maximum(parkinson_vol, 0))
+
+    # 8. Kaufman Efficiency Ratio (Fractal Noise vs Trend Direction)
+    change_10 = (close - close.shift(10)).abs()
+    path_10 = close.diff().abs().rolling(10).sum()
+    X_df["kaufman_er_10"] = change_10 / (path_10 + 1e-9)
+
+    change_20 = (close - close.shift(20)).abs()
+    path_20 = close.diff().abs().rolling(20).sum()
+    X_df["kaufman_er_20"] = change_20 / (path_20 + 1e-9)
+
+    # 9. Chaikin Money Flow (CMF) & Accumulation/Distribution Proxy
+    clv = ((close - low) - (high - close)) / (high - low + 1e-9)
+    cmf_20 = (clv * vol).rolling(20).sum() / (vol.rolling(20).sum() + 1e-9)
+    X_df["cmf_20"] = cmf_20
+
+    # 10. Volatility & Volume Z-Scores
+    ret_1 = close.pct_change()
+    ret_vol_20 = ret_1.rolling(20).std()
+    ret_vol_100 = ret_1.rolling(100).std()
+    X_df["volatility_zscore"] = (ret_vol_20 - ret_vol_100) / (ret_vol_100 + 1e-9)
+
+    vol_mean_50 = vol.rolling(50).mean()
+    vol_std_50 = vol.rolling(50).std()
+    X_df["volume_zscore"] = (vol - vol_mean_50) / (vol_std_50 + 1e-9)
+
+    # 11. Volatility & Price Range
     hl_ratio = (high - low) / (close + 1e-9)
     X_df["hl_ratio"] = hl_ratio
     body_ratio = (close - open_p) / (high - low + 1e-9)
     X_df["body_ratio"] = body_ratio
+
+    # 12. Normalized Average True Range (NATR 14)
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr14 = tr.rolling(14).mean()
+    X_df["natr_14"] = atr14 / (close + 1e-9)
 
     # 8. Target definition: Forward return over 4 hours
     forward_horizon = 4

@@ -112,6 +112,24 @@ def compute_asset_features(df):
     X["vol_ratio"] = np.log1p(vol / (vol_sma + 1e-9))
     X["taker_ratio"] = (taker / (vol + 1e-9)) - 0.5
 
+    # Institutional Volatility Estimators (Garman-Klass & Parkinson)
+    log_hl = np.log(high / (low + 1e-9))
+    log_co = np.log(close / (df["open"] + 1e-9))
+    gk_vol = 0.5 * (log_hl ** 2) - (2 * np.log(2) - 1) * (log_co ** 2)
+    parkinson_vol = (log_hl ** 2) / (4 * np.log(2))
+    X["gk_vol_norm"] = np.sqrt(np.maximum(gk_vol, 0))
+    X["parkinson_vol_norm"] = np.sqrt(np.maximum(parkinson_vol, 0))
+
+    # Kaufman Efficiency Ratio
+    change_10 = (close - close.shift(10)).abs()
+    path_10 = close.diff().abs().rolling(10).sum()
+    X["kaufman_er_10"] = change_10 / (path_10 + 1e-9)
+
+    # Chaikin Money Flow (CMF 20)
+    clv = ((close - low) - (high - close)) / (high - low + 1e-9)
+    cmf_20 = (clv * vol).rolling(20).sum() / (vol.rolling(20).sum() + 1e-9)
+    X["cmf_20"] = cmf_20
+
     # Range
     X["hl_ratio"] = (high - low) / (close + 1e-9)
     X["body_ratio"] = (close - df["open"]) / (high - low + 1e-9)
