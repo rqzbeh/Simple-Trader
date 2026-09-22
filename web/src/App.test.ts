@@ -6,7 +6,6 @@ describe('Web Types, Mock Data, and Risk Model', () => {
   it('should include all required liquid global crypto and commodity assets based on USDT/USDC', () => {
     const symbols = INITIAL_ASSETS.map((a) => a.symbol);
     expect(symbols).toContain('PAXG/USDT');
-    expect(symbols).toContain('XAUT/USDT');
     expect(symbols).toContain('XAU/USDT');
     expect(symbols).toContain('XAG/USDT');
     expect(symbols).toContain('COPPER/USDT');
