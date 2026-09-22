@@ -130,6 +130,13 @@ func (e *VectorizedEngine) Run(candles []Candle) *BacktestResult {
 	rsis := indicators.CalculateRSI(closes, 14)
 	macdRes := indicators.CalculateMACD(closes, 12, 26, 9)
 	stRes := indicators.CalculateSuperTrend(dbCandles, 10, 3.0)
+	atrs := indicators.CalculateATR(dbCandles, 14)
+	gkVol := indicators.CalculateGarmanKlass(dbCandles, 14)
+	parkVol := indicators.CalculateParkinson(dbCandles, 14)
+	ker := indicators.CalculateKaufmanER(closes, 10)
+	cmf := indicators.CalculateCMF(dbCandles, 20)
+	natr := indicators.CalculateNATR(dbCandles, 14)
+	regimeClassifier := indicators.NewRegimeClassifier(14, 50)
 
 	capital := e.config.InitialCapital
 	peakCapital := capital
@@ -229,12 +236,21 @@ func (e *VectorizedEngine) Run(candles []Candle) *BacktestResult {
 
 		// 2. Evaluate confluence for trade entry if flat
 		if activePosition == nil && i < n-1 {
+			// Multi-factor regime classification incorporating volatility and Kaufman ER
+			regime, volRatio := regimeClassifier.ClassifyMultiFactorRegime(atrs[i], atrs[:i+1], ker[i], cmf[i])
+
 			snapshot := indicators.Snapshot{
 				RSI:             rsis[i],
 				MACDHistogram:   macdRes.Histogram[i],
 				SuperTrendTrend: stRes.Trend[i],
-				OBI:             0.10, // Default baseline flow
-				Regime:          indicators.RegimeNormalTrending,
+				OBI:             0.10, // Baseline order book flow
+				Regime:          regime,
+				VolRatio:        volRatio,
+				GarmanKlass:     gkVol[i],
+				Parkinson:       parkVol[i],
+				KaufmanER:       ker[i],
+				CMF:             cmf[i],
+				NATR:            natr[i],
 			}
 			score, side := indicators.CalculateConfluence(snapshot, e.config.IndicatorsWeights)
 

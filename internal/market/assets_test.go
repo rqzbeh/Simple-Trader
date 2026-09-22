@@ -42,11 +42,13 @@ func TestSupportedAssetsClassificationAndInvariants(t *testing.T) {
 
 		// 4. Verification of feed source
 		validFeeds := map[string]bool{
-			"BINANCE":     true,
-			"KUCOIN":      true,
-			"COINEX":      true,
-			"YAHOO":       true,
-			"TRADINGVIEW": true,
+			"BINANCE_SPOT":    true,
+			"BINANCE_FUTURES": true,
+			"BINANCE":         true,
+			"KUCOIN":          true,
+			"COINEX":          true,
+			"YAHOO":           true,
+			"TRADINGVIEW":     true,
 		}
 		if !validFeeds[a.FeedSource] {
 			t.Errorf("asset %s has unknown feed source: %s", a.Symbol, a.FeedSource)
@@ -56,7 +58,7 @@ func TestSupportedAssetsClassificationAndInvariants(t *testing.T) {
 
 func TestCommodityExposureGroupsAndBundling(t *testing.T) {
 	t.Run("Gold exposure group bundling", func(t *testing.T) {
-		goldSymbols := []string{"PAXG/USDT", "XAUT/USDT", "XAU/USDT"}
+		goldSymbols := []string{"PAXG/USDT", "XAU/USDT"}
 		for _, sym := range goldSymbols {
 			grp := GetExposureGroup(sym)
 			if grp != "GOLD" {
@@ -116,15 +118,15 @@ func TestCommodityExposureGroupsAndBundling(t *testing.T) {
 			t.Errorf("expected at least 2 correlated symbols for PAXG/USDT, got %v", goldCorrelated)
 		}
 
-		hasXAUT := false
+		hasXAU := false
 		for _, s := range goldCorrelated {
-			if s == "XAUT/USDT" {
-				hasXAUT = true
+			if s == "XAU/USDT" {
+				hasXAU = true
 				break
 			}
 		}
-		if !hasXAUT {
-			t.Errorf("expected XAUT/USDT in correlated symbols of PAXG/USDT, got %v", goldCorrelated)
+		if !hasXAU {
+			t.Errorf("expected XAU/USDT in correlated symbols of PAXG/USDT, got %v", goldCorrelated)
 		}
 	})
 }

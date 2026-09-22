@@ -10,6 +10,8 @@ func CalculateConfluence(snap Snapshot, weights map[string]float64) (float64, st
 	macdWeight := 1.0
 	stWeight := 1.0
 	microWeight := 1.5 // Microstructure (OBI + CVD) carries strong institutional weight
+	cmfWeight := 1.2   // Chaikin Money Flow institutional accumulation/distribution
+	kerWeight := 1.0   // Kaufman Efficiency Ratio (signal-to-noise)
 
 	if w, ok := weights["RSI"]; ok && w > 0 {
 		rsiWeight = w
@@ -23,8 +25,14 @@ func CalculateConfluence(snap Snapshot, weights map[string]float64) (float64, st
 	if w, ok := weights["MICROSTRUCTURE"]; ok && w > 0 {
 		microWeight = w
 	}
+	if w, ok := weights["CMF"]; ok && w > 0 {
+		cmfWeight = w
+	}
+	if w, ok := weights["KER"]; ok && w > 0 {
+		kerWeight = w
+	}
 
-	totalWeight := rsiWeight + macdWeight + stWeight + microWeight
+	totalWeight := rsiWeight + macdWeight + stWeight + microWeight + cmfWeight + kerWeight
 	if totalWeight == 0 {
 		return 0.0, "NEUTRAL"
 	}
@@ -59,10 +67,38 @@ func CalculateConfluence(snap Snapshot, weights map[string]float64) (float64, st
 	microScore := EvaluateMicrostructure(snap.OBI, snap.Divergence)
 	directionalScore += microScore * microWeight
 
+	// Chaikin Money Flow contribution (-1.0 to +1.0)
+	// CMF > +0.05 indicates institutional accumulation (bullish)
+	// CMF < -0.05 indicates institutional distribution (bearish)
+	if snap.CMF > 0.02 {
+		cmfNorm := math.Min(1.0, snap.CMF/0.15)
+		directionalScore += cmfNorm * cmfWeight
+	} else if snap.CMF < -0.02 {
+		cmfNorm := math.Max(-1.0, snap.CMF/0.15)
+		directionalScore += cmfNorm * cmfWeight
+	}
+
+	// Kaufman Efficiency Ratio (KER) acts as a trend conviction multiplier or filter.
+	// When KER is high (> 0.50), trend signals are clean and amplified.
+	// When KER is low (< 0.25), market is noise-dominated.
+	if snap.KaufmanER > 0 {
+		if snap.KaufmanER >= 0.50 {
+			bonus := 0.35
+			if directionalScore < 0 {
+				bonus = -0.35
+			}
+			directionalScore += bonus * kerWeight
+		} else if snap.KaufmanER < 0.25 {
+			directionalScore *= 0.75
+		}
+	}
+
 	// Apply Volatility Regime dampening/adaptation
 	// Under High Volatility Chop, damp directional conviction to filter out false breakouts
 	if snap.Regime == RegimeHighVolChop {
 		directionalScore *= 0.60
+	} else if snap.Regime == RegimeVolatileBreakout {
+		directionalScore *= 1.15
 	}
 
 	normalizedScore := directionalScore / totalWeight

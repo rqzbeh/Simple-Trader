@@ -19,33 +19,23 @@ type AssetDefinition struct {
 // Alpha assets are liquid cryptocurrencies.
 var SupportedAssets = []AssetDefinition{
 	// --- CORE ASSETS (Commodities & Wealth Preservation / Inflation Hedges) ---
-	// 1. Gold Exposure Group (Correlated Tokenized & Contract Assets)
+	// 1. Gold Exposure Group (Tokenized & Futures Assets)
 	{
 		Symbol:        "PAXG/USDT",
 		Name:          "PAX Gold (Tokenized Gold)",
 		Bucket:        "CORE",
 		ExposureGroup: "GOLD",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "PAXGUSDT",
 		MinSize:       0.001,
 		Decimals:      2,
 	},
 	{
-		Symbol:        "XAUT/USDT",
-		Name:          "Tether Gold (Tokenized Gold)",
-		Bucket:        "CORE",
-		ExposureGroup: "GOLD",
-		FeedSource:    "BINANCE",
-		SourceParam:   "XAUTUSDT",
-		MinSize:       0.001,
-		Decimals:      2,
-	},
-	{
 		Symbol:        "XAU/USDT",
-		Name:          "Gold / Tether",
+		Name:          "Gold Futures",
 		Bucket:        "CORE",
 		ExposureGroup: "GOLD",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_FUTURES",
 		SourceParam:   "XAUUSDT",
 		MinSize:       0.001,
 		Decimals:      2,
@@ -54,10 +44,10 @@ var SupportedAssets = []AssetDefinition{
 	// 2. Silver Exposure Group
 	{
 		Symbol:        "XAG/USDT",
-		Name:          "Silver / Tether",
+		Name:          "Silver Futures",
 		Bucket:        "CORE",
 		ExposureGroup: "SILVER",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_FUTURES",
 		SourceParam:   "XAGUSDT",
 		MinSize:       0.01,
 		Decimals:      2,
@@ -69,7 +59,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Copper Futures",
 		Bucket:        "CORE",
 		ExposureGroup: "COPPER",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_FUTURES",
 		SourceParam:   "COPPERUSDT",
 		MinSize:       0.1,
 		Decimals:      3,
@@ -78,10 +68,10 @@ var SupportedAssets = []AssetDefinition{
 	// 4. Platinum Exposure Group (Precious / Green Hydrogen Catalyst)
 	{
 		Symbol:        "XPT/USDT",
-		Name:          "Platinum / Tether",
+		Name:          "Platinum Futures",
 		Bucket:        "CORE",
 		ExposureGroup: "PLATINUM",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_FUTURES",
 		SourceParam:   "XPTUSDT",
 		MinSize:       0.01,
 		Decimals:      2,
@@ -90,10 +80,10 @@ var SupportedAssets = []AssetDefinition{
 	// 5. Palladium Exposure Group (Precious / Automotive & Electronics)
 	{
 		Symbol:        "XPD/USDT",
-		Name:          "Palladium / Tether",
+		Name:          "Palladium Futures",
 		Bucket:        "CORE",
 		ExposureGroup: "PALLADIUM",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_FUTURES",
 		SourceParam:   "XPDUSDT",
 		MinSize:       0.01,
 		Decimals:      2,
@@ -129,7 +119,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Bitcoin",
 		Bucket:        "ALPHA",
 		ExposureGroup: "BTC",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "BTCUSDT",
 		MinSize:       0.0001,
 		Decimals:      2,
@@ -139,7 +129,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Ethereum",
 		Bucket:        "ALPHA",
 		ExposureGroup: "ETH",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "ETHUSDT",
 		MinSize:       0.001,
 		Decimals:      2,
@@ -149,7 +139,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Solana",
 		Bucket:        "ALPHA",
 		ExposureGroup: "SOL",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "SOLUSDT",
 		MinSize:       0.01,
 		Decimals:      2,
@@ -159,7 +149,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "BNB",
 		Bucket:        "ALPHA",
 		ExposureGroup: "BNB",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "BNBUSDT",
 		MinSize:       0.01,
 		Decimals:      2,
@@ -169,7 +159,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "XRP",
 		Bucket:        "ALPHA",
 		ExposureGroup: "XRP",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "XRPUSDT",
 		MinSize:       1.0,
 		Decimals:      4,
@@ -179,7 +169,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Dogecoin",
 		Bucket:        "ALPHA",
 		ExposureGroup: "DOGE",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "DOGEUSDT",
 		MinSize:       1.0,
 		Decimals:      4,
@@ -189,7 +179,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Cardano",
 		Bucket:        "ALPHA",
 		ExposureGroup: "ADA",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "ADAUSDT",
 		MinSize:       1.0,
 		Decimals:      4,
@@ -199,7 +189,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Avalanche",
 		Bucket:        "ALPHA",
 		ExposureGroup: "AVAX",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "AVAXUSDT",
 		MinSize:       0.1,
 		Decimals:      3,
@@ -209,7 +199,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Sui",
 		Bucket:        "ALPHA",
 		ExposureGroup: "SUI",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "SUIUSDT",
 		MinSize:       1.0,
 		Decimals:      4,
@@ -219,7 +209,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Chainlink",
 		Bucket:        "ALPHA",
 		ExposureGroup: "LINK",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "LINKUSDT",
 		MinSize:       0.1,
 		Decimals:      3,
@@ -229,7 +219,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Polkadot",
 		Bucket:        "ALPHA",
 		ExposureGroup: "DOT",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "DOTUSDT",
 		MinSize:       0.1,
 		Decimals:      3,
@@ -239,7 +229,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "NEAR Protocol",
 		Bucket:        "ALPHA",
 		ExposureGroup: "NEAR",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "NEARUSDT",
 		MinSize:       0.1,
 		Decimals:      3,
@@ -249,7 +239,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Litecoin",
 		Bucket:        "ALPHA",
 		ExposureGroup: "LTC",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "LTCUSDT",
 		MinSize:       0.01,
 		Decimals:      2,
@@ -259,7 +249,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Bitcoin Cash",
 		Bucket:        "ALPHA",
 		ExposureGroup: "BCH",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "BCHUSDT",
 		MinSize:       0.01,
 		Decimals:      2,
@@ -269,7 +259,7 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Uniswap",
 		Bucket:        "ALPHA",
 		ExposureGroup: "UNI",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "UNIUSDT",
 		MinSize:       0.1,
 		Decimals:      3,
@@ -279,8 +269,18 @@ var SupportedAssets = []AssetDefinition{
 		Name:          "Aptos",
 		Bucket:        "ALPHA",
 		ExposureGroup: "APT",
-		FeedSource:    "BINANCE",
+		FeedSource:    "BINANCE_SPOT",
 		SourceParam:   "APTUSDT",
+		MinSize:       0.1,
+		Decimals:      3,
+	},
+	{
+		Symbol:        "TON/USDT",
+		Name:          "Toncoin",
+		Bucket:        "ALPHA",
+		ExposureGroup: "TON",
+		FeedSource:    "BINANCE_SPOT",
+		SourceParam:   "TONUSDT",
 		MinSize:       0.1,
 		Decimals:      3,
 	},
@@ -314,12 +314,12 @@ func GetBucket(symbol string) string {
 }
 
 // GetExposureGroup returns the economic exposure bundle for the symbol.
-// Gold commodities ("PAXG/USDT", "XAUT/USDT", "XAU/USDT") share the "GOLD" group
+// Gold commodities ("PAXG/USDT", "XAU/USDT") share the "GOLD" group
 // to bundle identical physical/tokenized exposure and prevent splitting or duplicating cash.
 func GetExposureGroup(symbol string) string {
 	clean := strings.ToUpper(symbol)
 	switch clean {
-	case "PAXG/USDT", "XAUT/USDT", "XAU/USDT", "PAXGUSDT", "XAUTUSDT", "XAUUSDT":
+	case "PAXG/USDT", "XAU/USDT", "PAXGUSDT", "XAUUSDT":
 		return "GOLD"
 	case "XAG/USDT", "XAGUSDT":
 		return "SILVER"

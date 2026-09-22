@@ -111,7 +111,7 @@ func NewThompsonSampler(seed int64) *ThompsonSampler {
 		rng = rand.New(rand.NewSource(time.Now().UnixNano()))
 	}
 
-	indicators := []string{"RSI", "MACD", "SUPERTREND", "MICROSTRUCTURE"}
+	indicators := []string{"RSI", "MACD", "SUPERTREND", "MICROSTRUCTURE", "CMF", "KER"}
 	posteriors := make(map[string]*BetaPosterior)
 	for _, ind := range indicators {
 		posteriors[ind] = NewBetaPosterior(2.0, 2.0)
@@ -182,6 +182,23 @@ func (ts *ThompsonSampler) RecordOutcome(outcome TradeOutcome) {
 	// 4. Microstructure
 	if post, exists := ts.posteriors["MICROSTRUCTURE"]; exists {
 		post.Update(isWin, 1.0)
+	}
+
+	// 5. Chaikin Money Flow (CMF)
+	if post, exists := ts.posteriors["CMF"]; exists {
+		cmfAligned := (outcome.Side == "BUY" && outcome.CMF > 0) ||
+			(outcome.Side == "SELL" && outcome.CMF < 0)
+		if cmfAligned {
+			post.Update(isWin, 1.0)
+		}
+	}
+
+	// 6. Kaufman Efficiency Ratio (KER)
+	if post, exists := ts.posteriors["KER"]; exists {
+		// High efficiency (>0.40) aligns with trend following
+		if outcome.KaufmanER >= 0.40 {
+			post.Update(isWin, 1.0)
+		}
 	}
 }
 

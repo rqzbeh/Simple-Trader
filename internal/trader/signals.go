@@ -26,17 +26,68 @@ type AIAnalyzer interface {
 	Analyze(ctx context.Context, req ai.DecisionRequest) (*ai.DecisionResponse, error)
 }
 
+// SignalConfig encapsulates dynamically configured trading parameters loaded from .env.
+type SignalConfig struct {
+	MinRiskRewardRatio float64
+	DefaultLeverage    int
+	MinStopLossPct     float64
+	MaxStopLossPct     float64
+	MinTakeProfitPct   float64
+	MaxTakeProfitPct   float64
+	MaxRiskPerTradePct float64
+}
+
+// DefaultSignalConfig returns standard baseline parameters.
+func DefaultSignalConfig() SignalConfig {
+	return SignalConfig{
+		MinRiskRewardRatio: 2.5,
+		DefaultLeverage:    8,
+		MinStopLossPct:     0.6,
+		MaxStopLossPct:     2.5,
+		MinTakeProfitPct:   1.5,
+		MaxTakeProfitPct:   8.0,
+		MaxRiskPerTradePct: 0.015,
+	}
+}
+
 // SignalService coordinates news-first catalyst signal generation and lifecycle monitoring.
 type SignalService struct {
 	store    SignalStoreInterface
 	aiClient AIAnalyzer
+	config   SignalConfig
 }
 
-// NewSignalService initializes a new two-sided futures signal service.
-func NewSignalService(store SignalStoreInterface, aiClient AIAnalyzer) *SignalService {
+// NewSignalService initializes a new two-sided futures signal service with dynamic configuration.
+func NewSignalService(store SignalStoreInterface, aiClient AIAnalyzer, cfgs ...SignalConfig) *SignalService {
+	cfg := DefaultSignalConfig()
+	if len(cfgs) > 0 {
+		provided := cfgs[0]
+		if provided.MinRiskRewardRatio > 0 {
+			cfg.MinRiskRewardRatio = provided.MinRiskRewardRatio
+		}
+		if provided.DefaultLeverage > 0 {
+			cfg.DefaultLeverage = provided.DefaultLeverage
+		}
+		if provided.MinStopLossPct > 0 {
+			cfg.MinStopLossPct = provided.MinStopLossPct
+		}
+		if provided.MaxStopLossPct > 0 {
+			cfg.MaxStopLossPct = provided.MaxStopLossPct
+		}
+		if provided.MinTakeProfitPct > 0 {
+			cfg.MinTakeProfitPct = provided.MinTakeProfitPct
+		}
+		if provided.MaxTakeProfitPct > 0 {
+			cfg.MaxTakeProfitPct = provided.MaxTakeProfitPct
+		}
+		if provided.MaxRiskPerTradePct > 0 {
+			cfg.MaxRiskPerTradePct = provided.MaxRiskPerTradePct
+		}
+	}
 	return &SignalService{
 		store:    store,
 		aiClient: aiClient,
+		config:   cfg,
 	}
 }
 
@@ -100,15 +151,15 @@ func (s *SignalService) EvaluateMarketSignal(
 		return nil, nil
 	}
 
-	// 4. Calculate protective price bounds (Stop Loss & Take Profit) for 2-hour swing setups
+	// 4. Calculate protective price bounds (Stop Loss & Take Profit) dynamically using configured bounds
 	entryPrice := quote.Price
 	slPct := aiResp.SuggestedStopLossPct
-	if slPct < 0.6 || slPct > 2.5 {
-		slPct = 1.0 // 1.0% Stop Loss default for 2-hour intraday setups
+	if slPct < s.config.MinStopLossPct || slPct > s.config.MaxStopLossPct {
+		slPct = (s.config.MinStopLossPct + s.config.MaxStopLossPct) / 2.0
 	}
 	tpPct := aiResp.SuggestedTakeProfitPct
-	if tpPct < 1.5 || tpPct > 8.0 {
-		tpPct = 3.0 // 3.0% Take Profit default (3:1 R:R target)
+	if tpPct < s.config.MinTakeProfitPct || tpPct > s.config.MaxTakeProfitPct {
+		tpPct = slPct * s.config.MinRiskRewardRatio
 	}
 
 	var stopLoss, takeProfit float64
@@ -120,11 +171,10 @@ func (s *SignalService) EvaluateMarketSignal(
 		takeProfit = entryPrice * (1.0 - (tpPct / 100.0))
 	}
 
-	// 5. Validate & Enforce Risk-Reward Ratio between 2.5:1 and 3:1
+	// 5. Validate & Enforce Risk-Reward Ratio dynamically sourced from config
 	rr, err := CalculateRiskRewardRatio(entryPrice, stopLoss, takeProfit, dir)
-	if err != nil || rr < 2.5 {
-		// Enforce institutional minimum R:R = 2.75:1 (justifies transaction fees and risk)
-		targetRR := 2.75
+	if err != nil || rr < s.config.MinRiskRewardRatio {
+		targetRR := s.config.MinRiskRewardRatio
 		riskDist := math.Abs(entryPrice - stopLoss)
 		if dir == DirectionLong {
 			takeProfit = entryPrice + (targetRR * riskDist)
@@ -134,14 +184,17 @@ func (s *SignalService) EvaluateMarketSignal(
 		rr = targetRR
 	}
 
-	// 6. Leverage and Capital Sizing for 2-Hour Trades
+	// 6. Leverage and Capital Sizing dynamically sourced from config
 	leverage := aiResp.Leverage
-	if leverage < 5 || leverage > 10 {
-		leverage = 8 // Default 8x isolated leverage for liquid crypto futures
+	if leverage < 1 || leverage > s.config.DefaultLeverage {
+		leverage = s.config.DefaultLeverage
 	}
 
-	// Institutional constraint: 1.5% equity risk per trade (supports accounts from $100 to institutional scale)
-	maxRiskPct := 0.015
+	// Dynamic equity risk per trade sourced from config
+	maxRiskPct := s.config.MaxRiskPerTradePct
+	if maxRiskPct <= 0 {
+		maxRiskPct = 0.015
+	}
 	_, marginRequired, _, err := CalculatePositionSizing(
 		totalEquity,
 		maxRiskPct,

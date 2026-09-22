@@ -210,11 +210,33 @@ func (s *Server) setupRoutes() {
 	// Real-Time Server-Sent Events (SSE)
 	r.Get("/api/v1/events", s.broadcaster.ServeHTTP)
 
-	// Market Assets
+	// Market Assets (Enriched with latest live cached ticker prices)
 	r.Get("/api/v1/assets", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		assets := market.GetSupportedAssets()
+		type enrichedAsset struct {
+			market.AssetDefinition
+			Price     float64 `json:"price"`
+			Change24h float64 `json:"change24h"`
+			High24h   float64 `json:"high24h"`
+			Low24h    float64 `json:"low24h"`
+			Volume    float64 `json:"volume"`
+		}
+		enriched := make([]enrichedAsset, len(assets))
+		for i, a := range assets {
+			enriched[i] = enrichedAsset{AssetDefinition: a}
+			if s.marketData != nil {
+				if q, ok := s.marketData.GetQuote(a.Symbol); ok {
+					enriched[i].Price = q.Price
+					enriched[i].Change24h = q.Change24h
+					enriched[i].High24h = q.High24h
+					enriched[i].Low24h = q.Low24h
+					enriched[i].Volume = q.Volume
+				}
+			}
+		}
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"assets": market.GetSupportedAssets(),
+			"assets": enriched,
 		})
 	})
 

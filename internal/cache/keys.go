@@ -88,6 +88,11 @@ type IndicatorSnapshot struct {
 	CVD             float64 `json:"cvd"`
 	Divergence      string  `json:"divergence"`
 	VolRatio        float64 `json:"vol_ratio"`
+	GarmanKlass     float64 `json:"garman_klass"`
+	Parkinson       float64 `json:"parkinson"`
+	KaufmanER       float64 `json:"kaufman_er"`
+	CMF             float64 `json:"cmf"`
+	NATR            float64 `json:"natr"`
 	UpdatedAt       int64   `json:"updated_at"`
 }
 

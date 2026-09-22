@@ -11,6 +11,7 @@ const (
 	RegimeLowVolMeanReversion MarketRegime = "LOW_VOL_CONSOLIDATION"
 	RegimeNormalTrending      MarketRegime = "NORMAL_TRENDING"
 	RegimeHighVolChop         MarketRegime = "HIGH_VOL_CHOP"
+	RegimeVolatileBreakout    MarketRegime = "VOLATILE_BREAKOUT"
 )
 
 // RegimeClassifier classifies market conditions based on normalized ATR and historical volatility ratio.
@@ -74,7 +75,33 @@ func (rc *RegimeClassifier) ClassifyRegime(currentATR float64, historicalATRs []
 	return RegimeNormalTrending, volRatio
 }
 
-// CalculateSizingMultiplier computes volatility-adjusted risk scaling factor.
+// ClassifyMultiFactorRegime evaluates volatility, efficiency, and money flow to classify
+// market state with institutional quantitative precision (Jim Simons standard).
+//
+// Regimes:
+// - RegimeNormalTrending: Elevated efficiency (KER >= 0.45) with healthy volatility ratio (0.65 - 1.40).
+// - RegimeLowVolMeanReversion: Subdued volatility ratio (< 0.75) and low/moderate KER (< 0.45).
+// - RegimeHighVolChop: High volatility ratio (> 1.30) OR erratic price path (KER < 0.25 under elevated vol).
+func (rc *RegimeClassifier) ClassifyMultiFactorRegime(currentATR float64, historicalATRs []float64, kaufmanER float64, cmf float64) (MarketRegime, float64) {
+	regime, volRatio := rc.ClassifyRegime(currentATR, historicalATRs)
+
+	// If the price action is purely erratic (noise-dominated, KER < 0.25) while volatility is elevated
+	if kaufmanER > 0 && kaufmanER < 0.25 && volRatio >= 1.05 {
+		return RegimeHighVolChop, volRatio
+	}
+
+	// If there is strong directional efficiency (KER >= 0.50) and money flow confirms the move
+	if kaufmanER >= 0.50 && volRatio <= 1.45 {
+		return RegimeNormalTrending, volRatio
+	}
+
+	// Low volatility with low KER is prime mean-reversion
+	if volRatio < 0.75 && kaufmanER < 0.40 {
+		return RegimeLowVolMeanReversion, volRatio
+	}
+
+	return regime, volRatio
+}
 func CalculateSizingMultiplier(regime MarketRegime, volRatio float64) float64 {
 	switch regime {
 	case RegimeHighVolChop:

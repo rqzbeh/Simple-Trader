@@ -111,6 +111,12 @@ func main() {
 	}
 	allocator := trader.NewAllocator(allocatorConfig)
 	execEngine := trader.NewExecutionEngine(initialCap)
+	if cfg != nil {
+		execEngine.SetFrictionModel(trader.NewFrictionModel(cfg.MakerFeeRate, cfg.TakerFeeRate, 0.05, cfg.MaxSlippagePct))
+	}
+	if cfg != nil {
+		execEngine.SetFrictionModel(trader.NewFrictionModel(cfg.MakerFeeRate, cfg.TakerFeeRate, 0.05, cfg.MaxSlippagePct))
+	}
 
 	// 6. Initialize HTTP & SSE Broadcaster Server
 	srv := server.NewServer(cfg, store, rCache, aiClient, allocator, execEngine)

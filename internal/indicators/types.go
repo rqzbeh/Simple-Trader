@@ -40,4 +40,9 @@ type Snapshot struct {
 	Divergence      DivergenceType
 	Regime          MarketRegime
 	VolRatio        float64
+	GarmanKlass     float64
+	Parkinson       float64
+	KaufmanER       float64
+	CMF             float64
+	NATR            float64
 }

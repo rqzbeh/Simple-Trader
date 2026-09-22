@@ -69,7 +69,7 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
       const res = await fetch(`${apiBaseUrl}/api/v1/signals/futures/decide-all`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bucket: 'ALPHA' }),
+        body: JSON.stringify({ bucket: 'ALL' }),
       });
       const data = await res.json();
       fetchSignals();
@@ -131,7 +131,6 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
             <option value="DOGE/USDT">DOGE/USDT</option>
             <option value="SUI/USDT">SUI/USDT</option>
             <option value="PAXG/USDT">PAXG/USDT (Tokenized Gold)</option>
-            <option value="XAUT/USDT">XAUT/USDT (Tether Gold)</option>
             <option value="XAU/USDT">XAU/USDT (Gold Futures)</option>
             <option value="XAG/USDT">XAG/USDT (Silver Futures)</option>
             <option value="BNB/USDT">BNB/USDT</option>

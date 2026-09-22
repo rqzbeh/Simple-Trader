@@ -436,7 +436,7 @@ export const App: React.FC = () => {
                 <TradingViewChart symbol={selectedSymbol} data={candleData} />
               </div>
               <div className="lg:col-span-1">
-                <AISignalFeed selectedSymbol={selectedSymbol} currentPrice={selectedAsset.price} />
+                <AISignalFeed selectedSymbol={selectedSymbol} currentPrice={selectedAsset?.price ?? 0} />
               </div>
             </div>
 

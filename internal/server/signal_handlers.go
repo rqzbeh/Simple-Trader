@@ -20,6 +20,24 @@ import (
 )
 
 // ListFuturesSignalsHandler handles GET /api/v1/signals/futures
+func (s *Server) newSignalService() *trader.SignalService {
+	var sigCfg trader.SignalConfig
+	if s.cfg != nil {
+		sigCfg = trader.SignalConfig{
+			MinRiskRewardRatio: s.cfg.MinRiskRewardRatio,
+			DefaultLeverage:    s.cfg.DefaultLeverage,
+			MinStopLossPct:     s.cfg.MinStopLossPct,
+			MaxStopLossPct:     s.cfg.MaxStopLossPct,
+			MinTakeProfitPct:   s.cfg.MinTakeProfitPct,
+			MaxTakeProfitPct:   s.cfg.MaxTakeProfitPct,
+			MaxRiskPerTradePct: s.cfg.MaxRiskPerTradePct,
+		}
+	} else {
+		sigCfg = trader.DefaultSignalConfig()
+	}
+	return trader.NewSignalService(s.dbStore, s.aiClient, sigCfg)
+}
+
 func (s *Server) ListFuturesSignalsHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
@@ -217,7 +235,7 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		return nil, nil // HOLD - capital fully reserved in active trades
 	}
 
-	signalSvc := trader.NewSignalService(s.dbStore, s.aiClient)
+	signalSvc := s.newSignalService()
 	sig, err := signalSvc.EvaluateMarketSignal(
 		ctx,
 		symbol,
@@ -320,21 +338,31 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 	_ = json.NewDecoder(r.Body).Decode(&req)
 
 	symbols := req.Symbols
-	if len(symbols) == 0 {
-		if s.screener != nil {
-			symbols = s.screener.GetActiveUniverse()
-		}
-		if len(symbols) == 0 {
-			symbols = []string{
-				"BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT",
-				"BNB/USDT", "XRP/USDT", "LINK/USDT", "AVAX/USDT",
-			}
-		}
+	bucket := strings.ToUpper(strings.TrimSpace(req.Bucket))
+	if bucket == "" {
+		bucket = "ALL"
 	}
 
-	bucket := req.Bucket
-	if bucket == "" {
-		bucket = "ALPHA"
+	if len(symbols) == 0 {
+		allAssets := market.GetSupportedAssets()
+		switch bucket {
+		case "CORE":
+			for _, a := range allAssets {
+				if a.Bucket == "CORE" {
+					symbols = append(symbols, a.Symbol)
+				}
+			}
+		case "ALPHA":
+			for _, a := range allAssets {
+				if a.Bucket == "ALPHA" {
+					symbols = append(symbols, a.Symbol)
+				}
+			}
+		default: // "ALL" or unrecognized
+			for _, a := range allAssets {
+				symbols = append(symbols, a.Symbol)
+			}
+		}
 	}
 
 	// Ingest latest breaking news headlines once for the batch
@@ -463,7 +491,7 @@ func (s *Server) CloseFuturesSignalHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	signalSvc := trader.NewSignalService(s.dbStore, s.aiClient)
+	signalSvc := s.newSignalService()
 	_, _, pnl, roi, err := signalSvc.CheckSignalResolution(r.Context(), targetSig, req.ExitPrice)
 	if err != nil {
 		http.Error(w, `{"error":"failed to resolve signal: `+err.Error()+`"}`, http.StatusInternalServerError)
@@ -531,7 +559,7 @@ func (s *Server) CheckSignalExitForTick(tick cache.TickerQuote) {
 		return
 	}
 
-	signalSvc := trader.NewSignalService(s.dbStore, s.aiClient)
+	signalSvc := s.newSignalService()
 	resolved, exitReason, pnl, roi, err := signalSvc.CheckSignalResolution(ctx, sig, tick.Price)
 	if err != nil || !resolved {
 		return

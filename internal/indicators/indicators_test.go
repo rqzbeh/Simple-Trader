@@ -85,12 +85,16 @@ func TestConfluenceScore(t *testing.T) {
 		"RSI":        1.2,
 		"MACD":       1.0,
 		"SUPERTREND": 1.5,
+		"CMF":        1.2,
+		"KER":        1.0,
 	}
 
 	snap := indicators.Snapshot{
 		RSI:             65.0,
 		MACDHistogram:   0.8,
 		SuperTrendTrend: "BULL",
+		CMF:             0.12,
+		KaufmanER:       0.65,
 	}
 
 	score, direction := indicators.CalculateConfluence(snap, weights)
@@ -220,4 +224,92 @@ func TestVWAP(t *testing.T) {
 		t.Errorf("expected VWAP 15.0, got %f", vwap[1])
 	}
 }
+
+func TestInstitutionalIndicators(t *testing.T) {
+	candles := make([]db.Candle, 30)
+	for i := range candles {
+		candles[i] = db.Candle{
+			High:   100.0 + float64(i)*0.5 + 2.0,
+			Low:    100.0 + float64(i)*0.5 - 1.5,
+			Open:   100.0 + float64(i)*0.5,
+			Close:  100.0 + float64(i)*0.5 + 1.0,
+			Volume: 1000 + float64(i)*10,
+		}
+	}
+
+	// 1. Garman-Klass
+	gk := indicators.CalculateGarmanKlass(candles, 14)
+	if len(gk) != len(candles) {
+		t.Fatalf("expected GK length %d, got %d", len(candles), len(gk))
+	}
+	if gk[len(gk)-1] <= 0 {
+		t.Errorf("expected positive Garman-Klass volatility, got %f", gk[len(gk)-1])
+	}
+
+	// 2. Parkinson
+	pk := indicators.CalculateParkinson(candles, 14)
+	if len(pk) != len(candles) {
+		t.Fatalf("expected Parkinson length %d, got %d", len(candles), len(pk))
+	}
+	if pk[len(pk)-1] <= 0 {
+		t.Errorf("expected positive Parkinson volatility, got %f", pk[len(pk)-1])
+	}
+
+	// 3. Kaufman ER
+	closes := make([]float64, len(candles))
+	for i := range candles {
+		closes[i] = candles[i].Close
+	}
+	ker := indicators.CalculateKaufmanER(closes, 10)
+	if len(ker) != len(closes) {
+		t.Fatalf("expected KER length %d, got %d", len(closes), len(ker))
+	}
+	// Clean monotonic trend should yield high efficiency
+	if ker[len(ker)-1] < 0.80 {
+		t.Errorf("expected high efficiency for monotonic trend, got %f", ker[len(ker)-1])
+	}
+
+	// 4. Chaikin Money Flow (CMF)
+	cmf := indicators.CalculateCMF(candles, 20)
+	if len(cmf) != len(candles) {
+		t.Fatalf("expected CMF length %d, got %d", len(candles), len(cmf))
+	}
+	// Close is near high, so CMF should be positive accumulation
+	if cmf[len(cmf)-1] <= 0 {
+		t.Errorf("expected positive CMF accumulation, got %f", cmf[len(cmf)-1])
+	}
+
+	// 5. NATR
+	natr := indicators.CalculateNATR(candles, 14)
+	if len(natr) != len(candles) {
+		t.Fatalf("expected NATR length %d, got %d", len(candles), len(natr))
+	}
+	if natr[len(natr)-1] <= 0 {
+		t.Errorf("expected positive NATR, got %f", natr[len(natr)-1])
+	}
+}
+
+func TestClassifyMultiFactorRegime(t *testing.T) {
+	rc := indicators.NewRegimeClassifier(14, 5)
+	hist := []float64{10.0, 10.0, 10.0, 10.0, 10.0}
+
+	// High KER and reasonable vol -> NORMAL_TRENDING
+	regime, _ := rc.ClassifyMultiFactorRegime(11.0, hist, 0.65, 0.10)
+	if regime != indicators.RegimeNormalTrending {
+		t.Errorf("expected RegimeNormalTrending for high KER, got %s", regime)
+	}
+
+	// Low KER (<0.25) with elevated vol (volRatio >= 1.05) -> HIGH_VOL_CHOP
+	regimeChop, _ := rc.ClassifyMultiFactorRegime(12.0, hist, 0.15, -0.05)
+	if regimeChop != indicators.RegimeHighVolChop {
+		t.Errorf("expected RegimeHighVolChop for noisy price action, got %s", regimeChop)
+	}
+
+	// Low vol ratio (<0.75) and low KER (<0.40) -> LOW_VOL_CONSOLIDATION
+	regimeMR, _ := rc.ClassifyMultiFactorRegime(6.5, hist, 0.30, 0.0)
+	if regimeMR != indicators.RegimeLowVolMeanReversion {
+		t.Errorf("expected RegimeLowVolMeanReversion, got %s", regimeMR)
+	}
+}
+
 
