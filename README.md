@@ -57,7 +57,7 @@ docker compose up -d
 
 ```bash
 curl http://localhost:8080/health
-# Response: {"status":"healthy","version":"2.0.0-pure-go","model_id":"gpt-4o"}
+# Response: {"status":"healthy","version":"2.0.0-pure-go","model_id":"custom-model-id"}
 ```
 
 ---
@@ -159,7 +159,7 @@ REDIS_URL=redis://localhost:6379/0
 # AI Engine Gateway
 AI_BASE_URL=https://api.openai.com/v1
 AI_API_KEY=your_api_key_here
-AI_MODEL_ID=gpt-4o
+AI_MODEL_ID=your-model-id
 AI_TEMPERATURE=0.2
 AI_TIMEOUT_SECONDS=30
 AI_REASONING_EFFORT=high

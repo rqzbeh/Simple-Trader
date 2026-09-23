@@ -19,7 +19,7 @@ import (
 func TestHealthAndAssetsEndpoints(t *testing.T) {
 	cfg := &config.Config{
 		Port:         "8080",
-		AIModelID:    "gpt-4o-mini",
+		AIModelID:    "test-model",
 		IsProduction: false,
 	}
 

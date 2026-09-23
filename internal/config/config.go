@@ -79,7 +79,7 @@ func Load() (*Config, error) {
 		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6379/0"),
 		AIBaseURL:           getEnv("AI_BASE_URL", "https://api.openai.com/v1"),
 		AIAPIKey:            getEnv("AI_API_KEY", ""),
-		AIModelID:           getEnv("AI_MODEL_ID", "gpt-4o"),
+		AIModelID:           getEnv("AI_MODEL_ID", ""),
 		AITemperature:       getEnvFloat("AI_TEMPERATURE", 0.2),
 		AITimeoutSeconds:    getEnvInt("AI_TIMEOUT_SECONDS", 30),
 		AIReasoningEffort:   getEnv("AI_REASONING_EFFORT", "high"),

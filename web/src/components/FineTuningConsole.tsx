@@ -2,11 +2,20 @@ import React, { useState } from 'react';
 import { Download, Terminal, Settings, CheckCircle2 } from 'lucide-react';
 
 export const FineTuningConsole: React.FC = () => {
-  const [modelId, setModelId] = useState<string>('gpt-4o-mini');
+  const [modelId, setModelId] = useState<string>('');
   const [apiKey, setApiKey] = useState<string>('');
-  const [endpoint, setEndpoint] = useState<string>('https://api.openai.com/v1');
+  const [endpoint, setEndpoint] = useState<string>('Configured via Environment');
   const [isSaved, setIsSaved] = useState<boolean>(false);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
+
+  React.useEffect(() => {
+    fetch('/api/v1/system/config')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.ai_model_id) setModelId(data.ai_model_id);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,25 +38,10 @@ export const FineTuningConsole: React.FC = () => {
         a.click();
         document.body.removeChild(a);
       } else {
-        // Mock fallback if offline
-        const mockPair = JSON.stringify({
-          messages: [
-            { role: 'system', content: 'You are an autonomous quantitative trading engine.' },
-            { role: 'user', content: 'Market State: XAU/USD Bullish Trending RSI: 58.4 SuperTrend: BULL' },
-            { role: 'assistant', content: '{"decision":"BUY","confidence":0.88,"rationale":"Bullish continuation above $2960"}' },
-          ],
-        });
-        const blob = new Blob([mockPair + '\n'], { type: 'application/jsonl' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `dataset_${Date.now()}.jsonl`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        alert('No closed trade datasets available from database for export.');
       }
-    } catch {
-      // Fallback
+    } catch (err: any) {
+      alert(err.message || 'Dataset export failed');
     } finally {
       setIsDownloading(false);
     }
@@ -94,7 +88,7 @@ export const FineTuningConsole: React.FC = () => {
               type="text"
               value={modelId}
               onChange={(e) => setModelId(e.target.value)}
-              placeholder="gpt-4o-mini / ft:gpt-4o:simple-trader"
+              placeholder="Configured via environment (.env)"
               className="w-full px-3 py-1.5 text-xs font-mono bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-500"
             />
           </div>
