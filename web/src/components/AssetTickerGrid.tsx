@@ -17,7 +17,9 @@ export const AssetTickerGrid: React.FC<AssetTickerGridProps> = ({
     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-2.5">
       {assets.map((asset) => {
         const isSelected = asset.symbol === selectedSymbol;
-        const isPositive = asset.change24h >= 0;
+        const price = typeof asset.price === 'number' && !isNaN(asset.price) ? asset.price : 0;
+        const change = typeof asset.change24h === 'number' && !isNaN(asset.change24h) ? asset.change24h : 0;
+        const isPositive = change >= 0;
 
         return (
           <button
@@ -46,7 +48,7 @@ export const AssetTickerGrid: React.FC<AssetTickerGridProps> = ({
 
             <div className="mt-1">
               <div className="text-base font-mono font-bold text-slate-900 dark:text-slate-100">
-                ${asset.price < 10 ? asset.price.toFixed(4) : asset.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ${price < 10 ? price.toFixed(4) : price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
               <div
                 className={`flex items-center space-x-1 text-xs font-mono font-medium mt-0.5 ${
@@ -60,7 +62,7 @@ export const AssetTickerGrid: React.FC<AssetTickerGridProps> = ({
                 )}
                 <span>
                   {isPositive ? '+' : ''}
-                  {asset.change24h.toFixed(2)}%
+                  {change.toFixed(2)}%
                 </span>
               </div>
             </div>

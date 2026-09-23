@@ -74,18 +74,18 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                   </span>
                 </td>
                 <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
-                  {pos.size}
+                  {pos.size ?? 0}
                 </td>
                 <td className="px-4 py-3 text-slate-700 dark:text-slate-300">
-                  ${pos.entryPrice < 10 ? pos.entryPrice.toFixed(4) : pos.entryPrice.toFixed(2)}
+                  ${(pos.entryPrice ?? 0) < 10 ? (pos.entryPrice ?? 0).toFixed(4) : (pos.entryPrice ?? 0).toFixed(2)}
                 </td>
                 <td className="px-4 py-3 font-medium text-slate-900 dark:text-slate-100">
-                  ${pos.currentPrice < 10 ? pos.currentPrice.toFixed(4) : pos.currentPrice.toFixed(2)}
+                  ${(pos.currentPrice ?? 0) < 10 ? (pos.currentPrice ?? 0).toFixed(4) : (pos.currentPrice ?? 0).toFixed(2)}
                 </td>
                 <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
-                  <span className="text-rose-500 dark:text-rose-400">${pos.stopLoss < 10 ? pos.stopLoss.toFixed(4) : pos.stopLoss.toFixed(2)}</span>
+                  <span className="text-rose-500 dark:text-rose-400">${(pos.stopLoss ?? 0) < 10 ? (pos.stopLoss ?? 0).toFixed(4) : (pos.stopLoss ?? 0).toFixed(2)}</span>
                   {' / '}
-                  <span className="text-emerald-500 dark:text-emerald-400">${pos.takeProfit < 10 ? pos.takeProfit.toFixed(4) : pos.takeProfit.toFixed(2)}</span>
+                  <span className="text-emerald-500 dark:text-emerald-400">${(pos.takeProfit ?? 0) < 10 ? (pos.takeProfit ?? 0).toFixed(4) : (pos.takeProfit ?? 0).toFixed(2)}</span>
                 </td>
                 <td className="px-4 py-3 text-slate-500 dark:text-slate-400">
                   {pos.liquidationPrice ? (
@@ -98,7 +98,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                 </td>
                 <td className="px-4 py-3 font-bold">
                   <span className={isProfit ? 'text-emerald-500' : 'text-rose-500'}>
-                    {isProfit ? '+' : ''}${pos.unrealizedPnL.toFixed(2)} ({isProfit ? '+' : ''}{pos.pnlPercent.toFixed(2)}%)
+                    {isProfit ? '+' : ''}${(pos.unrealizedPnL ?? 0).toFixed(2)} ({isProfit ? '+' : ''}{(pos.pnlPercent ?? 0).toFixed(2)}%)
                   </span>
                 </td>
                 <td className="px-4 py-3 text-right">

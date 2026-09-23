@@ -92,7 +92,33 @@ export function useSSE(endpoint: string = '/api/v1/events') {
         if (positionsRes && positionsRes.ok) {
           const data = await positionsRes.json();
           if (isMounted && Array.isArray(data)) {
-            setPositions(data);
+            const normalized: TradePosition[] = data.map((item: any) => {
+              const entry = Number(item.entryPrice ?? item.entry_price ?? 0);
+              const curr = Number(item.currentPrice ?? item.current_price ?? entry);
+              const sz = Number(item.size ?? item.position_size ?? 0);
+              const side = (item.side === 'SELL' || item.side === 'SHORT') ? 'SELL' : 'BUY';
+              const diff = side === 'BUY' ? curr - entry : entry - curr;
+              const uPnL = item.unrealizedPnL !== undefined ? Number(item.unrealizedPnL) : (item.realized_pnl !== undefined && item.status === 'CLOSED' ? Number(item.realized_pnl) : Number((diff * sz).toFixed(2)));
+              const pnlPct = entry > 0 ? Number(((diff / entry) * 100).toFixed(2)) : 0;
+
+              return {
+                id: String(item.id),
+                symbol: item.symbol,
+                bucket: item.bucket,
+                side,
+                entryPrice: entry,
+                currentPrice: curr,
+                size: sz,
+                stopLoss: Number(item.stopLoss ?? item.stop_loss ?? 0),
+                takeProfit: Number(item.takeProfit ?? item.take_profit ?? 0),
+                unrealizedPnL: uPnL,
+                pnlPercent: pnlPct,
+                entryTime: String(item.entryTime ?? item.entry_time ?? new Date().toISOString()),
+                leverage: Number(item.leverage ?? 1),
+                liquidationPrice: Number(item.liquidationPrice ?? item.liquidation_price ?? 0),
+              };
+            });
+            setPositions(normalized);
           }
         }
 
@@ -251,10 +277,32 @@ export function useSSE(endpoint: string = '/api/v1/events') {
         es.addEventListener('trade', (e: MessageEvent) => {
           try {
             const trade = JSON.parse(e.data);
-            if (trade.position) {
+            const pos = trade.position || trade;
+            if (pos && pos.symbol) {
+              const entry = Number(pos.entryPrice ?? pos.entry_price ?? 0);
+              const curr = Number(pos.currentPrice ?? pos.current_price ?? entry);
+              const sz = Number(pos.size ?? pos.position_size ?? 0);
+              const side = (pos.side === 'SELL' || pos.side === 'SHORT') ? 'SELL' : 'BUY';
+              const diff = side === 'BUY' ? curr - entry : entry - curr;
+              const normalizedPos: TradePosition = {
+                id: String(pos.id),
+                symbol: pos.symbol,
+                bucket: pos.bucket,
+                side,
+                entryPrice: entry,
+                currentPrice: curr,
+                size: sz,
+                stopLoss: Number(pos.stopLoss ?? pos.stop_loss ?? 0),
+                takeProfit: Number(pos.takeProfit ?? pos.take_profit ?? 0),
+                unrealizedPnL: Number((diff * sz).toFixed(2)),
+                pnlPercent: entry > 0 ? Number(((diff / entry) * 100).toFixed(2)) : 0,
+                entryTime: String(pos.entryTime ?? pos.entry_time ?? new Date().toISOString()),
+                leverage: Number(pos.leverage ?? 1),
+                liquidationPrice: Number(pos.liquidationPrice ?? pos.liquidation_price ?? 0),
+              };
               setPositions((prev) => [
-                trade.position,
-                ...prev.filter((p) => p.id !== trade.position.id),
+                normalizedPos,
+                ...prev.filter((p) => p.id !== normalizedPos.id),
               ]);
             }
           } catch (err) {
