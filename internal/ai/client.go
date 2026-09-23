@@ -48,6 +48,7 @@ type openAIChatRequest struct {
 	Temperature     *float64        `json:"temperature,omitempty"`
 	ReasoningEffort string          `json:"reasoning_effort,omitempty"`
 	ToolChoice      string          `json:"tool_choice,omitempty"`
+	Stream          *bool           `json:"stream,omitempty"`
 	ResponseFormat  *responseFormat `json:"response_format,omitempty"`
 }
 
@@ -173,11 +174,13 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (*DecisionRes
 		url = fmt.Sprintf("%s/v1/chat/completions", strings.TrimRight(c.cfg.BaseURL, "/"))
 	}
 
+	streamFalse := false
 	body := openAIChatRequest{
 		Model:           c.cfg.ModelID,
 		Temperature:     &c.cfg.Temperature,
 		ReasoningEffort: c.cfg.ReasoningEffort,
 		ToolChoice:      "none",
+		Stream:          &streamFalse,
 		Messages: []openAIMessage{
 			{Role: "system", Content: c.BuildSystemPrompt(req)},
 			{Role: "user", Content: c.BuildUserPrompt(req)},
@@ -216,18 +219,48 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (*DecisionRes
 		return c.fallbackHeuristic(req), nil
 	}
 
-	var chatResp openAIChatResponse
-	if err := json.Unmarshal(respBody, &chatResp); err != nil {
-		log.Printf("[WARN] AI response JSON unmarshal error: %v. Body: %s. Using fallback.", err, string(respBody))
-		return c.fallbackHeuristic(req), nil
+	var content string
+	trimmedBody := bytes.TrimSpace(respBody)
+
+	if bytes.HasPrefix(trimmedBody, []byte("data:")) || bytes.Contains(trimmedBody, []byte("\ndata:")) {
+		// Gateway returned SSE streaming format; aggregate chunk content deltas
+		var sb strings.Builder
+		for _, line := range strings.Split(string(respBody), "\n") {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "data:") {
+				payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+				if payload == "[DONE]" || payload == "" {
+					continue
+				}
+				var chunk struct {
+					Choices []struct {
+						Delta struct {
+							Content string `json:"content"`
+						} `json:"delta"`
+					} `json:"choices"`
+				}
+				if err := json.Unmarshal([]byte(payload), &chunk); err == nil {
+					if len(chunk.Choices) > 0 {
+						sb.WriteString(chunk.Choices[0].Delta.Content)
+					}
+				}
+			}
+		}
+		content = sb.String()
+	} else {
+		var chatResp openAIChatResponse
+		if err := json.Unmarshal(respBody, &chatResp); err != nil {
+			log.Printf("[WARN] AI response JSON unmarshal error: %v. Body: %s. Using fallback.", err, string(respBody))
+			return c.fallbackHeuristic(req), nil
+		}
+		if len(chatResp.Choices) == 0 {
+			log.Printf("[WARN] AI response returned 0 choices. Using fallback.")
+			return c.fallbackHeuristic(req), nil
+		}
+		content = chatResp.Choices[0].Message.Content
 	}
 
-	if len(chatResp.Choices) == 0 {
-		log.Printf("[WARN] AI response returned 0 choices. Using fallback.")
-		return c.fallbackHeuristic(req), nil
-	}
-
-	content := strings.TrimSpace(chatResp.Choices[0].Message.Content)
+	content = strings.TrimSpace(content)
 	// Strip markdown code fences if present
 	content = strings.TrimPrefix(content, "```json")
 	content = strings.TrimPrefix(content, "```")

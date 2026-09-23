@@ -51,6 +51,10 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
           bucket: 'ALPHA',
         }),
       });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100) || 'Evaluation request failed'}`);
+      }
       const data = await res.json();
       if (data.status === 'HOLD') {
         alert(`AI Decision: HOLD for ${selectedSymbol}\n\n${data.message}`);
@@ -73,6 +77,10 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ bucket: 'ALL' }),
       });
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`HTTP ${res.status}: ${errText.slice(0, 100) || 'Batch evaluation failed'}`);
+      }
       const data = await res.json();
       fetchSignals();
       if (data.signals_count > 0) {

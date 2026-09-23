@@ -462,29 +462,27 @@ func (s *Server) setupRoutes() {
 
 		totalEquity := initialEquity
 		cash := initialEquity
-		coreEquity := totalEquity * targetCorePct
-		alphaEquity := totalEquity * targetAlphaPct
+		coreEquity := initialEquity * targetCorePct
+		alphaEquity := initialEquity * targetAlphaPct
 
 		if s.execEngine != nil {
-			totalEquity = s.execEngine.GetTotalEquity()
 			cash = s.execEngine.GetCash()
+			totalEquity = s.execEngine.GetTotalEquity()
 			initialEquity = s.execEngine.GetInitialEquity()
+			openTrades := s.execEngine.GetOpenTrades()
+			if len(openTrades) > 0 {
+				cEq, aEq := s.execEngine.GetBucketEquities()
+				if cEq > 0 {
+					coreEquity = cEq
+				}
+				if aEq > 0 {
+					alphaEquity = aEq
+				}
+			}
 		}
 
 		if s.allocator != nil {
 			breakdown := s.allocator.Get3TierBreakdown()
-			if te, ok := breakdown["total_equity"].(float64); ok && te > 0 {
-				totalEquity = te
-			}
-			if c, ok := breakdown["tier1_cash"].(float64); ok && c > 0 {
-				cash = c
-			}
-			if ce, ok := breakdown["tier2_core"].(float64); ok && ce > 0 {
-				coreEquity = ce
-			}
-			if ae, ok := breakdown["tier3_tactical"].(float64); ok && ae > 0 {
-				alphaEquity = ae
-			}
 			if tcp, ok := breakdown["tier2_target_pct"].(float64); ok && tcp > 0 {
 				targetCorePct = tcp
 			}

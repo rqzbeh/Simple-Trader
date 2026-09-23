@@ -153,10 +153,15 @@ func main() {
 
 	// Synchronous initial fetch to populate prices before serving clients
 	if initialQuotes, err := liveFeed.FetchAllLiveTicks(ctx); err == nil {
+		quoteMap := make(map[string]cache.TickerQuote)
 		for _, q := range initialQuotes {
 			srv.IngestTick(q)
+			quoteMap[q.Symbol] = q
 		}
-		log.Printf("[INFO] Initial price fetch complete: %d assets priced.", len(initialQuotes))
+		coreCap := initialCap * cfg.CoreTargetPct
+		alphaCap := initialCap * cfg.AlphaTargetPct
+		execEngine.SeedInitialAllocations(coreCap, alphaCap, quoteMap)
+		log.Printf("[INFO] Initial price fetch complete: %d assets priced. Seeded active portfolio positions.", len(initialQuotes))
 	} else {
 		log.Printf("[WARN] Initial price fetch failed: %v. Prices will be populated from live feed.", err)
 	}

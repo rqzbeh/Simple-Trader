@@ -212,11 +212,12 @@ export function useSSE(endpoint: string = '/api/v1/events') {
                     else alphaPnL += p.unrealizedPnL;
                   });
 
-                  const baseCore = (prevSummary.initialEquity || prevSummary.totalEquity) * prevSummary.targetCorePct;
-                  const baseAlpha = (prevSummary.initialEquity || prevSummary.totalEquity) * prevSummary.targetAlphaPct;
+                  const baseCore = (prevSummary.initialEquity || 100000) * (prevSummary.targetCorePct || 0.60);
+                  const baseAlpha = (prevSummary.initialEquity || 100000) * (prevSummary.targetAlphaPct || 0.40);
                   const dynamicCore = Number((baseCore + corePnL).toFixed(2));
                   const dynamicAlpha = Number((baseAlpha + alphaPnL).toFixed(2));
-                  const dynamicTotal = Number((dynamicCore + dynamicAlpha).toFixed(2));
+                  const unallocatedCash = Math.max(0, (prevSummary.initialEquity || 100000) * (1.0 - (prevSummary.targetCorePct || 0.60) - (prevSummary.targetAlphaPct || 0.40)));
+                  const dynamicTotal = Number((dynamicCore + dynamicAlpha + unallocatedCash).toFixed(2));
                   const peak = Math.max(prevSummary.peakEquity, dynamicTotal);
                   const dd = peak > 0 ? Number((((peak - dynamicTotal) / peak) * 100).toFixed(2)) : 0;
 
