@@ -378,7 +378,7 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 
 	results := make([]AssetScanResult, len(symbols))
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 4) // concurrency limit
+	sem := make(chan struct{}, 12) // concurrency limit
 
 	for i, sym := range symbols {
 		wg.Add(1)
@@ -389,7 +389,10 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 
 			b := market.GetBucket(symbol)
 
-			sig, err := s.EvaluateSymbolSignal(r.Context(), symbol, b, newsHeadlines)
+			evalCtx, evalCancel := context.WithTimeout(r.Context(), 15*time.Second)
+			defer evalCancel()
+
+			sig, err := s.EvaluateSymbolSignal(evalCtx, symbol, b, newsHeadlines)
 			if err != nil {
 				results[idx] = AssetScanResult{
 					Symbol: symbol,

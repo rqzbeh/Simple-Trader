@@ -3,9 +3,11 @@ package trader
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
+	"github.com/rqzbeh/simple-trader/internal/cache"
 	"github.com/rqzbeh/simple-trader/internal/db"
 )
 
@@ -283,6 +285,184 @@ func (e *ExecutionEngine) GetInitialEquity() float64 {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 	return e.initialEquity
+}
+
+// GetBucketEquities returns the marked-to-market equity allocated to CORE and ALPHA buckets.
+func (e *ExecutionEngine) GetBucketEquities(currentPrices ...map[string]float64) (coreEquity float64, alphaEquity float64) {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	var prices map[string]float64
+	if len(currentPrices) > 0 {
+		prices = currentPrices[0]
+	}
+
+	for sym, pos := range e.positions {
+		currPrice, ok := prices[sym]
+		if !ok && e.priceProvider != nil {
+			if liveP, err := e.priceProvider.GetLatestPrice(sym); err == nil && liveP > 0 {
+				currPrice = liveP
+				ok = true
+			}
+		}
+		if !ok {
+			currPrice = pos.EntryPrice
+		}
+		var diff float64
+		if pos.Side == "BUY" || pos.Side == "LONG" {
+			diff = currPrice - pos.EntryPrice
+		} else {
+			diff = pos.EntryPrice - currPrice
+		}
+		unrealized := diff * pos.PositionSize
+		lev := pos.Leverage
+		if lev < 1 {
+			lev = 1
+		}
+		margin := (pos.PositionSize * pos.EntryPrice) / float64(lev)
+		posEquity := margin + unrealized
+		if pos.Bucket == "CORE" {
+			coreEquity += posEquity
+		} else {
+			alphaEquity += posEquity
+		}
+	}
+	return coreEquity, alphaEquity
+}
+
+// SeedInitialAllocations establishes initial paper holdings for Core and Alpha buckets
+// so the portfolio has active market exposure that fluctuates in real time with market prices.
+func (e *ExecutionEngine) SeedInitialAllocations(coreCapital, alphaCapital float64, quotes map[string]cache.TickerQuote) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if len(e.positions) > 0 {
+		return // Positions already active, preserve existing
+	}
+
+	now := time.Now()
+
+	// 1. Seed Core Commodities (PAXG/USDT Gold, XAG/USDT Silver)
+	if coreCapital > 0 {
+		paxgQuote, hasPaxg := quotes["PAXG/USDT"]
+		if hasPaxg && paxgQuote.Price > 0 {
+			paxgCap := coreCapital * 0.60
+			size := paxgCap / paxgQuote.Price
+			e.orderCounter++
+			e.positions["PAXG/USDT"] = &db.Trade{
+				ID:           e.orderCounter,
+				Symbol:       "PAXG/USDT",
+				Bucket:       "CORE",
+				Side:         "BUY",
+				EntryPrice:   paxgQuote.Price,
+				EntryTime:    now,
+				PositionSize: math.Round(size*1000) / 1000,
+				Leverage:     1,
+				StopLoss:     paxgQuote.Price * 0.95,
+				TakeProfit:   paxgQuote.Price * 1.15,
+				Status:       "OPEN",
+				CreatedAt:    now,
+			}
+			e.cash -= paxgCap
+		}
+
+		xagQuote, hasXag := quotes["XAG/USDT"]
+		if hasXag && xagQuote.Price > 0 {
+			xagCap := coreCapital * 0.40
+			size := xagCap / xagQuote.Price
+			e.orderCounter++
+			e.positions["XAG/USDT"] = &db.Trade{
+				ID:           e.orderCounter,
+				Symbol:       "XAG/USDT",
+				Bucket:       "CORE",
+				Side:         "BUY",
+				EntryPrice:   xagQuote.Price,
+				EntryTime:    now,
+				PositionSize: math.Round(size*100) / 100,
+				Leverage:     1,
+				StopLoss:     xagQuote.Price * 0.95,
+				TakeProfit:   xagQuote.Price * 1.15,
+				Status:       "OPEN",
+				CreatedAt:    now,
+			}
+			e.cash -= xagCap
+		}
+	}
+
+	// 2. Seed Alpha Tactical Crypto (BTC/USDT, ETH/USDT, SOL/USDT)
+	if alphaCapital > 0 {
+		btcQuote, hasBtc := quotes["BTC/USDT"]
+		if hasBtc && btcQuote.Price > 0 {
+			btcMargin := alphaCapital * 0.50
+			lev := 2
+			notional := btcMargin * float64(lev)
+			size := notional / btcQuote.Price
+			e.orderCounter++
+			e.positions["BTC/USDT"] = &db.Trade{
+				ID:           e.orderCounter,
+				Symbol:       "BTC/USDT",
+				Bucket:       "ALPHA",
+				Side:         "BUY",
+				EntryPrice:   btcQuote.Price,
+				EntryTime:    now,
+				PositionSize: math.Round(size*10000) / 10000,
+				Leverage:     lev,
+				StopLoss:     btcQuote.Price * 0.97,
+				TakeProfit:   btcQuote.Price * 1.08,
+				Status:       "OPEN",
+				CreatedAt:    now,
+			}
+			e.cash -= btcMargin
+		}
+
+		ethQuote, hasEth := quotes["ETH/USDT"]
+		if hasEth && ethQuote.Price > 0 {
+			ethMargin := alphaCapital * 0.30
+			lev := 2
+			notional := ethMargin * float64(lev)
+			size := notional / ethQuote.Price
+			e.orderCounter++
+			e.positions["ETH/USDT"] = &db.Trade{
+				ID:           e.orderCounter,
+				Symbol:       "ETH/USDT",
+				Bucket:       "ALPHA",
+				Side:         "BUY",
+				EntryPrice:   ethQuote.Price,
+				EntryTime:    now,
+				PositionSize: math.Round(size*1000) / 1000,
+				Leverage:     lev,
+				StopLoss:     ethQuote.Price * 0.97,
+				TakeProfit:   ethQuote.Price * 1.08,
+				Status:       "OPEN",
+				CreatedAt:    now,
+			}
+			e.cash -= ethMargin
+		}
+
+		solQuote, hasSol := quotes["SOL/USDT"]
+		if hasSol && solQuote.Price > 0 {
+			solMargin := alphaCapital * 0.20
+			lev := 2
+			notional := solMargin * float64(lev)
+			size := notional / solQuote.Price
+			e.orderCounter++
+			e.positions["SOL/USDT"] = &db.Trade{
+				ID:           e.orderCounter,
+				Symbol:       "SOL/USDT",
+				Bucket:       "ALPHA",
+				Side:         "BUY",
+				EntryPrice:   solQuote.Price,
+				EntryTime:    now,
+				PositionSize: math.Round(size*100) / 100,
+				Leverage:     lev,
+				StopLoss:     solQuote.Price * 0.96,
+				TakeProfit:   solQuote.Price * 1.10,
+				Status:       "OPEN",
+				CreatedAt:    now,
+			}
+			e.cash -= solMargin
+		}
+	}
 }
 
 // SetTotalEquity adjusts the capital basis grounded in the investor ledger.
