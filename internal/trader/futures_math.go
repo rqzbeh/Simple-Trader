@@ -141,8 +141,8 @@ func CalculatePositionSizing(
 	if equity <= 0 || availableAlphaCapital <= 0 {
 		return 0, 0, 0, errors.New("equity and available capital must be positive")
 	}
-	if maxRiskPct <= 0 || maxRiskPct > 0.05 {
-		maxRiskPct = 0.02 // default 2.0% safety cap
+	if maxRiskPct <= 0 || maxRiskPct > 0.10 {
+		maxRiskPct = 0.02 // default 2.0% safety cap, max 10%
 	}
 	if leverage < 1 {
 		leverage = 1
