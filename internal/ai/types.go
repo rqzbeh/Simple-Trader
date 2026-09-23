@@ -4,12 +4,18 @@ import "github.com/rqzbeh/simple-trader/internal/cache"
 
 // ClientConfig holds configuration settings for the OpenAI-compatible AI engine.
 type ClientConfig struct {
-	BaseURL         string
-	APIKey          string
-	ModelID         string
-	Temperature     float64
-	TimeoutSec      int
-	ReasoningEffort string
+	BaseURL            string
+	APIKey             string
+	ModelID            string
+	Temperature        float64
+	TimeoutSec         int
+	ReasoningEffort    string
+	DefaultLeverage    int
+	MinStopLossPct     float64
+	MaxStopLossPct     float64
+	MinTakeProfitPct   float64
+	MaxTakeProfitPct   float64
+	MinRiskRewardRatio float64
 }
 
 // DecisionRequest bundles market state, indicators, and dynamic weights for LLM inference.

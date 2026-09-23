@@ -73,20 +73,26 @@ func main() {
 
 	// 4. Initialize AI Engine & Client
 	aiCfg := ai.ClientConfig{
-		BaseURL:         cfg.AIBaseURL,
-		ModelID:         cfg.AIModelID,
-		APIKey:          cfg.AIAPIKey,
-		Temperature:     cfg.AITemperature,
-		TimeoutSec:      cfg.AITimeoutSeconds,
-		ReasoningEffort: cfg.AIReasoningEffort,
+		BaseURL:            cfg.AIBaseURL,
+		ModelID:            cfg.AIModelID,
+		APIKey:             cfg.AIAPIKey,
+		Temperature:        cfg.AITemperature,
+		TimeoutSec:         cfg.AITimeoutSeconds,
+		ReasoningEffort:    cfg.AIReasoningEffort,
+		DefaultLeverage:    cfg.DefaultLeverage,
+		MinStopLossPct:     cfg.MinStopLossPct,
+		MaxStopLossPct:     cfg.MaxStopLossPct,
+		MinTakeProfitPct:   cfg.MinTakeProfitPct,
+		MaxTakeProfitPct:   cfg.MaxTakeProfitPct,
+		MinRiskRewardRatio: cfg.MinRiskRewardRatio,
 	}
 	aiClient := ai.NewClient(aiCfg)
 	_ = ai.NewWeightEngine()
 
 	// 5. Initialize Trading & Risk Allocator & Execution Engine
-	initialCap := 10000.0
-	if cfg != nil && cfg.InitialCapital > 0 {
-		initialCap = cfg.InitialCapital
+	initialCap := cfg.InitialCapital
+	if initialCap <= 0 {
+		initialCap = 10000.0
 	}
 	if store != nil {
 		// Ground initial capital strictly in the PostgreSQL investor ledger
@@ -108,14 +114,22 @@ func main() {
 		CoreTargetPct:      cfg.CoreTargetPct,
 		AlphaTargetPct:     cfg.AlphaTargetPct,
 		MaxRiskPerTradePct: cfg.MaxRiskPerTradePct,
+		Kelly: trader.NewKellyConfig(
+			cfg.KellyFraction,
+			cfg.MinRiskPerTradePct,
+			cfg.MaxRiskPerTradePct,
+			0.52,
+			1.60,
+		),
 	}
 	allocator := trader.NewAllocator(allocatorConfig)
 	execEngine := trader.NewExecutionEngine(initialCap)
 	if cfg != nil {
-		execEngine.SetFrictionModel(trader.NewFrictionModel(cfg.MakerFeeRate, cfg.TakerFeeRate, 0.05, cfg.MaxSlippagePct))
-	}
-	if cfg != nil {
-		execEngine.SetFrictionModel(trader.NewFrictionModel(cfg.MakerFeeRate, cfg.TakerFeeRate, 0.05, cfg.MaxSlippagePct))
+		impact := cfg.ImpactFactor
+		if impact <= 0 {
+			impact = 0.05
+		}
+		execEngine.SetFrictionModel(trader.NewFrictionModel(cfg.MakerFeeRate, cfg.TakerFeeRate, impact, cfg.MaxSlippagePct))
 	}
 
 	// 6. Initialize HTTP & SSE Broadcaster Server
@@ -136,15 +150,32 @@ func main() {
 
 	// 7. Start Market Live Ticker Feed from Online Exchange APIs (Binance)
 	liveFeed := market.NewLiveMarketFeed(market.GetSupportedAssets())
-	ticks := liveFeed.Subscribe(ctx, 1*time.Second)
+
+	// Synchronous initial fetch to populate prices before serving clients
+	if initialQuotes, err := liveFeed.FetchAllLiveTicks(ctx); err == nil {
+		for _, q := range initialQuotes {
+			srv.IngestTick(q)
+		}
+		log.Printf("[INFO] Initial price fetch complete: %d assets priced.", len(initialQuotes))
+	} else {
+		log.Printf("[WARN] Initial price fetch failed: %v. Prices will be populated from live feed.", err)
+	}
+
+	ticks := liveFeed.Subscribe(ctx, 3*time.Second)
 	log.Println("[INFO] Real-time live exchange market feed active. Ingesting online fluctuating ticks...")
 
 	// 7b. Initialize Circuit Breaker & Autonomous Trading Daemon
 	circuit := trader.NewCircuitBreaker(cfg.InitialCapital, cfg.MaxDrawdownLimitPct)
 	strategyEvaluator := trader.NewAIStrategyEvaluator(aiClient, srv.NewsCrawler())
+	strategyEvaluator.SetSnapshotProvider(srv)
+	allAssets := market.GetSupportedAssets()
+	daemonSymbols := make([]string, len(allAssets))
+	for i, a := range allAssets {
+		daemonSymbols[i] = a.Symbol
+	}
 	daemonCfg := trader.DaemonConfig{
 		TickInterval: 2 * time.Second,
-		Symbols:      []string{"BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT", "BNB/USDT", "XRP/USDT", "LINK/USDT", "EUR/USDT"},
+		Symbols:      daemonSymbols,
 	}
 	daemon := trader.NewTradingDaemon(daemonCfg, execEngine, allocator, circuit, srv.MarketData(), strategyEvaluator)
 

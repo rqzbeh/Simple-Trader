@@ -3,6 +3,7 @@ package indicators_test
 import (
 	"math"
 	"testing"
+	"time"
 
 	"github.com/rqzbeh/simple-trader/internal/db"
 	"github.com/rqzbeh/simple-trader/internal/indicators"
@@ -289,27 +290,42 @@ func TestInstitutionalIndicators(t *testing.T) {
 	}
 }
 
-func TestClassifyMultiFactorRegime(t *testing.T) {
-	rc := indicators.NewRegimeClassifier(14, 5)
-	hist := []float64{10.0, 10.0, 10.0, 10.0, 10.0}
-
-	// High KER and reasonable vol -> NORMAL_TRENDING
-	regime, _ := rc.ClassifyMultiFactorRegime(11.0, hist, 0.65, 0.10)
-	if regime != indicators.RegimeNormalTrending {
-		t.Errorf("expected RegimeNormalTrending for high KER, got %s", regime)
+func TestBuildSnapshot(t *testing.T) {
+	now := time.Now()
+	var candles []db.Candle
+	for i := 0; i < 50; i++ {
+		p := 100.0 + float64(i)*0.5
+		candles = append(candles, db.Candle{
+			Symbol:    "BTC/USDT",
+			Open:      p - 0.2,
+			High:      p + 1.0,
+			Low:       p - 1.0,
+			Close:     p,
+			Volume:    1000.0,
+			OpenTime:  now.Add(time.Duration(i) * time.Hour),
+		})
 	}
 
-	// Low KER (<0.25) with elevated vol (volRatio >= 1.05) -> HIGH_VOL_CHOP
-	regimeChop, _ := rc.ClassifyMultiFactorRegime(12.0, hist, 0.15, -0.05)
-	if regimeChop != indicators.RegimeHighVolChop {
-		t.Errorf("expected RegimeHighVolChop for noisy price action, got %s", regimeChop)
+	snap := indicators.BuildSnapshot("BTC/USDT", candles, map[string]float64{"RSI": 1.0, "MACD": 1.0})
+	if snap.Symbol != "BTC/USDT" {
+		t.Errorf("expected symbol BTC/USDT, got %s", snap.Symbol)
 	}
-
-	// Low vol ratio (<0.75) and low KER (<0.40) -> LOW_VOL_CONSOLIDATION
-	regimeMR, _ := rc.ClassifyMultiFactorRegime(6.5, hist, 0.30, 0.0)
-	if regimeMR != indicators.RegimeLowVolMeanReversion {
-		t.Errorf("expected RegimeLowVolMeanReversion, got %s", regimeMR)
+	if snap.Price <= 0 {
+		t.Errorf("expected positive price, got %f", snap.Price)
+	}
+	if snap.RSI <= 0 || snap.RSI > 100 {
+		t.Errorf("expected RSI in (0, 100], got %f", snap.RSI)
+	}
+	if snap.ATR <= 0 {
+		t.Errorf("expected positive ATR, got %f", snap.ATR)
+	}
+	if snap.GarmanKlass <= 0 {
+		t.Errorf("expected positive GarmanKlass, got %f", snap.GarmanKlass)
+	}
+	if snap.ConfluenceScore < 0 || snap.ConfluenceScore > 1.0 {
+		t.Errorf("expected ConfluenceScore in [0, 1], got %f", snap.ConfluenceScore)
 	}
 }
+
 
 

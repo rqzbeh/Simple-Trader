@@ -346,7 +346,7 @@ func GetExposureGroup(symbol string) string {
 	}
 }
 
-// AreCorrelatedCommodities returns true if two symbols share the same underlying commodity exposure (e.g. PAXG & XAUT).
+// AreCorrelatedCommodities returns true if two symbols share the same underlying commodity exposure (e.g. PAXG & XAU).
 func AreCorrelatedCommodities(symA, symB string) bool {
 	if symA == symB {
 		return true

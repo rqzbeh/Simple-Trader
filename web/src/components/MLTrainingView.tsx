@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Cpu, Play, CheckCircle2, AlertCircle, RefreshCw, BarChart3, Database, Shield, Zap, TrendingUp, Layers } from 'lucide-react';
-import { MLStatusResponse, MLTrainingRun } from '../types';
+import { MLStatusResponse, MLTrainingRun, AssetInfo } from '../types';
+import { INITIAL_ASSETS } from '../hooks/useSSE';
 
 interface MLTrainingViewProps {
   apiBaseUrl?: string;
+  assets?: AssetInfo[];
 }
 
-export const MLTrainingView: React.FC<MLTrainingViewProps> = ({ apiBaseUrl = '' }) => {
+export const MLTrainingView: React.FC<MLTrainingViewProps> = ({ apiBaseUrl = '', assets }) => {
   const [status, setStatus] = useState<MLStatusResponse | null>(null);
   const [runs, setRuns] = useState<MLTrainingRun[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -196,19 +198,11 @@ export const MLTrainingView: React.FC<MLTrainingViewProps> = ({ apiBaseUrl = '' 
                 onChange={(e) => setSymbol(e.target.value)}
                 className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-slate-200 focus:outline-none focus:border-sky-500"
               >
-                <option value="BTCUSDT">BTC/USDT (Bitcoin)</option>
-                <option value="ETHUSDT">ETH/USDT (Ethereum)</option>
-                <option value="SOLUSDT">SOL/USDT (Solana)</option>
-                <option value="AVAXUSDT">AVAX/USDT (Avalanche)</option>
-                <option value="PAXGUSDT">PAXG/USDT (PAX Gold)</option>
-                <option value="XAUTUSDT">XAUT/USDT (Tether Gold)</option>
-                <option value="XAUUSDT">XAU/USDT (Gold Futures)</option>
-                <option value="XAGUSDT">XAG/USDT (Silver Futures)</option>
-                <option value="DOGEUSDT">DOGE/USDT (Dogecoin)</option>
-                <option value="SUIUSDT">SUI/USDT (Sui)</option>
-                <option value="BNBUSDT">BNB/USDT (BNB)</option>
-                <option value="LINKUSDT">LINK/USDT (Chainlink)</option>
-                <option value="XRPUSDT">XRP/USDT (XRP)</option>
+                {(assets || INITIAL_ASSETS).map((a) => (
+                  <option key={a.symbol} value={a.symbol.replace('/', '')}>
+                    {a.symbol} ({a.name})
+                  </option>
+                ))}
               </select>
             </div>
 

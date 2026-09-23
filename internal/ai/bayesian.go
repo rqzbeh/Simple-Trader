@@ -202,6 +202,21 @@ func (ts *ThompsonSampler) RecordOutcome(outcome TradeOutcome) {
 	}
 }
 
+// GetWeights returns the current expected indicator weights from the posterior means.
+func (ts *ThompsonSampler) GetWeights() map[string]float64 {
+	ts.mu.RLock()
+	defer ts.mu.RUnlock()
+
+	weights := make(map[string]float64)
+	for name, post := range ts.posteriors {
+		ev := post.ExpectedValue()
+		rawWeight := ev / 0.50
+		clamped := math.Max(0.20, math.Min(3.00, rawWeight))
+		weights[name] = math.Round(clamped*1000) / 1000
+	}
+	return weights
+}
+
 // GetPosteriorStats returns current Alpha, Beta, expected win rates, and distribution variance.
 func (ts *ThompsonSampler) GetPosteriorStats() map[string]map[string]float64 {
 	ts.mu.RLock()

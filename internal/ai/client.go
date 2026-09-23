@@ -327,6 +327,18 @@ func (c *Client) fallbackHeuristic(req DecisionRequest) *DecisionResponse {
 		}
 	}
 
+	slPct := 1.0
+	if c.cfg.MinStopLossPct > 0 {
+		slPct = c.cfg.MinStopLossPct
+	}
+
+	tpPct := 3.0
+	if c.cfg.MinRiskRewardRatio > 0 {
+		tpPct = slPct * c.cfg.MinRiskRewardRatio
+	} else if c.cfg.MinTakeProfitPct > 0 {
+		tpPct = c.cfg.MinTakeProfitPct
+	}
+
 	return &DecisionResponse{
 		Decision:                decision,
 		Confidence:              confidence,
@@ -334,8 +346,8 @@ func (c *Client) fallbackHeuristic(req DecisionRequest) *DecisionResponse {
 		Catalyst:                catalyst,
 		Leverage:                lev,
 		AllocationPct:           alloc,
-		SuggestedStopLossPct:    1.0,
-		SuggestedTakeProfitPct:  3.0,
+		SuggestedStopLossPct:    slPct,
+		SuggestedTakeProfitPct:  tpPct,
 		Regime:                  snap.SuperTrend,
 		EstimatedWinProbability: confidence * 0.9,
 	}

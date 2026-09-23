@@ -1,6 +1,10 @@
 package market
 
 import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -68,38 +72,87 @@ func (ec *EconomicCalendar) GetEvents() []MacroEvent {
 	return res
 }
 
-// PopulateDefaultEvents registers mock upcoming macro releases for runtime simulation.
-func (ec *EconomicCalendar) PopulateDefaultEvents() {
-	now := time.Now()
-	ec.AddEvents(
-		MacroEvent{
-			ID:          "FOMC-RATE-DECISION",
-			Title:       "FOMC Interest Rate Decision",
-			Currency:    "USD",
-			Impact:      ImpactHigh,
-			ScheduledAt: now.Add(2 * time.Hour),
-			Forecast:    "5.25%",
-			Previous:    "5.50%",
-		},
-		MacroEvent{
-			ID:          "US-CPI-YOY",
-			Title:       "US Consumer Price Index (YoY)",
-			Currency:    "USD",
-			Impact:      ImpactHigh,
-			ScheduledAt: now.Add(24 * time.Hour),
-			Forecast:    "2.9%",
-			Previous:    "3.1%",
-		},
-		MacroEvent{
-			ID:          "ECB-PRESS-CONFERENCE",
-			Title:       "ECB Monetary Policy Statement",
-			Currency:    "EUR",
-			Impact:      ImpactHigh,
-			ScheduledAt: now.Add(48 * time.Hour),
-			Forecast:    "3.75%",
-			Previous:    "3.75%",
-		},
-	)
+// rawCalendarItem models the JSON representation from the public ForexFactory calendar feed.
+type rawCalendarItem struct {
+	Title    string `json:"title"`
+	Country  string `json:"country"`
+	Date     string `json:"date"`
+	Impact   string `json:"impact"`
+	Forecast string `json:"forecast"`
+	Previous string `json:"previous"`
+}
+
+// FetchLiveMacroEvents retrieves authentic live macroeconomic events from the institutional calendar feed.
+func FetchLiveMacroEvents(ctx context.Context, calendarURL string) ([]MacroEvent, error) {
+	if calendarURL == "" {
+		calendarURL = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, calendarURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create calendar request: %w", err)
+	}
+	req.Header.Set("User-Agent", "SimpleTrader-Quant/1.0")
+
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch live economic calendar: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("calendar feed returned HTTP %d", resp.StatusCode)
+	}
+
+	var rawItems []rawCalendarItem
+	if err := json.NewDecoder(resp.Body).Decode(&rawItems); err != nil {
+		return nil, fmt.Errorf("failed to decode calendar items: %w", err)
+	}
+
+	var events []MacroEvent
+	for i, item := range rawItems {
+		parsedTime, err := time.Parse(time.RFC3339, item.Date)
+		if err != nil {
+			continue
+		}
+
+		var impact ImpactLevel
+		switch strings.ToUpper(strings.TrimSpace(item.Impact)) {
+		case "HIGH":
+			impact = ImpactHigh
+		case "MEDIUM":
+			impact = ImpactMedium
+		default:
+			impact = ImpactLow
+		}
+
+		id := fmt.Sprintf("%s-%s-%d", item.Country, strings.ReplaceAll(item.Title, " ", "_"), i)
+
+		events = append(events, MacroEvent{
+			ID:          id,
+			Title:       item.Title,
+			Currency:    strings.ToUpper(item.Country),
+			Impact:      impact,
+			ScheduledAt: parsedTime,
+			Forecast:    item.Forecast,
+			Previous:    item.Previous,
+		})
+	}
+
+	return events, nil
+}
+
+// RefreshFromLiveFeed fetches and updates authentic calendar events from the institutional feed.
+func (ec *EconomicCalendar) RefreshFromLiveFeed(ctx context.Context, calendarURL string) error {
+	events, err := FetchLiveMacroEvents(ctx, calendarURL)
+	if err != nil {
+		return err
+	}
+	ec.mu.Lock()
+	defer ec.mu.Unlock()
+	ec.events = events
+	return nil
 }
 
 // IsSymbolHalted evaluates if trading for a specific asset is halted due to a high-impact macro event.

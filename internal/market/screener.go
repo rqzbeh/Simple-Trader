@@ -19,21 +19,18 @@ type ScreenerConfig struct {
 }
 
 // DefaultScreenerConfig provides institutional liquidity parameters.
+// CandidatePairs is derived dynamically from the unified asset catalog.
 func DefaultScreenerConfig() ScreenerConfig {
+	assets := GetSupportedAssets()
+	pairs := make([]string, len(assets))
+	for i, a := range assets {
+		pairs[i] = a.Symbol
+	}
 	return ScreenerConfig{
-		Min24hVolume: 50000000.0, // $50M 24h volume
-		MaxSpreadBps: 10.0,        // 10 bps max spread
-		PollInterval: 5 * time.Minute,
-		CandidatePairs: []string{
-			"BTC/USDT", "ETH/USDT", "SOL/USDT",
-			"BNB/USDT", "XRP/USDT", "ADA/USDT",
-			"DOGE/USDT", "AVAX/USDT", "LINK/USDT",
-			"PAXG/USDT", "SUI/USDT", "NEAR/USDT",
-			"APT/USDT", "DOT/USDT", "LTC/USDT",
-			"BCH/USDT", "UNI/USDT", "COPPER/USDT",
-			"XAU/USDT", "XAG/USDT", "XPT/USDT",
-			"XPD/USDT", "OIL/USDT", "ALU/USDT",
-		},
+		Min24hVolume:   50000000.0,
+		MaxSpreadBps:   10.0,
+		PollInterval:   5 * time.Minute,
+		CandidatePairs: pairs,
 	}
 }
 
@@ -81,7 +78,7 @@ func NewDynamicCryptoScreener(
 		redisClient:    redisClient,
 		dbStore:        dbStore,
 		screenedAssets: make([]db.ScreenedAsset, 0, len(cfg.CandidatePairs)),
-		activeUniverse: []string{"BTC/USDT", "ETH/USDT", "SOL/USDT"},
+		activeUniverse: make([]string, 0),
 		stopChan:       make(chan struct{}),
 	}
 }
@@ -103,16 +100,20 @@ func (s *DynamicCryptoScreener) EvaluateCandidate(symbol string, price, volume24
 		return asset
 	}
 
-	if volume24h < s.cfg.Min24hVolume {
-		asset.Status = "DISQUALIFIED"
-		asset.RejectionReason = "volume below $50M threshold"
-		return asset
-	}
+	// For ALPHA crypto assets, enforce institutional $50M volume and 10 bps spread to prevent illiquidity slippage.
+	// For CORE commodities (metals, energy), liquidity is guaranteed by institutional futures / physical vaults.
+	if GetBucket(symbol) == "ALPHA" {
+		if volume24h < s.cfg.Min24hVolume {
+			asset.Status = "DISQUALIFIED"
+			asset.RejectionReason = "volume below $50M threshold"
+			return asset
+		}
 
-	if spreadBps > s.cfg.MaxSpreadBps {
-		asset.Status = "DISQUALIFIED"
-		asset.RejectionReason = "spread exceeds 10 bps limit"
-		return asset
+		if spreadBps > s.cfg.MaxSpreadBps {
+			asset.Status = "DISQUALIFIED"
+			asset.RejectionReason = "spread exceeds 10 bps limit"
+			return asset
+		}
 	}
 
 	return asset

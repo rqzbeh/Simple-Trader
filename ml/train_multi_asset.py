@@ -134,44 +134,49 @@ def compute_asset_features(df):
     X["hl_ratio"] = (high - low) / (close + 1e-9)
     X["body_ratio"] = (close - df["open"]) / (high - low + 1e-9)
 
-    # Forward direction target: 4-period direction
-    fwd = (close.shift(-4) - close) / close
-    target = (fwd > 0.0).astype(float)
+    # Volatility-Adjusted Multi-Horizon Forward Return
+    fwd_2 = (close.shift(-2) - close) / (close + 1e-9)
+    fwd_4 = (close.shift(-4) - close) / (close + 1e-9)
+    fwd_8 = (close.shift(-8) - close) / (close + 1e-9)
+    vol_20 = close.pct_change().rolling(20).std() + 1e-9
+    norm_fwd = (fwd_2 * 0.30 + fwd_4 * 0.50 + fwd_8 * 0.20) / vol_20
+    target = (norm_fwd > 0.0).astype(float)
 
-    valid = ~(X.isna().any(axis=1) | fwd.isna())
+    valid = ~(X.isna().any(axis=1) | norm_fwd.isna())
     return X[valid], target[valid].values
 
 class ResidualLinearBlock(nn.Module):
-    def __init__(self, dim, dropout=0.2):
+    def __init__(self, dim, dropout=0.3):
         super().__init__()
         self.fc1 = nn.Linear(dim, dim)
-        self.bn1 = nn.BatchNorm1d(dim)
+        self.ln1 = nn.LayerNorm(dim)
         self.act1 = nn.GELU()
         self.drop = nn.Dropout(dropout)
         self.fc2 = nn.Linear(dim, dim)
-        self.bn2 = nn.BatchNorm1d(dim)
+        self.ln2 = nn.LayerNorm(dim)
         self.act2 = nn.GELU()
 
     def forward(self, x):
         res = x
-        out = self.drop(self.act1(self.bn1(self.fc1(x))))
-        out = self.bn2(self.fc2(out))
+        out = self.drop(self.act1(self.ln1(self.fc1(x))))
+        out = self.ln2(self.fc2(out))
         return self.act2(out + res)
 
 class MultiAssetAlphaNetwork(nn.Module):
-    def __init__(self, in_features, hidden_dim=128, num_blocks=4, dropout=0.2):
+    def __init__(self, in_features, hidden_dim=128, num_blocks=4, dropout=0.3):
         super().__init__()
         self.input_layer = nn.Sequential(
-            nn.BatchNorm1d(in_features),
+            nn.LayerNorm(in_features),
             nn.Linear(in_features, hidden_dim),
-            nn.GELU()
+            nn.GELU(),
+            nn.Dropout(dropout)
         )
         self.blocks = nn.ModuleList([
             ResidualLinearBlock(hidden_dim, dropout=dropout) for _ in range(num_blocks)
         ])
         self.head = nn.Sequential(
             nn.Linear(hidden_dim, 64),
-            nn.BatchNorm1d(64),
+            nn.LayerNorm(64),
             nn.GELU(),
             nn.Dropout(dropout),
             nn.Linear(64, 32),
@@ -247,9 +252,9 @@ def run_multi_asset_max_training(symbols=["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBU
     train_dataset = TensorDataset(X_train_t, y_train_t)
     train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
 
-    model = MultiAssetAlphaNetwork(in_features=X_train.shape[1], hidden_dim=128, num_blocks=4, dropout=0.2).to(device)
+    model = MultiAssetAlphaNetwork(in_features=X_train.shape[1], hidden_dim=128, num_blocks=4, dropout=0.3).to(device)
     criterion = nn.BCELoss()
-    optimizer = optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+    optimizer = optim.AdamW(model.parameters(), lr=0.0005, weight_decay=1e-2)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=8)
 
     vram_alloc = get_gpu_status()["allocated_mb"]
@@ -275,7 +280,8 @@ def run_multi_asset_max_training(symbols=["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBU
         for bx, by in train_loader:
             optimizer.zero_grad()
             preds = model(bx)
-            loss = criterion(preds, by)
+            smooth_by = by * 0.90 + 0.05
+            loss = criterion(preds, smooth_by)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()

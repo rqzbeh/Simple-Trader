@@ -18,6 +18,7 @@ type AllocatorConfig struct {
 	CoreTargetPct      float64 // Target 0.45 (45% Core Commodities: Gold/Silver)
 	AlphaTargetPct     float64 // Target 0.40 (40% Tactical Alpha Multi-Horizon)
 	MaxRiskPerTradePct float64 // e.g. 0.02 (2% max equity risk per trade)
+	Kelly              KellyConfig
 }
 
 // Default3TierConfig returns the institutional 3-tier liquidity configuration.
@@ -223,7 +224,11 @@ func (a *Allocator) CalculateKellyPositionSize(bucket string, entryPrice, stopLo
 	}
 
 	payoffRatio := tpDistance / slDistance
-	riskFraction := CalculateHalfKelly(DefaultKellyConfig(), winProb, payoffRatio)
+	kCfg := a.config.Kelly
+	if kCfg.Fraction <= 0 {
+		kCfg = DefaultKellyConfig()
+	}
+	riskFraction := CalculateHalfKelly(kCfg, winProb, payoffRatio)
 
 	var bucketCapital float64
 	if bucket == "CORE" {

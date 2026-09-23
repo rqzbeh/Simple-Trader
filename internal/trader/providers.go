@@ -43,6 +43,17 @@ func (m *LiveMarketData) GetQuote(symbol string) (cache.TickerQuote, bool) {
 	return q, ok
 }
 
+// GetAllQuotes returns all current cached ticker quotes.
+func (m *LiveMarketData) GetAllQuotes() []cache.TickerQuote {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	res := make([]cache.TickerQuote, 0, len(m.quotes))
+	for _, q := range m.quotes {
+		res = append(res, q)
+	}
+	return res
+}
+
 // GetLatestPrice returns the current market price for a symbol.
 // If the symbol has not been cached from the live tick stream yet, it directly queries the online exchange.
 func (m *LiveMarketData) GetLatestPrice(symbol string) (float64, error) {
@@ -71,7 +82,7 @@ func (m *LiveMarketData) GetLatestPrice(symbol string) (float64, error) {
 
 // GetMarketDepth returns simulated spread and available liquidity depth.
 func (m *LiveMarketData) GetMarketDepth(symbol string) (spreadPct float64, availableDepth float64, err error) {
-	return 0.0002, 100.0, nil
+	return 0.0005, 50.0, nil
 }
 
 // NewsArticleProvider supplies breaking news for trade catalyst checks.
@@ -79,12 +90,18 @@ type NewsArticleProvider interface {
 	GetLatestArticles() []db.NewsArticle
 }
 
+// IndicatorSnapshotProvider provides computed multi-factor indicator snapshots.
+type IndicatorSnapshotProvider interface {
+	GetIndicatorSnapshot(ctx context.Context, symbol string) (*cache.IndicatorSnapshot, error)
+}
+
 // AIStrategyEvaluator evaluates real-time market opportunities using the AI engine.
 type AIStrategyEvaluator struct {
-	aiClient     *ai.Client
-	newsProvider NewsArticleProvider
-	lastEvals    map[string]time.Time
-	mu           sync.Mutex
+	aiClient         *ai.Client
+	newsProvider     NewsArticleProvider
+	snapshotProvider IndicatorSnapshotProvider
+	lastEvals        map[string]time.Time
+	mu               sync.Mutex
 }
 
 // NewAIStrategyEvaluator creates an evaluator instance with throttling to prevent model saturation.
@@ -94,6 +111,13 @@ func NewAIStrategyEvaluator(aiClient *ai.Client, newsProvider NewsArticleProvide
 		newsProvider: newsProvider,
 		lastEvals:    make(map[string]time.Time),
 	}
+}
+
+// SetSnapshotProvider injects an indicator snapshot provider for authentic market context.
+func (e *AIStrategyEvaluator) SetSnapshotProvider(p IndicatorSnapshotProvider) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.snapshotProvider = p
 }
 
 // Evaluate produces a trading signal when high-conviction catalysts and confluences align.
@@ -121,6 +145,18 @@ func (e *AIStrategyEvaluator) Evaluate(ctx context.Context, symbol string, curre
 
 	bucket := market.GetBucket(symbol)
 
+	indicatorSnap := cache.IndicatorSnapshot{
+		Symbol: symbol,
+	}
+	e.mu.Lock()
+	snapProv := e.snapshotProvider
+	e.mu.Unlock()
+	if snapProv != nil {
+		if snap, err := snapProv.GetIndicatorSnapshot(ctx, symbol); err == nil && snap != nil {
+			indicatorSnap = *snap
+		}
+	}
+
 	decReq := ai.DecisionRequest{
 		Symbol: symbol,
 		Bucket: bucket,
@@ -128,13 +164,7 @@ func (e *AIStrategyEvaluator) Evaluate(ctx context.Context, symbol string, curre
 			Symbol: symbol,
 			Price:  currentPrice,
 		},
-		IndicatorSnap: cache.IndicatorSnapshot{
-			Symbol:          symbol,
-			RSI:             54.0,
-			SuperTrend:      "BULL",
-			Histogram:       1.2,
-			ConfluenceScore: 0.85,
-		},
+		IndicatorSnap: indicatorSnap,
 		NewsHeadlines: headlines,
 	}
 

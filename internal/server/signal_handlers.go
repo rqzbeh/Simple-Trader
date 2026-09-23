@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -98,6 +99,15 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		}
 	}
 
+	// Macroeconomic Calendar Halt Guard (FR-005)
+	// If a high-impact release is pending within the halt window, halt opening new trades to protect capital
+	if s.calendar != nil {
+		if halted, reason := s.calendar.IsSymbolHalted(symbol, time.Now()); halted {
+			log.Printf("[MACRO HALT] Signal generation halted for %s due to high-impact macro event: %s", symbol, reason)
+			return nil, nil // Preserves capital in HOLD
+		}
+	}
+
 	// Fetch current market price
 	currentPrice := 0.0
 	if s.redisClient != nil {
@@ -129,30 +139,18 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		Price:  currentPrice,
 	}
 
-	snap := cache.IndicatorSnapshot{
-		Symbol:          symbol,
-		RSI:             55.0,
-		SuperTrend:      "BULL",
-		Histogram:       1.5,
-		ConfluenceScore: 0.80,
+	var snap cache.IndicatorSnapshot
+	if computedSnap, err := s.GetIndicatorSnapshot(ctx, symbol); err == nil && computedSnap != nil {
+		snap = *computedSnap
+	} else {
+		snap = cache.IndicatorSnapshot{Symbol: symbol}
 	}
 
-	if s.redisClient != nil {
-		if ind, err := s.redisClient.GetIndicatorSnapshot(ctx, symbol); err == nil && ind != nil {
-			snap = *ind
-		}
-	}
-
-	// Portfolio equity and alpha capital ($100 starting capital baseline supported up to institutional scale)
-	totalEquity := 100.0
-	availableAlphaCapital := 40.0
-	if s.cfg != nil {
-		if s.cfg.InitialCapital > 0 {
-			totalEquity = s.cfg.InitialCapital
-		}
-		if s.cfg.AlphaTargetPct > 0 {
-			availableAlphaCapital = totalEquity * s.cfg.AlphaTargetPct
-		}
+	totalEquity := s.cfg.InitialCapital
+	availableAlphaCapital := totalEquity * s.cfg.AlphaTargetPct
+	if totalEquity <= 0 {
+		totalEquity = 10000.0
+		availableAlphaCapital = totalEquity * 0.40
 	}
 	if s.execEngine != nil {
 		totalEquity = s.execEngine.GetTotalEquity()
@@ -207,14 +205,18 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		if err == nil && activeSignals != nil {
 			for _, as := range activeSignals {
 				if market.AreCorrelatedCommodities(as.Symbol, symbol) {
-					// Correlated commodity (e.g. PAXG & XAUT) already active; prevent duplicate risk and cash splitting
+					// Correlated commodity (e.g. PAXG & XAU) already active; prevent duplicate risk and cash splitting
 					return nil, nil // HOLD
 				}
 			}
 		}
 
-		if activeSignalsCount >= 3 {
-			// Capital guard: at most 3 concurrent active trades permitted
+		maxActive := 5
+		if s.cfg != nil && s.cfg.MaxConcurrentSignals > 0 {
+			maxActive = s.cfg.MaxConcurrentSignals
+		}
+		if activeSignalsCount >= maxActive {
+			// Capital guard: dynamically bounded active signals permitted
 			return nil, nil // HOLD
 		}
 	}
@@ -641,22 +643,21 @@ func (s *Server) runBackgroundScan(ctx context.Context) {
 		return
 	}
 
-	// Concurrency guard: if 3 active signals are already open, skip background scan to prevent flooding
+	maxActive := 5
+	if s.cfg != nil && s.cfg.MaxConcurrentSignals > 0 {
+		maxActive = s.cfg.MaxConcurrentSignals
+	}
 	if s.dbStore != nil {
-		activeSignals, err := s.dbStore.ListFuturesSignals(ctx, "ACTIVE", 10)
-		if err == nil && len(activeSignals) >= 3 {
+		activeSignals, err := s.dbStore.ListFuturesSignals(ctx, "ACTIVE", 20)
+		if err == nil && len(activeSignals) >= maxActive {
 			return
 		}
 	}
 
-	symbols := []string{
-		"BTC/USDT", "ETH/USDT", "SOL/USDT", "PAXG/USDT",
-		"BNB/USDT", "XRP/USDT", "LINK/USDT", "AVAX/USDT",
-	}
-	if s.screener != nil {
-		if univ := s.screener.GetActiveUniverse(); len(univ) > 0 {
-			symbols = univ
-		}
+	allAssets := market.GetSupportedAssets()
+	symbols := make([]string, len(allAssets))
+	for i, a := range allAssets {
+		symbols[i] = a.Symbol
 	}
 
 	var newsHeadlines []string
