@@ -32,14 +32,14 @@ export const INITIAL_ASSETS: AssetInfo[] = [
 ];
 
 export const INITIAL_SUMMARY: PortfolioSummary = {
-  totalEquity: 0,
-  coreEquity: 0,
-  alphaEquity: 0,
+  totalEquity: 10000,
+  coreEquity: 6000,
+  alphaEquity: 4000,
   targetCorePct: 0.60,
   targetAlphaPct: 0.40,
-  cash: 0,
-  initialEquity: 0,
-  peakEquity: 0,
+  cash: 10000,
+  initialEquity: 10000,
+  peakEquity: 10000,
   drawdownPct: 0,
   circuitBreakerHalted: false,
 };
@@ -79,9 +79,9 @@ export function useSSE(endpoint: string = '/api/v1/events') {
                   bucket: item.bucket,
                   type: 'Crypto',
                   price: typeof item.price === 'number' && item.price > 0 ? item.price : (existing?.price || 0),
-                  change24h: typeof item.change24h === 'number' ? item.change24h : (existing?.change24h || 0),
-                  high24h: typeof item.high24h === 'number' ? item.high24h : existing?.high24h,
-                  low24h: typeof item.low24h === 'number' ? item.low24h : existing?.low24h,
+                  change24h: typeof item.change24h === 'number' ? item.change24h : (typeof item.change_24h === 'number' ? item.change_24h : (existing?.change24h || 0)),
+                  high24h: typeof item.high24h === 'number' ? item.high24h : (typeof item.high_24h === 'number' ? item.high_24h : existing?.high24h),
+                  low24h: typeof item.low24h === 'number' ? item.low24h : (typeof item.low_24h === 'number' ? item.low_24h : existing?.low24h),
                   volume: typeof item.volume === 'number' ? item.volume : existing?.volume,
                 };
               })
@@ -145,6 +145,11 @@ export function useSSE(endpoint: string = '/api/v1/events') {
             const newPrice = Number(tick.price);
             if (!newPrice || isNaN(newPrice)) return;
 
+            const tickChange = tick.change24h !== undefined ? Number(tick.change24h) : (tick.change_24h !== undefined ? Number(tick.change_24h) : 0);
+            const tickHigh = tick.high24h !== undefined ? Number(tick.high24h) : (tick.high_24h !== undefined ? Number(tick.high_24h) : newPrice);
+            const tickLow = tick.low24h !== undefined ? Number(tick.low24h) : (tick.low_24h !== undefined ? Number(tick.low_24h) : newPrice);
+            const tickVolume = tick.volume !== undefined ? Number(tick.volume) : 0;
+
             setAssets((prev) => {
               const symbolExists = prev.some((a) => a.symbol === tick.symbol);
               if (!symbolExists) {
@@ -156,10 +161,10 @@ export function useSSE(endpoint: string = '/api/v1/events') {
                     bucket: 'ALPHA',
                     type: 'Crypto',
                     price: newPrice,
-                    change24h: Number(tick.change24h || 0),
-                    high24h: Number(tick.high24h || newPrice),
-                    low24h: Number(tick.low24h || newPrice),
-                    volume: Number(tick.volume || 0),
+                    change24h: tickChange,
+                    high24h: tickHigh,
+                    low24h: tickLow,
+                    volume: tickVolume,
                   },
                 ];
               }
@@ -169,10 +174,10 @@ export function useSSE(endpoint: string = '/api/v1/events') {
                   return {
                     ...a,
                     price: newPrice,
-                    change24h: tick.change24h !== undefined ? Number(tick.change24h) : a.change24h,
-                    high24h: tick.high24h !== undefined ? Number(tick.high24h) : a.high24h,
-                    low24h: tick.low24h !== undefined ? Number(tick.low24h) : a.low24h,
-                    volume: tick.volume !== undefined ? Number(tick.volume) : a.volume,
+                    change24h: tickChange,
+                    high24h: tickHigh,
+                    low24h: tickLow,
+                    volume: tickVolume > 0 ? tickVolume : a.volume,
                   };
                 }
                 return a;

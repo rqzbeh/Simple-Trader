@@ -56,11 +56,51 @@ const (
 type TickerQuote struct {
 	Symbol    string  `json:"symbol"`
 	Price     float64 `json:"price"`
-	Change24h float64 `json:"change_24h"`
-	High24h   float64 `json:"high_24h"`
-	Low24h    float64 `json:"low_24h"`
+	Change24h float64 `json:"change24h"`
+	High24h   float64 `json:"high24h"`
+	Low24h    float64 `json:"low24h"`
 	Volume    float64 `json:"volume"`
 	UpdatedAt int64   `json:"updated_at"`
+}
+
+func (t TickerQuote) MarshalJSON() ([]byte, error) {
+	type Alias TickerQuote
+	return json.Marshal(&struct {
+		Alias
+		Change24hSnake float64 `json:"change_24h"`
+		High24hSnake   float64 `json:"high_24h"`
+		Low24hSnake    float64 `json:"low_24h"`
+	}{
+		Alias:          Alias(t),
+		Change24hSnake: t.Change24h,
+		High24hSnake:   t.High24h,
+		Low24hSnake:    t.Low24h,
+	})
+}
+
+func (t *TickerQuote) UnmarshalJSON(data []byte) error {
+	type Alias TickerQuote
+	aux := struct {
+		*Alias
+		Change24hSnake *float64 `json:"change_24h"`
+		High24hSnake   *float64 `json:"high_24h"`
+		Low24hSnake    *float64 `json:"low_24h"`
+	}{
+		Alias: (*Alias)(t),
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	if t.Change24h == 0 && aux.Change24hSnake != nil {
+		t.Change24h = *aux.Change24hSnake
+	}
+	if t.High24h == 0 && aux.High24hSnake != nil {
+		t.High24h = *aux.High24hSnake
+	}
+	if t.Low24h == 0 && aux.Low24hSnake != nil {
+		t.Low24h = *aux.Low24hSnake
+	}
+	return nil
 }
 
 func (t *TickerQuote) Marshal() ([]byte, error) {

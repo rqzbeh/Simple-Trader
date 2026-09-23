@@ -1,6 +1,7 @@
 package market_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -105,4 +106,23 @@ func TestNewsSentimentAnalyzer(t *testing.T) {
 	if emptyReport.Polarity != market.PolarityNeutral || emptyReport.Score != 0.0 {
 		t.Errorf("expected NEUTRAL for empty headlines, got %s (%f)", emptyReport.Polarity, emptyReport.Score)
 	}
+}
+
+func TestLiveMacroEventsFetch(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	events, err := market.FetchLiveMacroEvents(ctx, "")
+	if err != nil {
+		t.Skipf("Live calendar fetch skipped (network restricted): %v", err)
+		return
+	}
+
+	if len(events) == 0 {
+		t.Fatalf("expected at least 1 macro event from live institutional feed, got 0")
+	}
+
+	t.Logf("Successfully fetched %d authentic macro events from ForexFactory feed", len(events))
+	first := events[0]
+	t.Logf("Sample event: [%s] %s (%s) scheduled at %v", first.Impact, first.Title, first.Currency, first.ScheduledAt)
 }

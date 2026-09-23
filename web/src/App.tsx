@@ -507,7 +507,7 @@ export const App: React.FC = () => {
               </span>
             </div>
             <ErrorBoundary fallbackTitle="ML Engine Telemetry Offline">
-              <MLTrainingView />
+              <MLTrainingView assets={assets} />
             </ErrorBoundary>
           </div>
         ) : (

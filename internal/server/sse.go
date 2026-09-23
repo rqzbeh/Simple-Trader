@@ -9,8 +9,9 @@ import (
 
 // SSEBroadcaster manages active HTTP connections for real-time Server-Sent Events.
 type SSEBroadcaster struct {
-	mu      sync.RWMutex
-	clients map[chan string]bool
+	mu           sync.RWMutex
+	clients      map[chan string]bool
+	initPayloads func() []string
 }
 
 // NewSSEBroadcaster creates a broadcaster.
@@ -18,6 +19,13 @@ func NewSSEBroadcaster() *SSEBroadcaster {
 	return &SSEBroadcaster{
 		clients: make(map[chan string]bool),
 	}
+}
+
+// SetInitialPayloadProvider registers a callback returning initial SSE messages to send when a client connects.
+func (b *SSEBroadcaster) SetInitialPayloadProvider(fn func() []string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.initPayloads = fn
 }
 
 // ServeHTTP handles incoming SSE client connections.
@@ -49,6 +57,17 @@ func (b *SSEBroadcaster) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Send initial ping event
 	fmt.Fprintf(w, "event: ping\ndata: connected\n\n")
 	flusher.Flush()
+
+	// Immediately push initial snapshots (e.g. all live cached asset ticks) so dashboard hydrates instantly with non-zero prices
+	b.mu.RLock()
+	provider := b.initPayloads
+	b.mu.RUnlock()
+	if provider != nil {
+		for _, msg := range provider() {
+			fmt.Fprint(w, msg)
+		}
+		flusher.Flush()
+	}
 
 	heartbeat := time.NewTicker(15 * time.Second)
 	defer heartbeat.Stop()

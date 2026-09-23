@@ -338,9 +338,9 @@ func (t *TradingViewFetcher) FetchTicker(ctx context.Context, symbol string) (*c
 	case "XPD/USDT", "PA=F":
 		endpoint = "cfd"
 		tvSymbol = "TVC:PALLADIUM"
-	case "XAU/USDT", "PAXG/USDT", "XAUT/USDT":
+	case "XAU/USDT", "PAXG/USDT":
 		endpoint = "crypto"
-		if symbol != "PAXG/USDT" && symbol != "XAUT/USDT" {
+		if symbol != "PAXG/USDT" {
 			endpoint = "cfd"
 			tvSymbol = "TVC:GOLD"
 		}

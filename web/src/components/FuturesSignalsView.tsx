@@ -1,13 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { FuturesTradeSignal } from '../types';
+import { FuturesTradeSignal, AssetInfo } from '../types';
+import { INITIAL_ASSETS } from '../hooks/useSSE';
 import { Zap, TrendingUp, TrendingDown, ShieldAlert, Target, DollarSign, Clock, RefreshCw, XCircle } from 'lucide-react';
 
 interface FuturesSignalsViewProps {
   apiBaseUrl?: string;
   currentPrice?: number;
+  assets?: AssetInfo[];
 }
 
-export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseUrl = '', currentPrice = 0 }) => {
+export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseUrl = '', currentPrice = 0, assets }) => {
   const [signals, setSignals] = useState<FuturesTradeSignal[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [evaluating, setEvaluating] = useState<boolean>(false);
@@ -122,20 +124,13 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
           <select
             value={selectedSymbol}
             onChange={(e) => setSelectedSymbol(e.target.value)}
-            className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-medium focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono font-medium focus:outline-none focus:border-sky-500"
           >
-            <option value="BTC/USDT">BTC/USDT</option>
-            <option value="ETH/USDT">ETH/USDT</option>
-            <option value="SOL/USDT">SOL/USDT</option>
-            <option value="AVAX/USDT">AVAX/USDT</option>
-            <option value="DOGE/USDT">DOGE/USDT</option>
-            <option value="SUI/USDT">SUI/USDT</option>
-            <option value="PAXG/USDT">PAXG/USDT (Tokenized Gold)</option>
-            <option value="XAU/USDT">XAU/USDT (Gold Futures)</option>
-            <option value="XAG/USDT">XAG/USDT (Silver Futures)</option>
-            <option value="BNB/USDT">BNB/USDT</option>
-            <option value="XRP/USDT">XRP/USDT</option>
-            <option value="LINK/USDT">LINK/USDT</option>
+            {(assets || INITIAL_ASSETS).map((a) => (
+              <option key={a.symbol} value={a.symbol}>
+                {a.symbol} {a.name ? `(${a.name})` : ''}
+              </option>
+            ))}
           </select>
 
           <button

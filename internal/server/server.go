@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,6 +20,7 @@ import (
 	"github.com/rqzbeh/simple-trader/internal/cache"
 	"github.com/rqzbeh/simple-trader/internal/config"
 	"github.com/rqzbeh/simple-trader/internal/db"
+	"github.com/rqzbeh/simple-trader/internal/indicators"
 	"github.com/rqzbeh/simple-trader/internal/market"
 	"github.com/rqzbeh/simple-trader/internal/telegram"
 	"github.com/rqzbeh/simple-trader/internal/trader"
@@ -43,6 +45,7 @@ type Server struct {
 	router        *chi.Mux
 	marketData    *trader.LiveMarketData
 	candleDownloader market.HistoricalKlineProvider
+	calendar      *market.EconomicCalendar
 }
 
 // NewServer configures routes and dependency injection.
@@ -78,6 +81,31 @@ func NewServer(
 		execEngine.SetPriceProvider(marketData)
 	}
 
+	haltWindow := 15 * time.Minute
+	calURL := ""
+	if cfg != nil {
+		if cfg.CalendarHaltMinutes > 0 {
+			haltWindow = time.Duration(cfg.CalendarHaltMinutes) * time.Minute
+		}
+		calURL = cfg.EconomicCalendarURL
+	}
+	calendar := market.NewEconomicCalendar(haltWindow)
+
+	// Asynchronously fetch authentic macroeconomic releases from the institutional calendar feed
+	go func() {
+		calCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_ = calendar.RefreshFromLiveFeed(calCtx, calURL)
+		cancel()
+
+		ticker := time.NewTicker(30 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			refreshCtx, refreshCancel := context.WithTimeout(context.Background(), 10*time.Second)
+			_ = calendar.RefreshFromLiveFeed(refreshCtx, calURL)
+			refreshCancel()
+		}
+	}()
+
 	s := &Server{
 		cfg:              cfg,
 		dbStore:          dbStore,
@@ -96,7 +124,23 @@ func NewServer(
 		router:           chi.NewRouter(),
 		marketData:       marketData,
 		candleDownloader: candleDownloader,
+		calendar:         calendar,
 	}
+
+	// Register initial SSE hydration provider so newly connected dashboards receive all cached live asset prices instantly
+	s.broadcaster.SetInitialPayloadProvider(func() []string {
+		var payloads []string
+		if s.marketData != nil {
+			for _, q := range s.marketData.GetAllQuotes() {
+				if q.Price > 0 {
+					if data, err := json.Marshal(q); err == nil {
+						payloads = append(payloads, fmt.Sprintf("event: tick\ndata: %s\n\n", string(data)))
+					}
+				}
+			}
+		}
+		return payloads
+	})
 
 	s.setupRoutes()
 	return s
@@ -110,6 +154,80 @@ func (s *Server) SetCandleDownloader(d market.HistoricalKlineProvider) {
 // MarketData returns the active live market data provider.
 func (s *Server) MarketData() *trader.LiveMarketData {
 	return s.marketData
+}
+
+// CalculateAndCacheIndicatorSnapshot downloads authentic historical candles,
+// computes the full institutional indicator suite (RSI, MACD, SuperTrend, Bollinger, ATR,
+// Garman-Klass, Parkinson, Kaufman ER, CMF, Regime, Confluence), and caches the snapshot.
+func (s *Server) CalculateAndCacheIndicatorSnapshot(ctx context.Context, symbol string) (*cache.IndicatorSnapshot, error) {
+	if s.candleDownloader == nil {
+		return nil, fmt.Errorf("historical candle downloader uninitialized")
+	}
+
+	candles, err := s.candleDownloader.FetchHistoricalKlines(ctx, symbol, "1h", 60)
+	if err != nil || len(candles) == 0 {
+		return nil, fmt.Errorf("failed to fetch authentic candles for %s: %w", symbol, err)
+	}
+
+	dbCandles := make([]db.Candle, len(candles))
+	for i, c := range candles {
+		dbCandles[i] = db.Candle{
+			Symbol:    symbol,
+			Timeframe: "1h",
+			OpenTime:  c.OpenTime,
+			Open:      c.Open,
+			High:      c.High,
+			Low:       c.Low,
+			Close:     c.Close,
+			Volume:    c.Volume,
+		}
+	}
+
+	var weights map[string]float64
+	if s.sampler != nil {
+		weights = s.sampler.GetWeights()
+	}
+
+	snap := indicators.BuildSnapshot(symbol, dbCandles, weights)
+	cacheSnap := &cache.IndicatorSnapshot{
+		Symbol:          snap.Symbol,
+		RSI:             snap.RSI,
+		MACD:            snap.MACD,
+		Signal:          snap.MACDSignal,
+		Histogram:       snap.MACDHistogram,
+		UpperBand:       snap.UpperBand,
+		MiddleBand:      snap.MiddleBand,
+		LowerBand:       snap.LowerBand,
+		SuperTrend:      snap.SuperTrendTrend,
+		ConfluenceScore: snap.ConfluenceScore,
+		Regime:          string(snap.Regime),
+		OBI:             snap.OBI,
+		CVD:             snap.CVD,
+		Divergence:      string(snap.Divergence),
+		VolRatio:        snap.VolRatio,
+		GarmanKlass:     snap.GarmanKlass,
+		Parkinson:       snap.Parkinson,
+		KaufmanER:       snap.KaufmanER,
+		CMF:             snap.CMF,
+		NATR:            snap.NATR,
+		UpdatedAt:       time.Now().Unix(),
+	}
+
+	if s.redisClient != nil {
+		_ = s.redisClient.SetIndicatorSnapshot(ctx, symbol, cacheSnap, 5*time.Minute)
+	}
+
+	return cacheSnap, nil
+}
+
+// GetIndicatorSnapshot retrieves the cached indicator snapshot or dynamically computes it.
+func (s *Server) GetIndicatorSnapshot(ctx context.Context, symbol string) (*cache.IndicatorSnapshot, error) {
+	if s.redisClient != nil {
+		if cached, err := s.redisClient.GetIndicatorSnapshot(ctx, symbol); err == nil && cached != nil {
+			return cached, nil
+		}
+	}
+	return s.CalculateAndCacheIndicatorSnapshot(ctx, symbol)
 }
 
 // IngestTick updates the in-memory quote store, Redis (if active), broadcasts the tick to SSE,
@@ -152,6 +270,11 @@ func (s *Server) Screener() *market.DynamicCryptoScreener {
 // Authenticator returns the authenticator instance.
 func (s *Server) Authenticator() *auth.Authenticator {
 	return s.authenticator
+}
+
+// Calendar returns the active economic calendar manager.
+func (s *Server) Calendar() *market.EconomicCalendar {
+	return s.calendar
 }
 
 func (s *Server) setupRoutes() {
@@ -310,19 +433,17 @@ func (s *Server) setupRoutes() {
 	r.Get("/api/v1/portfolio/summary", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
-		initialEquity := 10000.0
-		targetCorePct := 0.50
-		targetAlphaPct := 0.50
-		if s.cfg != nil {
-			if s.cfg.InitialCapital > 0 {
-				initialEquity = s.cfg.InitialCapital
-			}
-			if s.cfg.CoreTargetPct > 0 {
-				targetCorePct = s.cfg.CoreTargetPct
-			}
-			if s.cfg.AlphaTargetPct > 0 {
-				targetAlphaPct = s.cfg.AlphaTargetPct
-			}
+		initialEquity := s.cfg.InitialCapital
+		targetCorePct := s.cfg.CoreTargetPct
+		targetAlphaPct := s.cfg.AlphaTargetPct
+		if initialEquity <= 0 {
+			initialEquity = 10000.0
+		}
+		if targetCorePct <= 0 {
+			targetCorePct = 0.50
+		}
+		if targetAlphaPct <= 0 {
+			targetAlphaPct = 0.50
 		}
 
 		// Root initial capital in PostgreSQL investor ledger if available
@@ -398,12 +519,17 @@ func (s *Server) setupRoutes() {
 	// Dynamic Indicator Weights
 	r.Get("/api/v1/weights", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		// Return current active indicator weights
-		weights := map[string]float64{
-			"RSI":            1.15,
-			"MACD":           1.20,
-			"SUPERTREND":     1.45,
-			"MICROSTRUCTURE": 1.50,
+		weights := make(map[string]float64)
+		if s.sampler != nil {
+			weights = s.sampler.GetWeights()
+		}
+		if len(weights) == 0 {
+			weights = map[string]float64{
+				"RSI":            1.0,
+				"MACD":           1.0,
+				"SUPERTREND":     1.0,
+				"MICROSTRUCTURE": 1.0,
+			}
 		}
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"weights": weights,
@@ -413,38 +539,37 @@ func (s *Server) setupRoutes() {
 	// Continuous Fine-Tuning JSONL Export
 	r.Get("/api/v1/learning/dataset.jsonl", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
-		// Export high-quality training pairs
-		pair := ai.FineTunePair{
-			SystemPrompt: "You are Simple-Trader AI strategy core.",
-			UserPrompt:   "Analyze BTC/USD at $68,500 with SuperTrend=BULL.",
-			AssistantResponse: `{"decision":"BUY","confidence":0.88,"reasoning":"Confirmed trend breakout."}`,
+		if s.dbStore == nil {
+			http.Error(w, `{"error":"database not available for training data export"}`, http.StatusServiceUnavailable)
+			return
 		}
-		line, _ := pair.ToJSONL()
-		w.Write([]byte(line + "\n"))
+		signals, err := s.dbStore.ListFuturesSignals(r.Context(), "CLOSED", 100)
+		if err != nil || len(signals) == 0 {
+			http.Error(w, `{"error":"no closed signals available for training"}`, http.StatusNotFound)
+			return
+		}
+		for _, sig := range signals {
+			pair := ai.FineTunePair{
+				SystemPrompt: "You are Simple-Trader AI strategy core. Analyze market conditions and provide trading decisions.",
+				UserPrompt:   fmt.Sprintf("Analyze %s at $%.2f with direction=%s, leverage=%d, R:R=%.2f", sig.Symbol, sig.EntryPrice, sig.Direction, sig.Leverage, sig.RiskRewardRatio),
+				AssistantResponse: fmt.Sprintf(`{"decision":"%s","confidence":%.2f,"reasoning":"%s"}`, sig.Direction, sig.RiskRewardRatio/5.0, sig.CatalystHeadline),
+			}
+			line, err := pair.ToJSONL()
+			if err == nil {
+				w.Write([]byte(line + "\n"))
+			}
+		}
 	})
 
 	// Economic Calendar & Macro Status (FR-005)
 	r.Get("/api/v1/calendar", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		cal := market.NewEconomicCalendar(15 * time.Minute)
-		cal.AddEvents(
-			market.MacroEvent{
-				ID:          "FOMC-RATE-DECISION",
-				Title:       "FOMC Federal Funds Rate Decision",
-				Currency:    "USD",
-				Impact:      market.ImpactHigh,
-				ScheduledAt: time.Now().Add(45 * time.Minute),
-			},
-			market.MacroEvent{
-				ID:          "US-CPI-YOY",
-				Title:       "US CPI Inflation Rate (YoY)",
-				Currency:    "USD",
-				Impact:      market.ImpactHigh,
-				ScheduledAt: time.Now().Add(4 * time.Hour),
-			},
-		)
+		events := []market.MacroEvent{}
+		if s.calendar != nil {
+			events = s.calendar.GetEvents()
+		}
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"events": cal.GetEvents(),
+			"events": events,
 		})
 	})
 
@@ -492,12 +617,16 @@ func (s *Server) setupRoutes() {
 				Volume:    hc.Volume,
 			}
 		}
+		backtestWeights := map[string]float64{"RSI": 1.0, "MACD": 1.0, "SUPERTREND": 1.0, "MICROSTRUCTURE": 1.0}
+		if s.sampler != nil {
+			backtestWeights = s.sampler.GetWeights()
+		}
 		cfg := backtest.BacktestConfig{
 			Symbol:            req.Symbol,
 			InitialCapital:    req.InitialCapital,
 			Friction:          trader.DefaultFrictionModel(),
 			Kelly:             trader.DefaultKellyConfig(),
-			IndicatorsWeights: map[string]float64{"RSI": 1.0, "MACD": 1.0, "SUPERTREND": 1.2, "MICROSTRUCTURE": 1.5},
+			IndicatorsWeights: backtestWeights,
 			RiskFreeRate:      0.04,
 		}
 		engine := backtest.NewVectorizedEngine(cfg)

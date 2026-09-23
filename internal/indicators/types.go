@@ -42,7 +42,9 @@ type Snapshot struct {
 	VolRatio        float64
 	GarmanKlass     float64
 	Parkinson       float64
-	KaufmanER       float64
-	CMF             float64
-	NATR            float64
+	KaufmanER          float64
+	CMF                float64
+	NATR               float64
+	ConfluenceScore    float64
+	SuggestedDirection string
 }

@@ -174,56 +174,60 @@ def build_advanced_features(df):
     atr14 = tr.rolling(14).mean()
     X_df["natr_14"] = atr14 / (close + 1e-9)
 
-    # 8. Target definition: Forward return over 4 hours
-    forward_horizon = 4
-    fwd_ret = (close.shift(-forward_horizon) - close) / close
+    # 13. Target definition: Volatility-Adjusted Multi-Horizon Forward Return
+    fwd_2 = (close.shift(-2) - close) / (close + 1e-9)
+    fwd_4 = (close.shift(-4) - close) / (close + 1e-9)
+    fwd_8 = (close.shift(-8) - close) / (close + 1e-9)
+    vol_20 = close.pct_change().rolling(20).std() + 1e-9
+    norm_fwd = (fwd_2 * 0.30 + fwd_4 * 0.50 + fwd_8 * 0.20) / vol_20
 
-    # Target: 1 for Bullish (> 0.0), 0 for Bearish (<= 0.0)
-    target = (fwd_ret > 0.0).astype(float)
+    # Target: 1 for positive directional momentum, 0 for negative
+    target = (norm_fwd > 0.0).astype(float)
 
     # Drop NaNs
-    valid = ~(X_df.isna().any(axis=1) | fwd_ret.isna())
+    valid = ~(X_df.isna().any(axis=1) | norm_fwd.isna())
     X_clean = X_df[valid].copy()
     y_clean = target[valid].values
 
     return X_clean, y_clean
 
 class ResNetBlock(nn.Module):
-    def __init__(self, hidden_dim, dropout=0.2):
+    def __init__(self, hidden_dim, dropout=0.3):
         super().__init__()
         self.fc1 = nn.Linear(hidden_dim, hidden_dim)
-        self.bn1 = nn.BatchNorm1d(hidden_dim)
+        self.ln1 = nn.LayerNorm(hidden_dim)
         self.act1 = nn.Mish()
         self.dropout = nn.Dropout(dropout)
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-        self.bn2 = nn.BatchNorm1d(hidden_dim)
+        self.ln2 = nn.LayerNorm(hidden_dim)
         self.act2 = nn.Mish()
 
     def forward(self, x):
         residual = x
-        out = self.dropout(self.act1(self.bn1(self.fc1(x))))
-        out = self.bn2(self.fc2(out))
+        out = self.dropout(self.act1(self.ln1(self.fc1(x))))
+        out = self.ln2(self.fc2(out))
         out = self.act2(out + residual)
         return out
 
 class DeepResAlphaNet(nn.Module):
     """
-    Deep Residual MLP Architecture designed for Financial Tabular Data.
-    Features: Input LayerNorm -> Linear -> ResNet Blocks -> Dense Head.
+    Deep Residual LayerNorm MLP Architecture designed for Financial Tabular Data.
+    Features: Input LayerNorm -> Linear -> ResNet Blocks with LayerNorm -> Dense Head.
     """
-    def __init__(self, input_dim, hidden_dim=128, num_blocks=3, dropout=0.25):
+    def __init__(self, input_dim, hidden_dim=128, num_blocks=3, dropout=0.3):
         super().__init__()
         self.input_layer = nn.Sequential(
-            nn.BatchNorm1d(input_dim),
+            nn.LayerNorm(input_dim),
             nn.Linear(input_dim, hidden_dim),
-            nn.Mish()
+            nn.Mish(),
+            nn.Dropout(dropout)
         )
         self.blocks = nn.ModuleList([
             ResNetBlock(hidden_dim, dropout=dropout) for _ in range(num_blocks)
         ])
         self.head = nn.Sequential(
             nn.Linear(hidden_dim, 64),
-            nn.BatchNorm1d(64),
+            nn.LayerNorm(64),
             nn.Mish(),
             nn.Dropout(dropout),
             nn.Linear(64, 1),
@@ -288,10 +292,10 @@ def train_ensemble_maximizer(symbol="BTCUSDT", max_epochs=120, patience=25, lr=0
     train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True)
 
     input_dim = X_train.shape[1]
-    model = DeepResAlphaNet(input_dim=input_dim, hidden_dim=128, num_blocks=3, dropout=0.25).to(device)
+    model = DeepResAlphaNet(input_dim=input_dim, hidden_dim=128, num_blocks=3, dropout=0.30).to(device)
 
     criterion = nn.BCELoss()
-    optimizer = optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-3)
+    optimizer = optim.AdamW(model.parameters(), lr=0.0005, weight_decay=1e-2)
     scheduler = optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=15, T_mult=2, eta_min=1e-5)
 
     vram_status = get_gpu_status()
@@ -318,7 +322,9 @@ def train_ensemble_maximizer(symbol="BTCUSDT", max_epochs=120, patience=25, lr=0
         for bx, by in train_loader:
             optimizer.zero_grad()
             preds = model(bx)
-            loss = criterion(preds, by)
+            # Label smoothing to prevent overconfidence on noise
+            smooth_by = by * 0.90 + 0.05
+            loss = criterion(preds, smooth_by)
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
