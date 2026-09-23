@@ -61,8 +61,33 @@ export const App: React.FC = () => {
 
   const selectedAsset = assets.find((a: AssetInfo) => a.symbol === selectedSymbol) || assets[0];
 
-  const handleClosePosition = (id: string) => {
-    setPositions((prev: TradePosition[]) => prev.filter((p: TradePosition) => p.id !== id));
+  const handleClosePosition = async (id: string) => {
+    if (!confirm(`Close position #${id} at market price?`)) return;
+    try {
+      // Find the position to get its symbol for live price lookup
+      const pos = positions.find((p: TradePosition) => p.id === id);
+      const exitPrice = pos?.currentPrice || 0;
+
+      // Close the corresponding signal in the database if it exists
+      const signalsRes = await fetch(`/api/v1/signals/futures?status=ACTIVE&limit=50`);
+      if (signalsRes.ok) {
+        const signals = await signalsRes.json();
+        if (Array.isArray(signals)) {
+          const matchingSignal = signals.find((s: any) => s.symbol === pos?.symbol);
+          if (matchingSignal?.id) {
+            await fetch(`/api/v1/signals/futures/${matchingSignal.id}/close`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ exit_price: exitPrice, exit_reason: 'MANUAL_CLOSE' }),
+            });
+          }
+        }
+      }
+
+      setPositions((prev: TradePosition[]) => prev.filter((p: TradePosition) => p.id !== id));
+    } catch (err) {
+      console.error('Failed to close position:', err);
+    }
   };
 
   return (

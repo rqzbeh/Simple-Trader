@@ -289,14 +289,24 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (*DecisionRes
 	} else if decision.Confidence > 1.0 {
 		decision.Confidence = 1.0
 	}
-	if decision.Leverage < 5 || decision.Leverage > 10 {
-		decision.Leverage = 8 // Default 8x isolated leverage for 2h intraday crypto setups
+	if decision.Leverage < 1 || decision.Leverage > c.cfg.DefaultLeverage {
+		if c.cfg.DefaultLeverage > 0 {
+			decision.Leverage = c.cfg.DefaultLeverage
+		} else {
+			decision.Leverage = 8
+		}
 	}
-	if decision.SuggestedStopLossPct <= 0 || decision.SuggestedStopLossPct > 3.0 {
-		decision.SuggestedStopLossPct = 1.0 // 1.0% stop loss for 2h horizon
+	if decision.SuggestedStopLossPct <= 0 || decision.SuggestedStopLossPct > c.cfg.MaxStopLossPct {
+		decision.SuggestedStopLossPct = c.cfg.MinStopLossPct
+		if decision.SuggestedStopLossPct <= 0 {
+			decision.SuggestedStopLossPct = 1.0
+		}
 	}
-	if decision.SuggestedTakeProfitPct <= 0 || decision.SuggestedTakeProfitPct > 10.0 {
-		decision.SuggestedTakeProfitPct = 3.0 // 3.0% take profit (3:1 R:R target)
+	if decision.SuggestedTakeProfitPct <= 0 || decision.SuggestedTakeProfitPct > c.cfg.MaxTakeProfitPct {
+		decision.SuggestedTakeProfitPct = c.cfg.MinTakeProfitPct
+		if decision.SuggestedTakeProfitPct <= 0 {
+			decision.SuggestedTakeProfitPct = 3.0
+		}
 	}
 
 	log.Printf("[AI-CORE] OmniRoute %s signal for %s: %s (Confidence: %.2f, WinProb: %.2f, Regime: %s, Lev: %dx, SL: %.2f%%, TP: %.2f%%)",

@@ -124,7 +124,7 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
             <span>Two-Sided Futures Trade Signals</span>
           </h2>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Strict News-First Catalysts • Isolated Leverage (1x–10x) • Max 2% Single-Trade Equity Risk • Min 1:1.5 R:R
+            Strict News-First Catalysts • Isolated Leverage • Dynamic Risk Parameters • Dynamic R:R
           </p>
         </div>
 

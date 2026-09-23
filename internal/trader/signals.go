@@ -35,9 +35,11 @@ type SignalConfig struct {
 	MinTakeProfitPct   float64
 	MaxTakeProfitPct   float64
 	MaxRiskPerTradePct float64
+	MaxTradeMarginPct  float64 // Max margin per trade as fraction of total equity (e.g. 0.20 = 20%)
 }
 
-// DefaultSignalConfig returns standard baseline parameters.
+// DefaultSignalConfig returns baseline parameters. These are used ONLY when
+// no .env override is provided. In production, all values come from config.Load().
 func DefaultSignalConfig() SignalConfig {
 	return SignalConfig{
 		MinRiskRewardRatio: 2.5,
@@ -47,6 +49,7 @@ func DefaultSignalConfig() SignalConfig {
 		MinTakeProfitPct:   1.5,
 		MaxTakeProfitPct:   8.0,
 		MaxRiskPerTradePct: 0.015,
+		MaxTradeMarginPct:  0.20,
 	}
 }
 
@@ -82,6 +85,9 @@ func NewSignalService(store SignalStoreInterface, aiClient AIAnalyzer, cfgs ...S
 		}
 		if provided.MaxRiskPerTradePct > 0 {
 			cfg.MaxRiskPerTradePct = provided.MaxRiskPerTradePct
+		}
+		if provided.MaxTradeMarginPct > 0 {
+			cfg.MaxTradeMarginPct = provided.MaxTradeMarginPct
 		}
 	}
 	return &SignalService{
@@ -151,15 +157,30 @@ func (s *SignalService) EvaluateMarketSignal(
 		return nil, nil
 	}
 
-	// 4. Calculate protective price bounds (Stop Loss & Take Profit) dynamically using configured bounds
+	// 4. Calculate protective price bounds (Stop Loss & Take Profit) dynamically
+	// Priority: ATR-based from indicator snapshot > AI-suggested percentages > config defaults
 	entryPrice := quote.Price
 	slPct := aiResp.SuggestedStopLossPct
-	if slPct < s.config.MinStopLossPct || slPct > s.config.MaxStopLossPct {
-		slPct = (s.config.MinStopLossPct + s.config.MaxStopLossPct) / 2.0
-	}
 	tpPct := aiResp.SuggestedTakeProfitPct
+
+	// Use NATR (Normalized ATR %) from indicator snapshot for more accurate volatility-based SL/TP
+	if snap.NATR > 0 {
+		atrBasedSL := snap.NATR * 1.5 // 1.5x ATR for stop loss
+		if atrBasedSL >= s.config.MinStopLossPct && atrBasedSL <= s.config.MaxStopLossPct {
+			slPct = atrBasedSL
+		}
+	}
+
+	if slPct < s.config.MinStopLossPct || slPct > s.config.MaxStopLossPct {
+		slPct = s.config.MinStopLossPct
+	}
 	if tpPct < s.config.MinTakeProfitPct || tpPct > s.config.MaxTakeProfitPct {
 		tpPct = slPct * s.config.MinRiskRewardRatio
+	}
+
+	// Clamp TP within configured bounds
+	if tpPct > s.config.MaxTakeProfitPct {
+		tpPct = s.config.MaxTakeProfitPct
 	}
 
 	var stopLoss, takeProfit float64
@@ -207,8 +228,12 @@ func (s *SignalService) EvaluateMarketSignal(
 		return nil, fmt.Errorf("position sizing calculation failed: %w", err)
 	}
 
-	// Bound margin required to at most 20% of total equity and within available Alpha capital
-	maxTradeMargin := totalEquity * 0.20
+	// Bound margin required to configured fraction of total equity and within available Alpha capital
+	maxMarginPct := s.config.MaxTradeMarginPct
+	if maxMarginPct <= 0 {
+		maxMarginPct = 0.20
+	}
+	maxTradeMargin := totalEquity * maxMarginPct
 	if marginRequired > maxTradeMargin {
 		marginRequired = maxTradeMargin
 	}
@@ -224,15 +249,21 @@ func (s *SignalService) EvaluateMarketSignal(
 		catalystHeadline = headlines[0]
 	}
 	if catalystHeadline == "" {
-		catalystHeadline = "Technical momentum alignment with global liquidity flows"
+		// Reject signal without a genuine catalyst — prevents fabricated entries
+		return nil, nil
 	}
 
-	// Estimate catalyst sentiment score
-	sentiment := 0.5
-	if dir == DirectionLong {
-		sentiment = 0.75
-	} else {
-		sentiment = -0.75
+	// Estimate catalyst sentiment from AI response
+	sentiment := aiResp.Confidence
+	if sentiment == 0 {
+		if dir == DirectionLong {
+			sentiment = 0.6
+		} else {
+			sentiment = -0.6
+		}
+	}
+	if dir == DirectionShort && sentiment > 0 {
+		sentiment = -sentiment
 	}
 
 	// 7. Assemble and persist the signal

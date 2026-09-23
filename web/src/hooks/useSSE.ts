@@ -32,14 +32,14 @@ export const INITIAL_ASSETS: AssetInfo[] = [
 ];
 
 export const INITIAL_SUMMARY: PortfolioSummary = {
-  totalEquity: 10000,
-  coreEquity: 6000,
-  alphaEquity: 4000,
-  targetCorePct: 0.60,
+  totalEquity: 0,
+  coreEquity: 0,
+  alphaEquity: 0,
+  targetCorePct: 0.45,
   targetAlphaPct: 0.40,
-  cash: 10000,
-  initialEquity: 10000,
-  peakEquity: 10000,
+  cash: 0,
+  initialEquity: 0,
+  peakEquity: 0,
   drawdownPct: 0,
   circuitBreakerHalted: false,
 };
