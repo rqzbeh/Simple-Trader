@@ -143,6 +143,19 @@ func (s *DynamicCryptoScreener) RunScreeningCycle(ctx context.Context) []db.Scre
 		}
 
 		price, vol, spread, err := s.provider.Get24hStats(symbol)
+
+		// For CORE commodities (Yahoo-sourced), if Binance fails, try Redis-cached price
+		if err != nil && GetBucket(symbol) == "CORE" {
+			assetDef, _ := FindAsset(symbol)
+			if assetDef.FeedSource == "YAHOO" && s.redisClient != nil {
+				if cached, cErr := s.redisClient.GetTicker(ctx, symbol); cErr == nil && cached != nil && cached.Price > 0 {
+					price = cached.Price
+					vol = cached.Volume
+					spread = 0 // CORE commodities bypass spread checks
+					err = nil
+				}
+			}
+		}
 		if err != nil {
 			log.Printf("[Screener] Live fetch failed for %s (%v)", symbol, err)
 			asset := db.ScreenedAsset{

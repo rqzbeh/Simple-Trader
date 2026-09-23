@@ -3,12 +3,11 @@ package trader
 import (
 	"context"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
-	"github.com/rqzbeh/simple-trader/internal/cache"
 	"github.com/rqzbeh/simple-trader/internal/db"
+	"github.com/rqzbeh/simple-trader/internal/market"
 )
 
 // OrderRequest contains order parameters for execution.
@@ -330,139 +329,66 @@ func (e *ExecutionEngine) GetBucketEquities(currentPrices ...map[string]float64)
 	return coreEquity, alphaEquity
 }
 
-// SeedInitialAllocations establishes initial paper holdings for Core and Alpha buckets
-// so the portfolio has active market exposure that fluctuates in real time with market prices.
-func (e *ExecutionEngine) SeedInitialAllocations(coreCapital, alphaCapital float64, quotes map[string]cache.TickerQuote) {
+// OpenPositionFromSignal creates an execution engine position derived from a persisted
+// FuturesTradeSignal so the positions endpoint accurately reflects signal-generated trades.
+func (e *ExecutionEngine) OpenPositionFromSignal(sig *db.FuturesTradeSignal) (*db.Trade, error) {
+	if sig == nil || sig.EntryPrice <= 0 {
+		return nil, fmt.Errorf("invalid signal: nil or zero entry price")
+	}
+
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if len(e.positions) > 0 {
-		return // Positions already active, preserve existing
+	// Prevent duplicate positions for the same symbol
+	if _, exists := e.positions[sig.Symbol]; exists {
+		return e.positions[sig.Symbol], nil
 	}
 
+	e.orderCounter++
 	now := time.Now()
 
-	// 1. Seed Core Commodities (PAXG/USDT Gold, XAG/USDT Silver)
-	if coreCapital > 0 {
-		paxgQuote, hasPaxg := quotes["PAXG/USDT"]
-		if hasPaxg && paxgQuote.Price > 0 {
-			paxgCap := coreCapital * 0.60
-			size := paxgCap / paxgQuote.Price
-			e.orderCounter++
-			e.positions["PAXG/USDT"] = &db.Trade{
-				ID:           e.orderCounter,
-				Symbol:       "PAXG/USDT",
-				Bucket:       "CORE",
-				Side:         "BUY",
-				EntryPrice:   paxgQuote.Price,
-				EntryTime:    now,
-				PositionSize: math.Round(size*1000) / 1000,
-				Leverage:     1,
-				StopLoss:     paxgQuote.Price * 0.95,
-				TakeProfit:   paxgQuote.Price * 1.15,
-				Status:       "OPEN",
-				CreatedAt:    now,
-			}
-			e.cash -= paxgCap
-		}
-
-		xagQuote, hasXag := quotes["XAG/USDT"]
-		if hasXag && xagQuote.Price > 0 {
-			xagCap := coreCapital * 0.40
-			size := xagCap / xagQuote.Price
-			e.orderCounter++
-			e.positions["XAG/USDT"] = &db.Trade{
-				ID:           e.orderCounter,
-				Symbol:       "XAG/USDT",
-				Bucket:       "CORE",
-				Side:         "BUY",
-				EntryPrice:   xagQuote.Price,
-				EntryTime:    now,
-				PositionSize: math.Round(size*100) / 100,
-				Leverage:     1,
-				StopLoss:     xagQuote.Price * 0.95,
-				TakeProfit:   xagQuote.Price * 1.15,
-				Status:       "OPEN",
-				CreatedAt:    now,
-			}
-			e.cash -= xagCap
-		}
+	side := "BUY"
+	dir := DirectionLong
+	if sig.Direction == "SHORT" || sig.Direction == "SELL" {
+		side = "SELL"
+		dir = DirectionShort
 	}
 
-	// 2. Seed Alpha Tactical Crypto (BTC/USDT, ETH/USDT, SOL/USDT)
-	if alphaCapital > 0 {
-		btcQuote, hasBtc := quotes["BTC/USDT"]
-		if hasBtc && btcQuote.Price > 0 {
-			btcMargin := alphaCapital * 0.50
-			lev := 2
-			notional := btcMargin * float64(lev)
-			size := notional / btcQuote.Price
-			e.orderCounter++
-			e.positions["BTC/USDT"] = &db.Trade{
-				ID:           e.orderCounter,
-				Symbol:       "BTC/USDT",
-				Bucket:       "ALPHA",
-				Side:         "BUY",
-				EntryPrice:   btcQuote.Price,
-				EntryTime:    now,
-				PositionSize: math.Round(size*10000) / 10000,
-				Leverage:     lev,
-				StopLoss:     btcQuote.Price * 0.97,
-				TakeProfit:   btcQuote.Price * 1.08,
-				Status:       "OPEN",
-				CreatedAt:    now,
-			}
-			e.cash -= btcMargin
-		}
-
-		ethQuote, hasEth := quotes["ETH/USDT"]
-		if hasEth && ethQuote.Price > 0 {
-			ethMargin := alphaCapital * 0.30
-			lev := 2
-			notional := ethMargin * float64(lev)
-			size := notional / ethQuote.Price
-			e.orderCounter++
-			e.positions["ETH/USDT"] = &db.Trade{
-				ID:           e.orderCounter,
-				Symbol:       "ETH/USDT",
-				Bucket:       "ALPHA",
-				Side:         "BUY",
-				EntryPrice:   ethQuote.Price,
-				EntryTime:    now,
-				PositionSize: math.Round(size*1000) / 1000,
-				Leverage:     lev,
-				StopLoss:     ethQuote.Price * 0.97,
-				TakeProfit:   ethQuote.Price * 1.08,
-				Status:       "OPEN",
-				CreatedAt:    now,
-			}
-			e.cash -= ethMargin
-		}
-
-		solQuote, hasSol := quotes["SOL/USDT"]
-		if hasSol && solQuote.Price > 0 {
-			solMargin := alphaCapital * 0.20
-			lev := 2
-			notional := solMargin * float64(lev)
-			size := notional / solQuote.Price
-			e.orderCounter++
-			e.positions["SOL/USDT"] = &db.Trade{
-				ID:           e.orderCounter,
-				Symbol:       "SOL/USDT",
-				Bucket:       "ALPHA",
-				Side:         "BUY",
-				EntryPrice:   solQuote.Price,
-				EntryTime:    now,
-				PositionSize: math.Round(size*100) / 100,
-				Leverage:     lev,
-				StopLoss:     solQuote.Price * 0.96,
-				TakeProfit:   solQuote.Price * 1.10,
-				Status:       "OPEN",
-				CreatedAt:    now,
-			}
-			e.cash -= solMargin
-		}
+	lev := sig.Leverage
+	if lev < 1 {
+		lev = 1
 	}
+
+	marginRequired := sig.AllocatedCapitalUSD
+	if marginRequired > e.cash {
+		return nil, fmt.Errorf("insufficient cash: need %.2f, have %.2f", marginRequired, e.cash)
+	}
+
+	notionalValue := marginRequired * float64(lev)
+	posSize := notionalValue / sig.EntryPrice
+
+	liqPrice, _ := CalculateLiquidationPrice(sig.EntryPrice, lev, dir, 0.005)
+
+	trade := &db.Trade{
+		ID:               e.orderCounter,
+		Symbol:           sig.Symbol,
+		Bucket:           market.GetBucket(sig.Symbol),
+		Side:             side,
+		EntryPrice:       sig.EntryPrice,
+		EntryTime:        now,
+		PositionSize:     posSize,
+		StopLoss:         sig.StopLoss,
+		TakeProfit:       sig.TakeProfit1,
+		Leverage:         lev,
+		LiquidationPrice: liqPrice,
+		Status:           "OPEN",
+		CreatedAt:        now,
+	}
+
+	e.cash -= marginRequired
+	e.positions[sig.Symbol] = trade
+
+	return trade, nil
 }
 
 // SetTotalEquity adjusts the capital basis grounded in the investor ledger.

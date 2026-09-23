@@ -153,17 +153,29 @@ func main() {
 
 	// Synchronous initial fetch to populate prices before serving clients
 	if initialQuotes, err := liveFeed.FetchAllLiveTicks(ctx); err == nil {
-		quoteMap := make(map[string]cache.TickerQuote)
 		for _, q := range initialQuotes {
 			srv.IngestTick(q)
-			quoteMap[q.Symbol] = q
 		}
-		coreCap := initialCap * cfg.CoreTargetPct
-		alphaCap := initialCap * cfg.AlphaTargetPct
-		execEngine.SeedInitialAllocations(coreCap, alphaCap, quoteMap)
-		log.Printf("[INFO] Initial price fetch complete: %d assets priced. Seeded active portfolio positions.", len(initialQuotes))
+		log.Printf("[INFO] Initial price fetch complete: %d assets priced. Positions are signal-driven only.", len(initialQuotes))
 	} else {
 		log.Printf("[WARN] Initial price fetch failed: %v. Prices will be populated from live feed.", err)
+	}
+
+	// Rehydrate existing active signals from database into execution engine positions
+	if store != nil {
+		activeSignals, err := store.ListFuturesSignals(ctx, "ACTIVE", 50)
+		if err == nil && len(activeSignals) > 0 {
+			rehydrated := 0
+			for i := range activeSignals {
+				sig := &activeSignals[i]
+				if trade, err := execEngine.OpenPositionFromSignal(sig); err == nil && trade != nil {
+					rehydrated++
+				}
+			}
+			if rehydrated > 0 {
+				log.Printf("[INFO] Rehydrated %d active signals into execution engine positions.", rehydrated)
+			}
+		}
 	}
 
 	ticks := liveFeed.Subscribe(ctx, 3*time.Second)

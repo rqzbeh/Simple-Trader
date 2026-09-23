@@ -9,15 +9,8 @@ interface AIWeightMatrixProps {
 
 export const INITIAL_WEIGHTS: IndicatorWeights = {
   symbol: 'GLOBAL_PORTFOLIO',
-  regime: 'Trending Momentum',
-  weights: {
-    RSI: 1.35,
-    MACD: 1.20,
-    SuperTrend: 1.50,
-    BollingerBands: 0.85,
-    ATR: 0.90,
-    VWAP: 1.40,
-  },
+  regime: 'Loading...',
+  weights: {},
   lastUpdated: new Date().toLocaleTimeString(),
 };
 

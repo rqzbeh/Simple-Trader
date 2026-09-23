@@ -32,6 +32,7 @@ func (s *Server) newSignalService() *trader.SignalService {
 			MinTakeProfitPct:   s.cfg.MinTakeProfitPct,
 			MaxTakeProfitPct:   s.cfg.MaxTakeProfitPct,
 			MaxRiskPerTradePct: s.cfg.MaxRiskPerTradePct,
+			MaxTradeMarginPct:  s.cfg.MaxTradeMarginPct,
 		}
 	} else {
 		sigCfg = trader.DefaultSignalConfig()
@@ -259,6 +260,22 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 
 	// Broadcast signal via SSE and Telegram ONLY if brand-new and not yet dispatched
 	if !sig.TelegramDispatched {
+		// Wire signal into execution engine as a live position
+		if s.execEngine != nil && sig.ID > 0 {
+			if trade, err := s.execEngine.OpenPositionFromSignal(sig); err == nil && trade != nil {
+				// Broadcast the new trade via SSE so the frontend positions table updates
+				if s.broadcaster != nil {
+					if tradeBytes, err := json.Marshal(trade); err == nil {
+						s.broadcaster.Broadcast("trade", string(tradeBytes))
+					}
+				}
+				log.Printf("[Signal→Position] Opened %s position for %s at $%.2f (margin=$%.2f, lev=%dx)",
+					sig.Direction, sig.Symbol, sig.EntryPrice, sig.AllocatedCapitalUSD, sig.Leverage)
+			} else if err != nil {
+				log.Printf("[Signal→Position] Failed to open position for %s: %v", sig.Symbol, err)
+			}
+		}
+
 		if s.broadcaster != nil {
 			if sigBytes, err := json.Marshal(sig); err == nil {
 				s.broadcaster.Broadcast("futures_signal", string(sigBytes))
@@ -573,6 +590,14 @@ func (s *Server) CheckSignalExitForTick(tick cache.TickerQuote) {
 	// 1. Mark signal as CLOSED in database
 	if sig.ID > 0 {
 		_ = s.dbStore.CloseFuturesSignal(ctx, sig.ID, tick.Price, exitReason, pnl, roi)
+	}
+
+	// 1b. Close corresponding execution engine position
+	if s.execEngine != nil {
+		if closedTrade, exited := s.execEngine.CheckExit(sig.Symbol, tick.Price); exited {
+			log.Printf("[Signal→Position] Closed %s position for %s: reason=%s pnl=%.2f",
+				closedTrade.Side, closedTrade.Symbol, exitReason, closedTrade.RealizedPnL)
+		}
 	}
 
 	// 2. Broadcast resolution via SSE
