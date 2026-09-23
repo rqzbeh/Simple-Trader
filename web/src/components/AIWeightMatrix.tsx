@@ -33,9 +33,9 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
 
-  // OpenAI Model Fine-tuning settings state (binds dynamically to live backend .env)
-  const [modelId, setModelId] = useState<string>(() => localStorage.getItem('st_ai_model') || 'gpt-4o-mini');
-  const [endpointUrl, setEndpointUrl] = useState<string>(() => localStorage.getItem('st_ai_endpoint') || 'https://api.openai.com/v1');
+  // AI Model settings state (binds dynamically to live backend .env)
+  const [modelId, setModelId] = useState<string>('');
+  const [endpointUrl, setEndpointUrl] = useState<string>('');
   const [apiKey, setApiKey] = useState<string>('');
   const [envConfigLoaded, setEnvConfigLoaded] = useState<boolean>(false);
   const [serverKeyMasked, setServerKeyMasked] = useState<string>('');
@@ -54,8 +54,8 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
           if (data.ai_model_id) {
             setModelId(data.ai_model_id);
           }
-          if (data.ai_base_url) {
-            setEndpointUrl(data.ai_base_url);
+          if (data.ai_base_url_configured) {
+            setEndpointUrl('Configured via Environment');
           }
           if (data.ai_api_key_configured) {
             setServerKeyConfigured(true);

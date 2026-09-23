@@ -25,8 +25,8 @@ func TestLoadConfig_Defaults(t *testing.T) {
 	if cfg.AIBaseURL != "https://api.openai.com/v1" {
 		t.Errorf("expected default AIBaseURL https://api.openai.com/v1, got %s", cfg.AIBaseURL)
 	}
-	if cfg.AIModelID != "gpt-4o" {
-		t.Errorf("expected default AIModelID gpt-4o, got %s", cfg.AIModelID)
+	if cfg.AIModelID != "" {
+		t.Errorf("expected default AIModelID empty, got %s", cfg.AIModelID)
 	}
 }
 

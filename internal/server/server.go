@@ -317,7 +317,7 @@ func (s *Server) setupRoutes() {
 		}
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ai_base_url":             s.cfg.AIBaseURL,
+			"ai_base_url_configured":  s.cfg.AIBaseURL != "",
 			"ai_model_id":             s.cfg.AIModelID,
 			"ai_reasoning_effort":     s.cfg.AIReasoningEffort,
 			"ai_api_key_configured":   s.cfg.AIAPIKey != "",

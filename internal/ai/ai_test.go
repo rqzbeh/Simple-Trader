@@ -48,7 +48,7 @@ func TestOpenAIClientDecision(t *testing.T) {
 	client := ai.NewClient(ai.ClientConfig{
 		BaseURL:     mockServer.URL,
 		APIKey:      "test-api-key",
-		ModelID:     "gpt-4o-mini",
+		ModelID:     "test-quant-model",
 		Temperature: 0.2,
 		TimeoutSec:  5,
 	})

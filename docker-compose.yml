@@ -56,7 +56,7 @@ services:
       REDIS_URL: "redis://redis:6379/0"
       AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
       AI_API_KEY: ${AI_API_KEY:-}
-      AI_MODEL_ID: ${AI_MODEL_ID:-gpt-4o}
+      AI_MODEL_ID: ${AI_MODEL_ID:-}
       AI_TEMPERATURE: ${AI_TEMPERATURE:-0.2}
       AI_REASONING_EFFORT: ${AI_REASONING_EFFORT:-high}
       INITIAL_CAPITAL: ${INITIAL_CAPITAL:-100000.0}
