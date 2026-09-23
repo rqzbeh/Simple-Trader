@@ -453,10 +453,12 @@ export const App: React.FC = () => {
                   </span>
                   <span>Automated SL/TP</span>
                 </div>
-                <PositionsTable
-                  positions={positions}
-                  onClosePosition={handleClosePosition}
-                />
+                <ErrorBoundary fallbackTitle="Active Positions Offline">
+                  <PositionsTable
+                    positions={positions}
+                    onClosePosition={handleClosePosition}
+                  />
+                </ErrorBoundary>
               </div>
             </div>
           </>
