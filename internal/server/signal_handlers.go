@@ -724,6 +724,15 @@ func (s *Server) runBackgroundScan(ctx context.Context) {
 		bucket := market.GetBucket(sym)
 
 		_, _ = s.EvaluateSymbolSignal(ctx, sym, bucket, newsHeadlines)
+
+		// Re-check the concurrency cap after each evaluation: overshoot
+		// is possible between the pre-scan check and this loop.
+		if s.dbStore != nil {
+			if active, err := s.dbStore.ListFuturesSignals(ctx, "ACTIVE", maxActive+1); err == nil && len(active) >= maxActive {
+				log.Printf("[BackgroundScan] Halting scan at concurrency cap (%d active signals).", len(active))
+				return
+			}
+		}
 		time.Sleep(500 * time.Millisecond)
 	}
 }
