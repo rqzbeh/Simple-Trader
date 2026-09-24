@@ -34,6 +34,7 @@ func TestSupportedAssetsClassificationAndInvariants(t *testing.T) {
 				"PALLADIUM": true,
 				"OIL":       true,
 				"ALUMINUM":  true,
+				"NATGAS":    true,
 			}
 			if !allowedGroups[a.ExposureGroup] {
 				t.Errorf("CORE asset %s has unapproved commodity exposure group: %s", a.Symbol, a.ExposureGroup)

@@ -3,45 +3,19 @@ import { INITIAL_ASSETS, INITIAL_SUMMARY, INITIAL_POSITIONS, INITIAL_SIGNALS } f
 import { INITIAL_WEIGHTS } from './components/AIWeightMatrix';
 
 describe('Web Types, Mock Data, and Risk Model', () => {
-  it('should include all required liquid global crypto and commodity assets based on USDT/USDC', () => {
-    const symbols = INITIAL_ASSETS.map((a) => a.symbol);
-    expect(symbols).toContain('PAXG/USDT');
-    expect(symbols).toContain('XAU/USDT');
-    expect(symbols).toContain('XAG/USDT');
-    expect(symbols).toContain('COPPER/USDT');
-    expect(symbols).toContain('XPT/USDT');
-    expect(symbols).toContain('XPD/USDT');
-    expect(symbols).toContain('OIL/USDT');
-    expect(symbols).toContain('ALU/USDT');
-    expect(symbols).toContain('BNB/USDT');
-    expect(symbols).toContain('BTC/USDT');
-    expect(symbols).toContain('ETH/USDT');
-    expect(symbols).toContain('SOL/USDT');
-    expect(symbols).toContain('AVAX/USDT');
-    expect(symbols).toContain('DOGE/USDT');
-    expect(symbols).toContain('SUI/USDT');
-    expect(symbols).toContain('XRP/USDT');
-    expect(symbols).toContain('LINK/USDT');
-
-    // Verify CORE assets are strictly commodities and BNB is ALPHA
-    const bnb = INITIAL_ASSETS.find((a) => a.symbol === 'BNB/USDT');
-    expect(bnb?.bucket).toBe('ALPHA');
-    const paxg = INITIAL_ASSETS.find((a) => a.symbol === 'PAXG/USDT');
-    expect(paxg?.bucket).toBe('CORE');
-    const xau = INITIAL_ASSETS.find((a) => a.symbol === 'XAU/USDT');
-    expect(xau?.bucket).toBe('CORE');
-    const copper = INITIAL_ASSETS.find((a) => a.symbol === 'COPPER/USDT');
-    expect(copper?.bucket).toBe('CORE');
-    const oil = INITIAL_ASSETS.find((a) => a.symbol === 'OIL/USDT');
-    expect(oil?.bucket).toBe('CORE');
-    const xpt = INITIAL_ASSETS.find((a) => a.symbol === 'XPT/USDT');
-    expect(xpt?.bucket).toBe('CORE');
+  it('should not ship a hardcoded asset catalog in the web client', () => {
+    // The single source of truth is internal/market/assets.go, served by
+    // GET /api/v1/assets. A duplicated client-side list is what previously made
+    // the dashboard and screener disagree on asset counts.
+    expect(INITIAL_ASSETS.length).toBe(0);
   });
 
-  it('should enforce 60/40 allocation targets in summary', () => {
-    expect(INITIAL_SUMMARY.targetCorePct).toBe(0.60);
-    expect(INITIAL_SUMMARY.targetAlphaPct).toBe(0.40);
-    expect(INITIAL_SUMMARY.targetCorePct + INITIAL_SUMMARY.targetAlphaPct).toBe(1.0);
+  it('should not fabricate portfolio equity before the API responds', () => {
+    // Placeholders only: real values arrive from GET /api/v1/portfolio/summary.
+    expect(INITIAL_SUMMARY.totalEquity).toBe(0);
+    expect(INITIAL_SUMMARY.cash).toBe(0);
+    expect(INITIAL_SUMMARY.initialEquity).toBe(0);
+    expect(INITIAL_SUMMARY.drawdownPct).toBe(0);
   });
 
   it('should have initial dynamic indicator weights bounded between [0.2, 3.0]', () => {
