@@ -8,6 +8,7 @@ import (
 
 	"github.com/rqzbeh/simple-trader/internal/ai"
 	"github.com/rqzbeh/simple-trader/internal/cache"
+	"github.com/rqzbeh/simple-trader/internal/market"
 	"github.com/rqzbeh/simple-trader/internal/db"
 )
 
@@ -138,6 +139,31 @@ func (s *SignalService) EvaluateMarketSignal(
 		NewsHeadlines: headlines,
 	}
 
+	// Pre-compute the NLP sentiment packet so every prompt carries scored
+	// evidence (score, polarity, headline mix, trigger phrases) instead of
+	// raw headlines alone. Lexicon path is offline and deterministic.
+	if len(headlines) > 0 {
+		report := market.AnalyzeNewsSentiment(headlines)
+		bullish, bearish := 0, 0
+		for _, h := range headlines {
+			hs := market.AnalyzeNewsSentiment([]string{h})
+			switch hs.Polarity {
+			case market.PolarityBullish:
+				bullish++
+			case market.PolarityBearish:
+				bearish++
+			}
+		}
+		decReq.NewsSentiment = &ai.NewsSentimentInput{
+			Score:         report.Score,
+			Polarity:      string(report.Polarity),
+			HeadlineCount: report.HeadlineCount,
+			BullishCount:  bullish,
+			BearishCount:  bearish,
+			KeyPhrases:    report.KeyPhrases,
+		}
+	}
+
 	aiResp, err := s.aiClient.Analyze(ctx, decReq)
 	if err != nil {
 		return nil, fmt.Errorf("ai analysis failed: %w", err)
@@ -176,9 +202,20 @@ func (s *SignalService) EvaluateMarketSignal(
 	}
 	if tpPct < s.config.MinTakeProfitPct || tpPct > s.config.MaxTakeProfitPct {
 		tpPct = slPct * s.config.MinRiskRewardRatio
+		if tpPct > s.config.MaxTakeProfitPct {
+			// Keep the R:R gate satisfiable within the TP ceiling by
+			// tightening SL instead of emitting an under-R:R signal.
+			slPct = s.config.MaxTakeProfitPct / s.config.MinRiskRewardRatio
+			if slPct < s.config.MinStopLossPct {
+				slPct = s.config.MinStopLossPct
+			}
+			tpPct = slPct * s.config.MinRiskRewardRatio
+		}
 	}
 
-	// Clamp TP within configured bounds
+	// Safety net: TP never exceeds the configured ceiling here. If SL cannot
+	// shrink enough to hold R:R within bounds, section 5 stretches TP past
+	// the ceiling and the R:R floor wins as the hard gate.
 	if tpPct > s.config.MaxTakeProfitPct {
 		tpPct = s.config.MaxTakeProfitPct
 	}
