@@ -373,24 +373,26 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 	}
 
 	if len(symbols) == 0 {
-		allAssets := market.GetSupportedAssets()
+		// Default to the screener-qualified universe. Scanning the full catalog
+		// (~123 instruments, each up to a 15s AI call) exceeds the ~100s gateway
+		// timeout and 502s the dashboard — the qualified set bounds the batch to
+		// 2 worker rounds. Explicit symbols still override; bucket filters apply.
+		universe := s.scanUniverse()
 		switch bucket {
 		case "CORE":
-			for _, a := range allAssets {
-				if a.Bucket == "CORE" {
-					symbols = append(symbols, a.Symbol)
+			for _, sym := range universe {
+				if market.GetBucket(sym) == "CORE" {
+					symbols = append(symbols, sym)
 				}
 			}
 		case "ALPHA":
-			for _, a := range allAssets {
-				if a.Bucket == "ALPHA" {
-					symbols = append(symbols, a.Symbol)
+			for _, sym := range universe {
+				if market.GetBucket(sym) == "ALPHA" {
+					symbols = append(symbols, sym)
 				}
 			}
 		default: // "ALL" or unrecognized
-			for _, a := range allAssets {
-				symbols = append(symbols, a.Symbol)
-			}
+			symbols = universe
 		}
 	}
 
@@ -404,6 +406,20 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 	}
 
 	results := make([]AssetScanResult, len(symbols))
+	for i, sym := range symbols {
+		results[i] = AssetScanResult{
+			Symbol:  sym,
+			Status:  "SKIPPED",
+			Message: "Not evaluated: batch deadline reached before this asset started.",
+		}
+	}
+
+	// Overall deadline for the whole batch. The response must always return:
+	// a sync handler blocked past the gateway timeout 502s and the dashboard
+	// shows a broken scan even though the backend kept working.
+	batchCtx, batchCancel := context.WithTimeout(r.Context(), 55*time.Second)
+	defer batchCancel()
+
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, 12) // concurrency limit
 
@@ -414,9 +430,16 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			// Do not start new evaluations after the batch deadline: their
+			// results would land as SKIPPED anyway and we would hold the
+			// response for nothing.
+			if batchCtx.Err() != nil {
+				return
+			}
+
 			b := market.GetBucket(symbol)
 
-			evalCtx, evalCancel := context.WithTimeout(r.Context(), 15*time.Second)
+			evalCtx, evalCancel := context.WithTimeout(batchCtx, 15*time.Second)
 			defer evalCancel()
 
 			sig, err := s.EvaluateSymbolSignal(evalCtx, symbol, b, newsHeadlines)
