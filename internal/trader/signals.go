@@ -216,6 +216,9 @@ func (s *SignalService) EvaluateMarketSignal(
 	if maxRiskPct <= 0 {
 		maxRiskPct = 0.015
 	}
+	// Quantity is intentionally discarded: the execution engine derives
+	// position size from the final clamped margin (see OpenPositionFromSignal),
+	// so the persisted allocation and the live position stay consistent.
 	_, marginRequired, _, err := CalculatePositionSizing(
 		totalEquity,
 		maxRiskPct,
