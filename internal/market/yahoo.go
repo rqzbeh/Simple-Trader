@@ -55,6 +55,8 @@ func mapToYahooSymbol(symbol string) string {
 		return "CL=F"
 	case "BRENT/USDT", "BRENT":
 		return "BZ=F"
+	case "NG/USDT", "NG", "NATGAS":
+		return "NG=F"
 	case "ALU/USDT", "ALUUSDT", "ALUMINUM":
 		return "ALI=F"
 	case "COPPER/USDT", "COPPERUSDT":

@@ -2,6 +2,7 @@ package market
 
 import (
 	"context"
+	"errors"
 	"log"
 	"sync"
 	"time"
@@ -12,10 +13,10 @@ import (
 
 // ScreenerConfig sets minimum liquidity and tightness thresholds.
 type ScreenerConfig struct {
-	Min24hVolume    float64       // e.g. 50,000,000 ($50M USD)
-	MaxSpreadBps    float64       // e.g. 10.0 (10 basis points = 0.10%)
-	PollInterval    time.Duration // e.g. 5 minutes
-	CandidatePairs  []string      // Pairs to evaluate
+	Min24hVolume   float64       // e.g. 50,000,000 ($50M USD)
+	MaxSpreadBps   float64       // e.g. 10.0 (10 basis points = 0.10%)
+	PollInterval   time.Duration // e.g. 5 minutes
+	CandidatePairs []string      // Pairs to evaluate
 }
 
 // DefaultScreenerConfig provides institutional liquidity parameters.
@@ -120,65 +121,78 @@ func (s *DynamicCryptoScreener) EvaluateCandidate(symbol string, price, volume24
 }
 
 // RunScreeningCycle performs one complete pass over all candidate pairs.
+// Market stats are fetched concurrently: the catalog now holds 100+ instruments
+// and a sequential pass would exceed the poll interval.
 func (s *DynamicCryptoScreener) RunScreeningCycle(ctx context.Context) []db.ScreenedAsset {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	var evaluated []db.ScreenedAsset
-	var qualified []string
+	pairs := s.cfg.CandidatePairs
+	type statsResult struct {
+		price, vol, spread float64
+		err                error
+	}
 
-	for _, symbol := range s.cfg.CandidatePairs {
-		if s.provider == nil {
-			asset := db.ScreenedAsset{
-				Symbol:          symbol,
-				Price:           0,
-				Volume24h:       0,
-				BidAskSpreadBps: 0,
-				Status:          "DISQUALIFIED",
-				RejectionReason: "market stats provider uninitialized",
-				ScreenedAt:      time.Now(),
-			}
-			evaluated = append(evaluated, asset)
-			continue
+	results := make([]statsResult, len(pairs))
+	if s.provider == nil {
+		for i := range pairs {
+			results[i] = statsResult{err: errors.New("market stats provider uninitialized")}
 		}
+	} else {
+		var wg sync.WaitGroup
+		sem := make(chan struct{}, 12)
+		for i, symbol := range pairs {
+			wg.Add(1)
+			go func(idx int, sym string) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
 
-		price, vol, spread, err := s.provider.Get24hStats(symbol)
+				p, v, sp, err := s.provider.Get24hStats(sym)
 
-		// For CORE commodities (Yahoo-sourced), if Binance fails, try Redis-cached price
-		if err != nil && GetBucket(symbol) == "CORE" {
-			assetDef, _ := FindAsset(symbol)
-			if assetDef.FeedSource == "YAHOO" && s.redisClient != nil {
-				if cached, cErr := s.redisClient.GetTicker(ctx, symbol); cErr == nil && cached != nil && cached.Price > 0 {
-					price = cached.Price
-					vol = cached.Volume
-					spread = 0 // CORE commodities bypass spread checks
-					err = nil
+				// CORE commodities on Yahoo feeds are not on Binance: fall back
+				// to the live price the feed already cached in Redis.
+				if err != nil && GetBucket(sym) == "CORE" {
+					assetDef, _ := FindAsset(sym)
+					if assetDef.FeedSource == "YAHOO" && s.redisClient != nil {
+						if cached, cErr := s.redisClient.GetTicker(ctx, sym); cErr == nil && cached != nil && cached.Price > 0 {
+							p, v, sp, err = cached.Price, cached.Volume, 0, nil
+						}
+					}
 				}
-			}
+				results[idx] = statsResult{price: p, vol: v, spread: sp, err: err}
+			}(i, symbol)
 		}
-		if err != nil {
-			log.Printf("[Screener] Live fetch failed for %s (%v)", symbol, err)
-			asset := db.ScreenedAsset{
+		wg.Wait()
+	}
+
+	evaluated := make([]db.ScreenedAsset, 0, len(pairs))
+	qualified := make([]string, 0, len(pairs))
+
+	for i, symbol := range pairs {
+		r := results[i]
+		var asset db.ScreenedAsset
+
+		if r.err != nil {
+			log.Printf("[Screener] Live fetch failed for %s (%v)", symbol, r.err)
+			asset = db.ScreenedAsset{
 				Symbol:          symbol,
 				Price:           0,
 				Volume24h:       0,
 				BidAskSpreadBps: 0,
 				Status:          "DISQUALIFIED",
-				RejectionReason: "Live exchange fetch failed: " + err.Error(),
+				RejectionReason: "Live exchange fetch failed: " + r.err.Error(),
 				ScreenedAt:      time.Now(),
 			}
-			evaluated = append(evaluated, asset)
-			continue
+		} else {
+			asset = s.EvaluateCandidate(symbol, r.price, r.vol, r.spread)
 		}
 
-		asset := s.EvaluateCandidate(symbol, price, vol, spread)
 		evaluated = append(evaluated, asset)
-
 		if asset.Status == "ACTIVE" {
 			qualified = append(qualified, symbol)
 		}
 
-		// Persist to Postgres if available
 		if s.dbStore != nil && s.dbStore.Pool != nil {
 			_, _ = s.dbStore.Pool.Exec(ctx, `
 				INSERT INTO crypto_screener_snapshots (symbol, price, volume_24h, bid_ask_spread_bps, status, rejection_reason, screened_at)
@@ -188,11 +202,11 @@ func (s *DynamicCryptoScreener) RunScreeningCycle(ctx context.Context) []db.Scre
 	}
 
 	s.screenedAssets = evaluated
-	if len(qualified) > 0 {
-		s.activeUniverse = qualified
-		if s.redisClient != nil {
-			_ = s.redisClient.SetActiveCryptoUniverse(ctx, qualified)
-		}
+	// Always publish the current pass: leaving a stale universe on an all-reject
+	// pass would let the UI claim assets are qualified after they are not.
+	s.activeUniverse = qualified
+	if s.redisClient != nil {
+		_ = s.redisClient.SetActiveCryptoUniverse(ctx, qualified)
 	}
 
 	return evaluated
