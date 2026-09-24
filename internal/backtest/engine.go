@@ -159,9 +159,19 @@ func (e *VectorizedEngine) Run(candles []Candle) *BacktestResult {
 			var exitPrice float64
 			var reason string
 
+			// Dynamic ATR-based SL/TP using live indicator data
+			atrSL := atrs[i] * 1.5 // 1.5x ATR for stop loss
+			atrTP := atrs[i] * 3.0 // 3.0x ATR for take profit (2:1 R:R)
+			if atrSL <= 0 {
+				atrSL = activePosition.EntryPrice * 0.015
+			}
+			if atrTP <= 0 {
+				atrTP = activePosition.EntryPrice * 0.030
+			}
+
 			if activePosition.Side == "BUY" {
-				sl := activePosition.EntryPrice * 0.985 // 1.5% Stop Loss
-				tp := activePosition.EntryPrice * 1.030 // 3.0% Take Profit
+				sl := activePosition.EntryPrice - atrSL
+				tp := activePosition.EntryPrice + atrTP
 				if lows[i] <= sl {
 					exitPrice = sl
 					reason = "STOP_LOSS"
@@ -172,8 +182,8 @@ func (e *VectorizedEngine) Run(candles []Candle) *BacktestResult {
 					exited = true
 				}
 			} else if activePosition.Side == "SELL" {
-				sl := activePosition.EntryPrice * 1.015
-				tp := activePosition.EntryPrice * 0.970
+				sl := activePosition.EntryPrice + atrSL
+				tp := activePosition.EntryPrice - atrTP
 				if highs[i] >= sl {
 					exitPrice = sl
 					reason = "STOP_LOSS"
@@ -243,7 +253,7 @@ func (e *VectorizedEngine) Run(candles []Candle) *BacktestResult {
 				RSI:             rsis[i],
 				MACDHistogram:   macdRes.Histogram[i],
 				SuperTrendTrend: stRes.Trend[i],
-				OBI:             0.10, // Baseline order book flow
+				OBI:             0.0, // No order book data in historical backtest
 				Regime:          regime,
 				VolRatio:        volRatio,
 				GarmanKlass:     gkVol[i],
@@ -255,14 +265,27 @@ func (e *VectorizedEngine) Run(candles []Candle) *BacktestResult {
 			score, side := indicators.CalculateConfluence(snapshot, e.config.IndicatorsWeights)
 
 			if score >= 0.25 && side != "NEUTRAL" {
-				// Half-Kelly Position Sizing (FR-007)
-				winProb := 0.52
-				payoffRatio := 2.0 // 3.0% TP / 1.5% SL
+				// Dynamic win probability derived from confluence confidence
+				winProb := 0.50 + (score * 0.15) // Higher confluence → higher estimated win prob
+				if winProb > 0.70 {
+					winProb = 0.70
+				}
+
+				// ATR-based dynamic SL/TP for position sizing
+				slDist := atrs[i] * 1.5
+				tpDist := atrs[i] * 3.0
+				if slDist <= 0 {
+					slDist = currentPrice * 0.015
+				}
+				if tpDist <= 0 {
+					tpDist = currentPrice * 0.030
+				}
+				payoffRatio := tpDist / slDist
+
 				riskFraction := trader.CalculateHalfKelly(e.config.Kelly, winProb, payoffRatio)
 
 				dollarRisk := capital * riskFraction
-				slDistance := currentPrice * 0.015
-				positionSize := dollarRisk / slDistance
+				positionSize := dollarRisk / slDist
 
 				// Cap position size to maximum 20% of capital
 				maxUnits := (capital * 0.20) / currentPrice
