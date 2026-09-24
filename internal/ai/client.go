@@ -104,6 +104,16 @@ CRITICAL ARCHITECTURAL MANDATE: NEWS CATALYST FIRST
    - Calibrate isolated margin leverage between 5x and 10x (default 8x for liquid crypto futures). Trades must produce meaningful leveraged ROI (20%% to 40%%+ return on margin) to comfortably exceed transaction costs and justify market risk.
 5. Capital Sizing & Allocation: Account sizes start at $100 up to institutional scale. Suggest allocation_pct as percent of available tactical alpha (default 1.0%% to 2.0%% risk per trade, ensuring margin required is sustainable and bounded within Tier 3 Tactical Alpha).
 
+EQUITY-RESEARCH DISCIPLINE (Applied to every decision):
+Run this compact desk check before emitting the decision:
+  a. Executive read: state the trade direction, conviction (High/Medium/Low), and the single strongest catalyst.
+  b. Catalyst triage: label each supplied headline Near-term (0-6 months), Medium-term (6-24 months), or Noise. Only Near-term catalysts qualify a trade.
+  c. Bull/base/bear: weigh one bullish path, one base path, and one bearish path for the catalyst, then pick the decision the highest-probability path supports.
+  d. Risk gate: name the company-level risk and the macro-level risk that would invalidate the trade. If either is unpriced and material, output HOLD.
+  e. Technical context: cite the support/resistance logic that sets the entry side (pullback entry, never chase spikes) and confirm SL/TP placement uses it.
+  f. Position sizing: allocate 0.5%%-2.0%% of available tactical alpha, scaled DOWN on Low conviction or RANGING regime, scaled UP only on High conviction with BULL/BEAR regime alignment.
+Embed the outcome of steps a-f in the "reasoning" field in 2-4 dense sentences. This discipline NEVER overrides the NEWS CATALYST FIRST mandate: with no Near-term catalyst, the answer is HOLD regardless of technicals.
+
 CURRENT ADAPTIVE INDICATOR WEIGHTS (Calibrated via Thompson Sampling / Regret Minimization):
 %s
 
@@ -133,12 +143,29 @@ func (c *Client) BuildUserPrompt(req DecisionRequest) string {
 		newsSection = "- " + strings.Join(req.NewsHeadlines, "\n- ")
 	}
 
+	sentimentSection := "PRE-COMPUTED NLP SENTIMENT: unavailable (treat headlines as unscored; do not invent scores)."
+	if req.NewsSentiment != nil {
+		phrases := "none detected"
+		if len(req.NewsSentiment.KeyPhrases) > 0 {
+			phrases = strings.Join(req.NewsSentiment.KeyPhrases, ", ")
+		}
+		sentimentSection = fmt.Sprintf(
+			"PRE-COMPUTED NLP SENTIMENT: score %+.3f (%s) over %d headline(s): %d bullish / %d bearish. Trigger phrases: %s.",
+			req.NewsSentiment.Score, req.NewsSentiment.Polarity,
+			req.NewsSentiment.HeadlineCount, req.NewsSentiment.BullishCount,
+			req.NewsSentiment.BearishCount, phrases,
+		)
+	}
+
 	return fmt.Sprintf(`Analyze real-time market telemetry snapshot with News-First Catalyst Priority:
 ASSET: %s (Fund Tier Bucket: %s)
 CURRENT PRICE: %.4f (24h Price Change: %+.2f%%)
 
 REAL-TIME BREAKING NEWS & CATALYST HEADLINES (Primary Entry Prerequisite):
 %s
+
+%s
+Use the pre-computed sentiment as the starting point, then apply the EQUITY-RESEARCH DISCIPLINE from the system prompt: triage each headline (Near-term / Medium-term / Noise), keep only Near-term catalysts, and HOLD when none qualify.
 
 TECHNICAL INDICATOR SNAPSHOT (For Entry Optimization, SL/TP Levels, and Leverage Factor Only):
 - RSI (14): %.2f
@@ -154,7 +181,7 @@ TECHNICAL INDICATOR SNAPSHOT (For Entry Optimization, SL/TP Levels, and Leverage
 
 Analyze catalyst priority first. If no high-conviction news catalyst exists, output "HOLD". If a catalyst exists, evaluate direction (BUY for Long, SELL for Short), calibrate isolated leverage (5x-10x), and tight SL/TP with 2-hour swing R:R between 2.5:1 and 3:1. Output strict JSON.`,
 		req.Symbol, req.Bucket, req.Quote.Price, req.Quote.Change24h,
-		newsSection,
+		newsSection, sentimentSection,
 		req.IndicatorSnap.RSI, req.IndicatorSnap.SuperTrend, req.IndicatorSnap.Histogram,
 		req.IndicatorSnap.ConfluenceScore,
 		req.IndicatorSnap.Regime, req.IndicatorSnap.VolRatio,

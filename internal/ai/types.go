@@ -18,6 +18,18 @@ type ClientConfig struct {
 	MinRiskRewardRatio float64
 }
 
+// NewsSentimentInput carries the pre-computed NLP sentiment packet for the
+// headlines attached to a DecisionRequest, so the model reasons from scored
+// evidence instead of raw text alone.
+type NewsSentimentInput struct {
+	Score         float64  // -1.0 (bearish) to +1.0 (bullish)
+	Polarity      string   // BULLISH, BEARISH, NEUTRAL
+	HeadlineCount int      // Headlines scored
+	BullishCount  int      // Headlines leaning bullish
+	BearishCount  int      // Headlines leaning bearish
+	KeyPhrases    []string // Trigger phrases detected
+}
+
 // DecisionRequest bundles market state, indicators, and dynamic weights for LLM inference.
 type DecisionRequest struct {
 	Symbol        string
@@ -26,6 +38,7 @@ type DecisionRequest struct {
 	IndicatorSnap cache.IndicatorSnapshot
 	Weights       map[string]float64
 	NewsHeadlines []string
+	NewsSentiment *NewsSentimentInput
 }
 
 // DecisionResponse represents the structured trading decision output by the LLM or heuristic fallback.
