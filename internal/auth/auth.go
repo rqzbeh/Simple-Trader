@@ -153,7 +153,7 @@ func (s *SessionStore) RevokeSession(ctx context.Context, token string) {
 // Authenticator wraps credential checking, rate-limiting, and session management.
 type Authenticator struct {
 	adminPasswordHash string
-	adminPasswordRaw  string
+	configured        bool
 	sessions          *SessionStore
 	limiter           *RateLimiter
 }
@@ -174,7 +174,7 @@ func NewAuthenticator(adminPassword string, redisClient *cache.Client) (*Authent
 
 	return &Authenticator{
 		adminPasswordHash: hash,
-		adminPasswordRaw:  adminPassword,
+		configured:        true,
 		sessions:          NewSessionStore(redisClient),
 		limiter:           NewRateLimiter(redisClient),
 	}, nil
@@ -182,7 +182,7 @@ func NewAuthenticator(adminPassword string, redisClient *cache.Client) (*Authent
 
 // IsConfigured returns true if an admin password was explicitly configured.
 func (a *Authenticator) IsConfigured() bool {
-	return a != nil && a.adminPasswordRaw != ""
+	return a != nil && a.configured
 }
 
 // Login validates password, enforces sliding window rate limit, and issues session token.
@@ -196,9 +196,8 @@ func (a *Authenticator) Login(ctx context.Context, password, clientIP string) (*
 		return nil, ErrRateLimited
 	}
 
-	// Match against bcrypt hash or fallback to direct raw password
-	valid := CheckPassword(a.adminPasswordHash, password) || ConstantTimeCompare(a.adminPasswordRaw, password)
-	if !valid {
+	// Match against bcrypt hash only; raw password is never retained.
+	if !CheckPassword(a.adminPasswordHash, password) {
 		a.limiter.RecordFailure(ctx, clientIP)
 		return nil, fmt.Errorf("%w (remaining attempts before lockout: %d)", ErrInvalidCredentials, remaining-1)
 	}
