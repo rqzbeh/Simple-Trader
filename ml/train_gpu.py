@@ -323,8 +323,10 @@ def train_gpu_model(symbol="BTCUSDT", epochs=25, batch_size=32, lr=0.001):
                 bayesian_stats["SUPERTREND"]["beta"] += 1.0
 
     # Save model weights to disk
-    os.makedirs("/home/redsnow/Simple-Trader/models", exist_ok=True)
-    model_path = f"/home/redsnow/Simple-Trader/models/{symbol.lower()}_alpha_lstm.pth"
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    models_dir = os.path.join(os.path.dirname(script_dir), "models")
+    os.makedirs(models_dir, exist_ok=True)
+    model_path = os.path.join(models_dir, f"{symbol.lower()}_alpha_lstm.pth")
     torch.save(model.state_dict(), model_path)
     print(f"[+] Model checkpoint persisted to: {model_path}")
 
