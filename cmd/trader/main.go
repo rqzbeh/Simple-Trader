@@ -44,10 +44,12 @@ func main() {
 			store = dbStore
 			log.Printf("[INFO] Connected to PostgreSQL 16 Store successfully.")
 
-			// Run migrations idempotently
+			// Run migrations idempotently, bounded in time: a wedged database
+			// must degrade to serving traffic, never block startup forever.
+			migCtx, migCancel := context.WithTimeout(ctx, 60*time.Second)
 			for _, migPath := range []string{"migrations", "/app/migrations", "internal/db/migrations"} {
 				if _, err := os.Stat(migPath); err == nil {
-					if err := store.RunMigrations(ctx, migPath); err != nil {
+					if err := store.RunMigrations(migCtx, migPath); err != nil {
 						log.Printf("[WARN] Error executing migrations from %s: %v", migPath, err)
 					} else {
 						log.Printf("[INFO] Migrations successfully verified from %s.", migPath)
@@ -55,6 +57,7 @@ func main() {
 					}
 				}
 			}
+			migCancel()
 		}
 	}
 
@@ -95,8 +98,12 @@ func main() {
 		initialCap = 10000.0
 	}
 	if store != nil {
-		// Ground initial capital strictly in the PostgreSQL investor ledger
-		_, _, netCap, activeInvestors, err := store.GetTotalInvestorCapital(ctx)
+		// Ground initial capital strictly in the PostgreSQL investor ledger.
+		// Bounded so a stalled database degrades to the configured initial
+		// capital instead of freezing startup.
+		ledgerCtx, ledgerCancel := context.WithTimeout(ctx, 10*time.Second)
+		_, _, netCap, activeInvestors, err := store.GetTotalInvestorCapital(ledgerCtx)
+		ledgerCancel()
 		if err == nil {
 			if activeInvestors == 0 {
 				_, _ = store.EnsureDefaultInvestorProfile(ctx, "General Partner / Treasury", "Genesis Capital Allocation & Liquidity Seed", initialCap)

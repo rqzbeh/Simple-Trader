@@ -40,15 +40,36 @@ func NewStore(ctx context.Context, dbURL string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse pgx config: %w", err)
 	}
+	host := "postgres"
+	if config.ConnConfig != nil && config.ConnConfig.Host != "" {
+		host = config.ConnConfig.Host
+	}
 
 	config.MaxConns = 25
 	config.MinConns = 5
 	config.MaxConnLifetime = 1 * time.Hour
 	config.MaxConnIdleTime = 30 * time.Minute
+	config.HealthCheckPeriod = 30 * time.Second
+
+	// Bound every layer of connection setup. Without these an unreachable or
+	// blackholed Postgres silently hangs startup and every later query instead
+	// of failing fast with a clear error.
+	if config.ConnConfig != nil {
+		config.ConnConfig.ConnectTimeout = 5 * time.Second
+	}
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to postgres: %w", err)
+		return nil, fmt.Errorf("failed to create postgres pool: %w", err)
+	}
+
+	// Verify connectivity for real: NewWithConfig never dials, so a pool that
+	// looks constructed can still be unreachable.
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := pool.Ping(pingCtx); err != nil {
+		pool.Close()
+		return nil, fmt.Errorf("failed to reach postgres at %s: %w", host, err)
 	}
 
 	return &Store{Pool: pool}, nil
