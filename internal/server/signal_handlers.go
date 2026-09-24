@@ -258,24 +258,26 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		return nil, nil // HOLD
 	}
 
+	// Wire signal into execution engine as a live position.
+	// Position state is independent of Telegram dispatch state: a signal
+	// returned from the existing-signal path must still hold a position.
+	if s.execEngine != nil && sig.ID > 0 && sig.Status == "ACTIVE" {
+		if trade, err := s.execEngine.OpenPositionFromSignal(sig); err == nil && trade != nil {
+			// Broadcast the new trade via SSE so the frontend positions table updates
+			if s.broadcaster != nil {
+				if tradeBytes, err := json.Marshal(trade); err == nil {
+					s.broadcaster.Broadcast("trade", string(tradeBytes))
+				}
+			}
+			log.Printf("[Signal→Position] Opened %s position for %s at $%.2f (margin=$%.2f, lev=%dx)",
+				sig.Direction, sig.Symbol, sig.EntryPrice, sig.AllocatedCapitalUSD, sig.Leverage)
+		} else if err != nil {
+			log.Printf("[Signal→Position] Failed to open position for %s: %v", sig.Symbol, err)
+		}
+	}
+
 	// Broadcast signal via SSE and Telegram ONLY if brand-new and not yet dispatched
 	if !sig.TelegramDispatched {
-		// Wire signal into execution engine as a live position
-		if s.execEngine != nil && sig.ID > 0 {
-			if trade, err := s.execEngine.OpenPositionFromSignal(sig); err == nil && trade != nil {
-				// Broadcast the new trade via SSE so the frontend positions table updates
-				if s.broadcaster != nil {
-					if tradeBytes, err := json.Marshal(trade); err == nil {
-						s.broadcaster.Broadcast("trade", string(tradeBytes))
-					}
-				}
-				log.Printf("[Signal→Position] Opened %s position for %s at $%.2f (margin=$%.2f, lev=%dx)",
-					sig.Direction, sig.Symbol, sig.EntryPrice, sig.AllocatedCapitalUSD, sig.Leverage)
-			} else if err != nil {
-				log.Printf("[Signal→Position] Failed to open position for %s: %v", sig.Symbol, err)
-			}
-		}
-
 		if s.broadcaster != nil {
 			if sigBytes, err := json.Marshal(sig); err == nil {
 				s.broadcaster.Broadcast("futures_signal", string(sigBytes))
@@ -518,6 +520,15 @@ func (s *Server) CloseFuturesSignalHandler(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		http.Error(w, `{"error":"failed to resolve signal: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
+	}
+
+	// Close the matching execution engine position so margin is released
+	// even when no price tick crosses SL/TP afterwards.
+	if s.execEngine != nil {
+		if closedTrade, exited := s.execEngine.CheckExit(targetSig.Symbol, req.ExitPrice); exited {
+			log.Printf("[Signal→Position] Manual close %s position for %s: pnl=%.2f",
+				closedTrade.Side, closedTrade.Symbol, closedTrade.RealizedPnL)
+		}
 	}
 
 	// Broadcast resolution via SSE
