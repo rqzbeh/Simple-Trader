@@ -37,7 +37,15 @@ func (s *Server) newSignalService() *trader.SignalService {
 	} else {
 		sigCfg = trader.DefaultSignalConfig()
 	}
-	return trader.NewSignalService(s.dbStore, s.aiClient, sigCfg)
+	// A typed-nil *db.Store must not enter an interface field: SignalService
+	// checks `store != nil`, which stays true for a nil pointer in a non-nil
+	// interface, and the first store call would then panic and take the whole
+	// server down in no-database mode.
+	var store trader.SignalStoreInterface
+	if s.dbStore != nil {
+		store = s.dbStore
+	}
+	return trader.NewSignalService(store, s.aiClient, sigCfg)
 }
 
 func (s *Server) ListFuturesSignalsHandler(w http.ResponseWriter, r *http.Request) {
@@ -677,6 +685,23 @@ func (s *Server) StartBackgroundSignalScanner(ctx context.Context, interval time
 	}()
 }
 
+// scanUniverse returns the symbols the autonomous scanner should evaluate:
+// the screener's ACTIVE universe when available, otherwise the full catalog
+// (before the first screener pass completes).
+func (s *Server) scanUniverse() []string {
+	if s.screener != nil {
+		if qualified := s.screener.GetActiveUniverse(); len(qualified) > 0 {
+			return qualified
+		}
+	}
+	allAssets := market.GetSupportedAssets()
+	symbols := make([]string, 0, len(allAssets))
+	for _, a := range allAssets {
+		symbols = append(symbols, a.Symbol)
+	}
+	return symbols
+}
+
 func (s *Server) runBackgroundScan(ctx context.Context) {
 	if s.aiClient == nil {
 		return
@@ -693,10 +718,12 @@ func (s *Server) runBackgroundScan(ctx context.Context) {
 		}
 	}
 
-	allAssets := market.GetSupportedAssets()
-	symbols := make([]string, len(allAssets))
-	for i, a := range allAssets {
-		symbols[i] = a.Symbol
+	// Scan the liquidity-qualified universe produced by the screener, not the
+	// whole catalog: with 100+ instruments a full pass every 2 minutes would
+	// burn AI budget on assets the screener has already rejected.
+	symbols := s.scanUniverse()
+	if len(symbols) == 0 {
+		return
 	}
 
 	var newsHeadlines []string
