@@ -29,6 +29,7 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
   const [evaluatingAll, setEvaluatingAll] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'CLOSED'>('ACTIVE');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [scanSummary, setScanSummary] = useState<string | null>(null);
 
   const fetchSignals = async () => {
     try {
@@ -67,7 +68,7 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
       }
       const data = await res.json();
       if (data.status === 'HOLD') {
-        alert(`AI Decision: HOLD for ${selectedSymbol}\n\n${data.message}`);
+        setScanSummary(`HOLD for ${selectedSymbol}. ${data.message || ''}`);
       } else if (data.id) {
         fetchSignals();
       }
@@ -93,11 +94,7 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
       }
       const data = await res.json();
       fetchSignals();
-      if (data.signals_count > 0) {
-        alert(`Scan Complete: Evaluated ${data.scanned_count} assets concurrently across entire portfolio. Found ${data.signals_count} actionable signals!`);
-      } else {
-        alert(`Scan Complete: Evaluated ${data.scanned_count} assets concurrently across entire portfolio. Capital preserved (HOLD).`);
-      }
+      setScanSummary(`Scanned ${data.scanned_count} assets. ${data.signals_count} actionable signal(s).`);
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to trigger batch evaluation');
     } finally {
@@ -121,7 +118,7 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
       if (!res.ok) throw new Error('Close failed');
       fetchSignals();
     } catch (err: any) {
-      alert(`Close failed: ${err.message}`);
+      setErrorMsg(`Close failed: ${err.message}`);
     }
   };
 
@@ -160,6 +157,13 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
           </button>
         </div>
       </div>
+
+      {scanSummary && (
+        <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 rounded-lg text-xs flex items-center justify-between gap-2">
+          <span>{scanSummary}</span>
+          <button onClick={() => setScanSummary(null)} className="shrink-0 font-bold hover:opacity-70" aria-label="Dismiss">✕</button>
+        </div>
+      )}
 
       {/* Filter Tabs & Counter */}
       <div className="flex items-center justify-between text-xs font-mono">
@@ -201,8 +205,16 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
       {/* Signals List */}
       <div className="space-y-3 overflow-y-auto max-h-[380px] pr-1">
         {loading ? (
-          <div className="p-6 text-center text-xs font-mono text-slate-400">
-            Loading trade signals...
+          <div className="space-y-3" aria-hidden="true">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 animate-pulse space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="h-3.5 w-24 rounded bg-slate-200 dark:bg-slate-800" />
+                  <div className="h-3 w-14 rounded bg-slate-200 dark:bg-slate-800" />
+                </div>
+                <div className="h-3 w-full rounded bg-slate-100 dark:bg-slate-800/60" />
+              </div>
+            ))}
           </div>
         ) : signals.length === 0 ? (
           <div className="p-6 text-center text-xs font-mono text-slate-400 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">

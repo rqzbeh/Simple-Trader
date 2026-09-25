@@ -27,7 +27,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
       <table className="w-full text-left text-sm">
         <thead className="text-xs uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/40 border-b border-slate-200 dark:border-slate-800">
           <tr>
-            <th className="px-4 py-3">Asset</th>
+            <th className="px-4 py-3 sticky left-0 bg-slate-50 dark:bg-[#111a2e] min-w-[120px]">Asset</th>
             <th className="px-4 py-3">Side</th>
             <th className="px-4 py-3">Leverage</th>
             <th className="px-4 py-3">Size</th>
@@ -44,10 +44,10 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
             const isProfit = pos.unrealizedPnL >= 0;
             return (
               <tr key={pos.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
-                <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100 flex items-center space-x-1.5">
+                <td className="px-4 py-3 font-semibold text-slate-900 dark:text-slate-100 flex items-center space-x-1.5 sticky left-0 bg-white dark:bg-[#0d1424] min-w-[120px]">
                   <span>{pos.symbol}</span>
                   <span
-                    className={`text-[9px] px-1 py-0.5 rounded flex items-center ${
+                    className={`text-[10px] px-1 py-0.5 rounded flex items-center ${
                       pos.bucket === 'CORE'
                         ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20'
                         : 'bg-indigo-500/10 text-indigo-500 border border-indigo-500/20'
@@ -104,7 +104,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                 <td className="px-4 py-3 text-right">
                   <button
                     onClick={() => onClosePosition?.(pos.id)}
-                    className="p-1 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors"
+                    className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors"
                     title="Close Position (Paper)"
                   >
                     <XCircle className="w-4 h-4" />

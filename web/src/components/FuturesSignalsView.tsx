@@ -17,6 +17,7 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
   const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC/USDT');
   const [statusFilter, setStatusFilter] = useState<'ACTIVE' | 'CLOSED'>('ACTIVE');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [scanSummary, setScanSummary] = useState<string | null>(null);
 
   const fetchSignals = async () => {
     try {
@@ -57,7 +58,7 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
       }
       const data = await res.json();
       if (data.status === 'HOLD') {
-        alert(`AI Decision: HOLD for ${selectedSymbol}\n\n${data.message}`);
+        setScanSummary(`HOLD for ${selectedSymbol}. ${data.message || ''}`);
       } else if (data.id) {
         fetchSignals();
       }
@@ -83,11 +84,7 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
       }
       const data = await res.json();
       fetchSignals();
-      if (data.signals_count > 0) {
-        alert(`Scan Complete: Evaluated ${data.scanned_count} assets simultaneously. Generated ${data.signals_count} actionable signals!`);
-      } else {
-        alert(`Scan Complete: Evaluated ${data.scanned_count} assets simultaneously. No breaking catalyst found (HOLD).`);
-      }
+      setScanSummary(`Scanned ${data.scanned_count} assets. ${data.signals_count} actionable signal(s).`);
     } catch (err: any) {
       setErrorMsg(err.message || 'Failed to trigger batch evaluation');
     } finally {
@@ -110,7 +107,7 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
       if (!res.ok) throw new Error('Failed to close signal');
       fetchSignals();
     } catch (err: any) {
-      alert(`Close failed: ${err.message}`);
+      setErrorMsg(`Close failed: ${err.message}`);
     }
   };
 
@@ -162,6 +159,13 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
         </div>
       </div>
 
+      {scanSummary && (
+        <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-700 dark:text-emerald-400 rounded-xl text-xs flex items-center justify-between gap-3">
+          <span>{scanSummary}</span>
+          <button onClick={() => setScanSummary(null)} className="shrink-0 font-bold hover:opacity-70" aria-label="Dismiss">✕</button>
+        </div>
+      )}
+
       {/* Filter Tabs */}
       <div className="flex items-center space-x-2 border-b border-slate-200 dark:border-slate-800 pb-2">
         <button
@@ -194,8 +198,21 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
 
       {/* Signals Cards Grid */}
       {loading ? (
-        <div className="p-8 text-center text-xs font-mono text-slate-500">
-          Loading institutional futures trade signals...
+        <div className="space-y-3" aria-hidden="true">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 animate-pulse space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="h-4 w-28 rounded bg-slate-200 dark:bg-slate-800" />
+                <div className="h-4 w-20 rounded bg-slate-200 dark:bg-slate-800" />
+              </div>
+              <div className="h-3 w-full rounded bg-slate-100 dark:bg-slate-800/60" />
+              <div className="grid grid-cols-3 gap-2">
+                <div className="h-6 rounded bg-slate-100 dark:bg-slate-800/60" />
+                <div className="h-6 rounded bg-slate-100 dark:bg-slate-800/60" />
+                <div className="h-6 rounded bg-slate-100 dark:bg-slate-800/60" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : signals.length === 0 ? (
         <div className="p-8 text-center rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-400 text-xs font-mono">
