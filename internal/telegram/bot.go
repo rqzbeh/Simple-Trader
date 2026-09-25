@@ -159,6 +159,8 @@ func (c *BotClient) SendMessageWithRetry(ctx context.Context, text string) error
 		"text":                     text,
 		"parse_mode":               "MarkdownV2",
 		"disable_web_page_preview": true,
+		// Deliver silently: no push sound/vibration on the device.
+		"disable_notification": true,
 	}
 
 	bodyBytes, err := json.Marshal(payload)
@@ -204,6 +206,7 @@ func (c *BotClient) SendMessageWithRetry(ctx context.Context, text string) error
 				"chat_id":                  chatID,
 				"text":                     StripMarkdownV2(text),
 				"disable_web_page_preview": true,
+				"disable_notification":     true,
 			}
 			fbBytes, err := json.Marshal(fallbackPayload)
 			if err == nil {
