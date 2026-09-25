@@ -48,24 +48,32 @@ func (s *Server) newSignalService() *trader.SignalService {
 	svc := trader.NewSignalService(store, s.aiClient, sigCfg)
 	// Serialise the final cap check so decide-all and the background scanner
 	// cannot both pass an open-slot read and overshoot MAX_CONCURRENT_SIGNALS.
-	svc.SetSlotGuard(func() error {
+	svc.SetSlotGuard(func(symbol string) (*db.FuturesTradeSignal, error) {
 		s.signalSlotMu.Lock()
 		defer s.signalSlotMu.Unlock()
+		if s.dbStore == nil {
+			return nil, nil
+		}
+
+		// Duplicate guard first: the background scanner and decide-all both
+		// evaluate the same symbol concurrently and both read "none active"
+		// before either inserted, producing two OPEN signals for one symbol.
+		if existing, err := s.dbStore.GetActiveFuturesSignalBySymbol(context.Background(), symbol); err == nil && existing != nil {
+			return existing, nil
+		}
+
 		maxActive := 5
 		if s.cfg != nil && s.cfg.MaxConcurrentSignals > 0 {
 			maxActive = s.cfg.MaxConcurrentSignals
 		}
-		if s.dbStore == nil {
-			return nil
-		}
 		active, err := s.dbStore.ListFuturesSignals(context.Background(), "ACTIVE", 100)
 		if err != nil {
-			return nil
+			return nil, nil
 		}
 		if len(active) >= maxActive {
-			return fmt.Errorf("%w (%d/%d)", trader.ErrConcurrentCap, len(active), maxActive)
+			return nil, fmt.Errorf("%w (%d/%d)", trader.ErrConcurrentCap, len(active), maxActive)
 		}
-		return nil
+		return nil, nil
 	})
 	return svc
 }

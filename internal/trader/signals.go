@@ -65,15 +65,18 @@ type SignalService struct {
 	aiClient AIAnalyzer
 	config   SignalConfig
 
-	// SlotGuard runs atomically immediately before persisting a new signal.
-	// The active-count check happens before a ~20s AI call, so two evaluators
-	// both read "plenty of slots" and both inserted; guarding right before the
-	// INSERT narrows that window to the insert itself.
-	slotGuard func() error
+	// slotGuard runs atomically immediately before persisting a new signal and
+	// answers two questions under one lock: does an ACTIVE signal already exist
+	// for this symbol, and is there a free slot. The pre-AI checks run before a
+	// ~20s model call, so two evaluators both read "free" and both inserted
+	// (duplicate XRP signals, and 10 signals against a cap of 5).
+	slotGuard func(symbol string) (*db.FuturesTradeSignal, error)
 }
 
 // SetSlotGuard installs the concurrency guard evaluated just before persist.
-func (s *SignalService) SetSlotGuard(guard func() error) {
+// It returns an existing ACTIVE signal to reuse, ErrConcurrentCap when full,
+// or nil to allow the insert.
+func (s *SignalService) SetSlotGuard(guard func(symbol string) (*db.FuturesTradeSignal, error)) {
 	s.slotGuard = guard
 }
 
@@ -352,8 +355,12 @@ func (s *SignalService) EvaluateMarketSignal(
 
 	if s.store != nil {
 		if s.slotGuard != nil {
-			if err := s.slotGuard(); err != nil {
+			existing, err := s.slotGuard(sig.Symbol)
+			if err != nil {
 				return nil, aiResp, err
+			}
+			if existing != nil {
+				return existing, aiResp, nil // another evaluator won the race
 			}
 		}
 		insertCtx, insertCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
