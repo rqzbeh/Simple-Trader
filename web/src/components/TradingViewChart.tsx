@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-charts';
 import { useTheme } from '../context/ThemeContext';
+import { formatChartTick, formatChartTime, useTimezone } from '../utils/time';
 import { CandleData } from '../types';
 
 interface ChartProps {
@@ -13,6 +14,9 @@ export const TradingViewChart: React.FC<ChartProps> = ({ symbol, data }) => {
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const { theme } = useTheme();
+  // Recreate the chart when the display timezone changes: tick marks are
+  // formatted at creation and lightweight-charts draws them in UTC otherwise.
+  const timezone = useTimezone();
 
   const isDark = theme === 'dark';
 
@@ -48,10 +52,16 @@ export const TradingViewChart: React.FC<ChartProps> = ({ symbol, data }) => {
           style: 3,
         },
       },
+      localization: {
+        // Crosshair value in the selected display timezone
+        timeFormatter: (time: any) => formatChartTime(time),
+      },
       timeScale: {
         borderColor: isDark ? '#1e293b' : '#e2e8f0',
         timeVisible: true,
         secondsVisible: false,
+        // Axis labels in the selected display timezone (library default is UTC)
+        tickMarkFormatter: (time: any, tickMarkType: number) => formatChartTick(time, tickMarkType),
       },
       rightPriceScale: {
         borderColor: isDark ? '#1e293b' : '#e2e8f0',
@@ -90,7 +100,7 @@ export const TradingViewChart: React.FC<ChartProps> = ({ symbol, data }) => {
       chart.remove();
       chartRef.current = null;
     };
-  }, [isDark]);
+  }, [isDark, timezone]);
 
   // Update data when props change
   useEffect(() => {
