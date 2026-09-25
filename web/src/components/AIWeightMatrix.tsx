@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { IndicatorWeights } from '../types';
 import { Cpu, Sliders, Download, RefreshCw, CheckCircle2, ArrowRight } from 'lucide-react';
+import { formatTime, useTimezone } from '../utils/time';
 
 interface AIWeightMatrixProps {
   weights: IndicatorWeights;
@@ -11,13 +12,14 @@ export const INITIAL_WEIGHTS: IndicatorWeights = {
   symbol: 'GLOBAL_PORTFOLIO',
   regime: 'Loading...',
   weights: {},
-  lastUpdated: new Date().toLocaleTimeString(),
+  lastUpdated: formatTime(new Date()),
 };
 
 export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
   weights: initialPropWeights,
   onUpdateWeights,
 }) => {
+	useTimezone();
   const [weights, setWeights] = useState<IndicatorWeights>(
     initialPropWeights && Object.keys(initialPropWeights.weights).length > 0
       ? initialPropWeights
@@ -68,7 +70,7 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
         ...weights.weights,
         [indicator]: Number(value.toFixed(2)),
       },
-      lastUpdated: new Date().toLocaleTimeString(),
+      lastUpdated: formatTime(new Date()),
     };
     setWeights(updated);
     onUpdateWeights?.(updated);
@@ -85,7 +87,7 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
         ATR: 1.0,
         VWAP: 1.0,
       },
-      lastUpdated: new Date().toLocaleTimeString(),
+      lastUpdated: formatTime(new Date()),
     };
     setWeights(reset);
     onUpdateWeights?.(reset);

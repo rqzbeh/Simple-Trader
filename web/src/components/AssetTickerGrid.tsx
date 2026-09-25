@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { AssetInfo } from '../types';
-import { TrendingUp, TrendingDown, ChevronDown, ChevronUp } from 'lucide-react';
+import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, Search, X } from 'lucide-react';
 
 interface AssetTickerGridProps {
   assets: AssetInfo[];
@@ -16,6 +16,7 @@ export const AssetTickerGrid: React.FC<AssetTickerGridProps> = ({
   onSelectSymbol,
 }) => {
   const [showAll, setShowAll] = useState(false);
+  const [query, setQuery] = useState('');
 
   const strip = React.useMemo(() => {
     const ranked = [...assets].sort((a, b) => {
@@ -29,7 +30,11 @@ export const AssetTickerGrid: React.FC<AssetTickerGridProps> = ({
     return ranked.slice(0, 14);
   }, [assets, selectedSymbol]);
 
-  const listed = showAll ? assets : strip;
+  const q = query.trim().toUpperCase();
+  const matches = q
+    ? assets.filter((a) => a.symbol.toUpperCase().includes(q) || a.name.toUpperCase().includes(q))
+    : null;
+  const listed = matches ?? (showAll ? assets : strip);
 
   const tickerCard = (asset: AssetInfo) => {
     const isSelected = asset.symbol === selectedSymbol;
@@ -88,7 +93,32 @@ export const AssetTickerGrid: React.FC<AssetTickerGridProps> = ({
 
   return (
     <div className="space-y-2">
-      {showAll ? (
+      <div className="relative">
+        <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={`Search ${assets.length} assets...`}
+          className="w-full min-h-[44px] pl-9 pr-9 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/30"
+          aria-label="Search market assets"
+        />
+        {query && (
+          <button
+            onClick={() => setQuery('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+            aria-label="Clear search"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {matches && matches.length === 0 ? (
+        <div className="p-6 text-center text-xs font-mono text-slate-400 rounded-lg border border-dashed border-slate-200 dark:border-slate-800">
+          No assets match "{query}".
+        </div>
+      ) : showAll || matches ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-7 gap-2.5">
           {listed.map(tickerCard)}
         </div>
@@ -98,22 +128,24 @@ export const AssetTickerGrid: React.FC<AssetTickerGridProps> = ({
         </div>
       )}
 
-      <button
-        onClick={() => setShowAll(!showAll)}
-        className="min-h-[44px] px-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-xs font-semibold font-mono text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5"
-      >
-        {showAll ? (
-          <>
-            <ChevronUp className="w-3.5 h-3.5" />
-            <span>Show Top Movers Only</span>
-          </>
-        ) : (
-          <>
-            <ChevronDown className="w-3.5 h-3.5" />
-            <span>Show All {assets.length} Assets</span>
-          </>
-        )}
-      </button>
+      {!matches && (
+        <button
+          onClick={() => setShowAll(!showAll)}
+          className="min-h-[44px] px-3.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 text-xs font-semibold font-mono text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors flex items-center gap-1.5"
+        >
+          {showAll ? (
+            <>
+              <ChevronUp className="w-3.5 h-3.5" />
+              <span>Show Top Movers Only</span>
+            </>
+          ) : (
+            <>
+              <ChevronDown className="w-3.5 h-3.5" />
+              <span>Show All {assets.length} Assets</span>
+            </>
+          )}
+        </button>
+      )}
     </div>
   );
 };

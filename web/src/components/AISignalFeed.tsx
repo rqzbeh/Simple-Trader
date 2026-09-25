@@ -23,6 +23,7 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
   apiBaseUrl = '',
   currentPrice = 0,
 }) => {
+	useTimezone();
   const [signals, setSignals] = useState<FuturesTradeSignal[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [evaluating, setEvaluating] = useState<boolean>(false);
@@ -253,7 +254,7 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
                   </div>
 
                   <span className="text-[10px] text-slate-400 font-mono">
-                    #{sig.id} • {new Date(sig.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    #{sig.id} • {formatTime(sig.created_at)}
                   </span>
                 </div>
 
@@ -344,3 +345,4 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
     </div>
   );
 };
+import { formatTime, useTimezone } from '../utils/time';
