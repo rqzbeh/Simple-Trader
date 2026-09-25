@@ -174,6 +174,36 @@ func (e *ExecutionEngine) CheckExit(symbol string, currentPrice float64) (*db.Tr
 		return nil, false
 	}
 
+	e.closePositionLocked(trade, symbol, currentPrice, exitReason)
+	return trade, true
+}
+
+// ForceClosePosition closes an open position at the given price regardless of
+// whether Stop Loss, Take Profit or liquidation levels were crossed. A manual
+// close means "exit now"; requiring a level cross left closed signals paired
+// with still-open positions and margin that was never released.
+func (e *ExecutionEngine) ForceClosePosition(symbol string, currentPrice float64, exitReason string) (*db.Trade, bool) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	trade, exists := e.positions[symbol]
+	if !exists || trade.Status != "OPEN" {
+		return nil, false
+	}
+	if currentPrice <= 0 {
+		currentPrice = trade.EntryPrice
+	}
+	if exitReason == "" {
+		exitReason = "MANUAL_EXIT"
+	}
+
+	e.closePositionLocked(trade, symbol, currentPrice, exitReason)
+	return trade, true
+}
+
+// closePositionLocked applies execution friction, settles PnL and releases the
+// margin. Callers must hold e.mu.
+func (e *ExecutionEngine) closePositionLocked(trade *db.Trade, symbol string, currentPrice float64, exitReason string) {
 	exitSide := "SELL"
 	if trade.Side == "SELL" || trade.Side == "SHORT" {
 		exitSide = "BUY"
@@ -188,7 +218,6 @@ func (e *ExecutionEngine) CheckExit(symbol string, currentPrice float64) (*db.Tr
 		true,   // exit via taker order
 	)
 
-	// Close position
 	trade.ExitPrice = exitQuote.EffectivePrice
 	trade.ExitReason = exitReason
 	trade.Status = "CLOSED"
@@ -215,8 +244,6 @@ func (e *ExecutionEngine) CheckExit(symbol string, currentPrice float64) (*db.Tr
 
 	delete(e.positions, symbol)
 	e.closedTrades = append(e.closedTrades, trade)
-
-	return trade, true
 }
 
 // GetTotalEquity returns cash plus unrealized marked-to-market position values.
@@ -409,4 +436,3 @@ func (e *ExecutionEngine) GetClosedTrades() []*db.Trade {
 	copy(trades, e.closedTrades)
 	return trades
 }
-

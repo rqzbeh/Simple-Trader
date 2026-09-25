@@ -5,11 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/rqzbeh/simple-trader/internal/ai"
 	"github.com/rqzbeh/simple-trader/internal/cache"
-	"github.com/rqzbeh/simple-trader/internal/market"
 	"github.com/rqzbeh/simple-trader/internal/db"
+	"github.com/rqzbeh/simple-trader/internal/market"
 )
 
 // SignalStoreInterface defines persistence operations required by the signal manager.
@@ -54,11 +55,26 @@ func DefaultSignalConfig() SignalConfig {
 	}
 }
 
+// ErrConcurrentCap is returned when MAX_CONCURRENT_SIGNALS would be exceeded.
+// Callers map it to a HOLD, not an error: the scan succeeded, the slot was full.
+var ErrConcurrentCap = errors.New("max concurrent signals reached")
+
 // SignalService coordinates news-first catalyst signal generation and lifecycle monitoring.
 type SignalService struct {
 	store    SignalStoreInterface
 	aiClient AIAnalyzer
 	config   SignalConfig
+
+	// SlotGuard runs atomically immediately before persisting a new signal.
+	// The active-count check happens before a ~20s AI call, so two evaluators
+	// both read "plenty of slots" and both inserted; guarding right before the
+	// INSERT narrows that window to the insert itself.
+	slotGuard func() error
+}
+
+// SetSlotGuard installs the concurrency guard evaluated just before persist.
+func (s *SignalService) SetSlotGuard(guard func() error) {
+	s.slotGuard = guard
 }
 
 // NewSignalService initializes a new two-sided futures signal service with dynamic configuration.
@@ -99,7 +115,9 @@ func NewSignalService(store SignalStoreInterface, aiClient AIAnalyzer, cfgs ...S
 }
 
 // EvaluateMarketSignal evaluates an asset against breaking news catalysts and technical confluence.
-// Returns a persisted FuturesTradeSignal if high-conviction catalyst is detected, or nil if HOLD.
+// Returns a persisted FuturesTradeSignal if high-conviction catalyst is detected.
+// The AI decision is always returned so HOLD explanations reach logs and the API
+// instead of being discarded as a silent nil.
 func (s *SignalService) EvaluateMarketSignal(
 	ctx context.Context,
 	symbol string,
@@ -110,9 +128,9 @@ func (s *SignalService) EvaluateMarketSignal(
 	headlines []string,
 	totalEquity float64,
 	availableAlphaCapital float64,
-) (*db.FuturesTradeSignal, error) {
+) (*db.FuturesTradeSignal, *ai.DecisionResponse, error) {
 	if quote.Price <= 0 {
-		return nil, errors.New("invalid quote price: must be positive")
+		return nil, nil, errors.New("invalid quote price: must be positive")
 	}
 	if totalEquity <= 0 {
 		totalEquity = 100.0 // Default baseline equity supporting $100 starting accounts
@@ -125,7 +143,7 @@ func (s *SignalService) EvaluateMarketSignal(
 	if s.store != nil {
 		existing, err := s.store.GetActiveFuturesSignalBySymbol(ctx, symbol)
 		if err == nil && existing != nil {
-			return existing, nil // Return existing active signal without duplicating
+			return existing, nil, nil // Return existing active signal without duplicating
 		}
 	}
 
@@ -164,13 +182,19 @@ func (s *SignalService) EvaluateMarketSignal(
 		}
 	}
 
-	aiResp, err := s.aiClient.Analyze(ctx, decReq)
+	// The AI call and the insert each get their own time budget. Sharing one
+	// context meant a slow model consumed the evaluation window and the INSERT
+	// then failed with "context deadline exceeded" after the answer had already
+	// arrived.
+	aiCtx, aiCancel := context.WithTimeout(ctx, 20*time.Second)
+	aiResp, err := s.aiClient.Analyze(aiCtx, decReq)
+	aiCancel()
 	if err != nil {
-		return nil, fmt.Errorf("ai analysis failed: %w", err)
+		return nil, nil, fmt.Errorf("ai analysis failed: %w", err)
 	}
 
 	if aiResp == nil || aiResp.Decision == "HOLD" || aiResp.Decision == "" {
-		return nil, nil // No trade signal
+		return nil, aiResp, nil // No trade signal; carry the reasoning out
 	}
 
 	// 3. Determine directional bias
@@ -180,7 +204,7 @@ func (s *SignalService) EvaluateMarketSignal(
 	} else if aiResp.Decision == "SELL" {
 		dir = DirectionShort
 	} else {
-		return nil, nil
+		return nil, aiResp, nil
 	}
 
 	// 4. Calculate protective price bounds (Stop Loss & Take Profit) dynamically
@@ -265,7 +289,7 @@ func (s *SignalService) EvaluateMarketSignal(
 		leverage,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("position sizing calculation failed: %w", err)
+		return nil, aiResp, fmt.Errorf("position sizing calculation failed: %w", err)
 	}
 
 	// Bound margin required to configured fraction of total equity and within available Alpha capital
@@ -289,8 +313,9 @@ func (s *SignalService) EvaluateMarketSignal(
 		catalystHeadline = headlines[0]
 	}
 	if catalystHeadline == "" {
-		// Reject signal without a genuine catalyst — prevents fabricated entries
-		return nil, nil
+		// Reject signal without a genuine catalyst — prevents fabricated entries.
+		// The decision is returned so the operator sees WHY the trade was refused.
+		return nil, aiResp, nil
 	}
 
 	// Estimate catalyst sentiment from AI response
@@ -326,14 +351,21 @@ func (s *SignalService) EvaluateMarketSignal(
 	}
 
 	if s.store != nil {
-		savedSig, err := s.store.InsertFuturesSignal(ctx, sig)
-		if err != nil {
-			return nil, fmt.Errorf("failed to persist futures signal: %w", err)
+		if s.slotGuard != nil {
+			if err := s.slotGuard(); err != nil {
+				return nil, aiResp, err
+			}
 		}
-		return savedSig, nil
+		insertCtx, insertCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		savedSig, err := s.store.InsertFuturesSignal(insertCtx, sig)
+		insertCancel()
+		if err != nil {
+			return nil, aiResp, fmt.Errorf("failed to persist futures signal: %w", err)
+		}
+		return savedSig, aiResp, nil
 	}
 
-	return sig, nil
+	return sig, aiResp, nil
 }
 
 // CheckSignalResolution evaluates open signals against current price to check for exit.
@@ -368,24 +400,53 @@ func (s *SignalService) CheckSignalResolution(ctx context.Context, sig *db.Futur
 		return false, "", 0, 0, nil
 	}
 
-	// Calculate PnL and leveraged ROI
-	quantity := (sig.AllocatedCapitalUSD * float64(sig.Leverage)) / sig.EntryPrice
-	pnlUSD, roiPct, err := CalculateFuturesPnL(sig.EntryPrice, currentPrice, quantity, sig.Leverage, dir)
+	pnlUSD, roiPct, err := s.settleAndClose(ctx, sig, currentPrice, exitReason)
 	if err != nil {
-		return false, "", 0, 0, fmt.Errorf("failed to calculate resolution pnl: %w", err)
+		return false, "", 0, 0, err
+	}
+	return true, exitReason, pnlUSD, roiPct, nil
+}
+
+// CloseSignalNow closes an ACTIVE signal unconditionally at the given price.
+//
+// CheckSignalResolution is level-triggered: it returns resolved=false whenever
+// price has not crossed SL/TP. A manual close is not level-triggered — the
+// operator asked to exit — so relying on it left the row ACTIVE while the
+// execution engine position was already gone.
+func (s *SignalService) CloseSignalNow(ctx context.Context, sig *db.FuturesTradeSignal, exitPrice float64, exitReason string) (float64, float64, error) {
+	if sig == nil || sig.Status != "ACTIVE" {
+		return 0, 0, nil // already closed: keep the operation idempotent
+	}
+	if exitPrice <= 0 {
+		return 0, 0, fmt.Errorf("exit price must be positive for %s", sig.Symbol)
+	}
+	if exitReason == "" {
+		exitReason = "MANUAL_EXIT"
+	}
+	return s.settleAndClose(ctx, sig, exitPrice, exitReason)
+}
+
+// settleAndClose prices the exit, persists it and marks the signal closed.
+// Callers must hold an ACTIVE signal.
+func (s *SignalService) settleAndClose(ctx context.Context, sig *db.FuturesTradeSignal, exitPrice float64, exitReason string) (float64, float64, error) {
+	dir := Direction(sig.Direction)
+	quantity := (sig.AllocatedCapitalUSD * float64(sig.Leverage)) / sig.EntryPrice
+	pnlUSD, roiPct, err := CalculateFuturesPnL(sig.EntryPrice, exitPrice, quantity, sig.Leverage, dir)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to calculate resolution pnl: %w", err)
 	}
 
 	if s.store != nil {
-		if err := s.store.CloseFuturesSignal(ctx, sig.ID, currentPrice, exitReason, pnlUSD, roiPct); err != nil {
-			return false, "", 0, 0, fmt.Errorf("failed to close signal in store: %w", err)
+		if err := s.store.CloseFuturesSignal(ctx, sig.ID, exitPrice, exitReason, pnlUSD, roiPct); err != nil {
+			return 0, 0, fmt.Errorf("failed to close signal in store: %w", err)
 		}
 	}
 
 	sig.Status = "CLOSED"
-	sig.ExitPrice = &currentPrice
+	sig.ExitPrice = &exitPrice
 	sig.ExitReason = &exitReason
 	sig.RealizedPnLUSD = &pnlUSD
 	sig.RealizedROIPct = &roiPct
 
-	return true, exitReason, pnlUSD, roiPct, nil
+	return pnlUSD, roiPct, nil
 }
