@@ -168,6 +168,13 @@ func main() {
 		log.Printf("[WARN] Initial price fetch failed: %v. Prices will be populated from live feed.", err)
 	}
 
+	// Reconcile active signals against live prices BEFORE rehydration: exits
+	// missed while the backend was down (TP/SL crossings, expired signals) are
+	// resolved here so rehydration only restores genuinely live positions.
+	srv.ReconcileActiveSignals(ctx)
+	srv.StartSignalReconciler(ctx, 1*time.Minute)
+	log.Println("[INFO] Signal reconciler active (level crossings + time exits every 1m).")
+
 	// Rehydrate existing active signals from database into execution engine positions
 	if store != nil {
 		activeSignals, err := store.ListFuturesSignals(ctx, "ACTIVE", 50)

@@ -39,6 +39,7 @@ type Config struct {
 	TakerFeeRate        float64 // Institutional taker fee rate (e.g. 0.0005)
 	MaxSlippagePct      float64 // Cap on slippage percentage (e.g. 0.05 for 5%)
 	MaxTradeMarginPct   float64 // Max margin per trade as fraction of total equity (e.g. 0.20 for 20%)
+	SignalMaxAgeMinutes int     // Max lifetime of an intraday signal before time-exit (default 60 = 1h)
 	LogLevel            string
 	IsProduction        bool
 	AdminPassword       string
@@ -107,6 +108,7 @@ func Load() (*Config, error) {
 		TakerFeeRate:        getEnvFloat("TAKER_FEE_RATE", 0.0005),
 		MaxSlippagePct:      getEnvFloat("MAX_SLIPPAGE_PCT", 0.05),
 		MaxTradeMarginPct:   getEnvFloat("MAX_TRADE_MARGIN_PCT", 0.20),
+		SignalMaxAgeMinutes: getEnvInt("SIGNAL_MAX_AGE_MINUTES", 60),
 		LogLevel:            getEnv("LOG_LEVEL", "info"),
 		IsProduction:        getEnv("ENV", "development") == "production",
 		AdminPassword:       getEnv("ADMIN_PASSWORD", ""),

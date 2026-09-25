@@ -98,9 +98,9 @@ CRITICAL ARCHITECTURAL MANDATE: NEWS CATALYST FIRST
 3. Two-Sided Futures Trading: The market is two-sided.
    - Bullish news catalyst (sentiment >= +0.25) -> Evaluate "BUY" (LONG futures contract).
    - Bearish news catalyst (sentiment <= -0.25) -> Evaluate "SELL" (SHORT futures contract).
-4. Role of Technical Indicators (2-Hour Intraday Horizon): Technical indicators (RSI, SuperTrend, MACD, Bollinger Bands, Order Book Confluence) MUST be used STRICTLY to:
-   - Identify pullback entry pricing on 2-hour candles (do not chase green/red spikes).
-   - Calculate tight Stop Loss (0.8%% to 1.5%% from entry) and ambitious Take Profit (2.0%% to 4.5%% from entry) enforcing Risk-to-Reward (R:R) between 2.5:1 and 3:1.
+4. Role of Technical Indicators (1-Hour Intraday Horizon): Technical indicators (RSI, SuperTrend, MACD, Bollinger Bands, Order Book Confluence) MUST be used STRICTLY to:
+   - Identify pullback entry pricing on 1-hour candles (do not chase green/red spikes).
+   - Calculate tight Stop Loss (0.8%% to 1.5%% from entry) and ambitious Take Profit (2.0%% to 4.5%% from entry) enforcing Risk-to-Reward (R:R) between 2.5:1 and 3:1. The trade horizon is FRESH 1 HOUR: signals auto-expire after 1 hour (SIGNAL_MAX_AGE_MINUTES), so only propose setups whose catalyst and move can plausibly resolve within 60 minutes.
    - Calibrate isolated margin leverage between 5x and 10x (default 8x for liquid crypto futures). Trades must produce meaningful leveraged ROI (20%% to 40%%+ return on margin) to comfortably exceed transaction costs and justify market risk.
 5. Capital Sizing & Allocation: Account sizes start at $100 up to institutional scale. Suggest allocation_pct as percent of available tactical alpha (default 1.0%% to 2.0%% risk per trade, ensuring margin required is sustainable and bounded within Tier 3 Tactical Alpha).
 

@@ -608,6 +608,115 @@ func (s *Server) CloseFuturesSignalHandler(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// ReconcileActiveSignals closes every ACTIVE signal whose level was crossed by
+// the current live price or whose max age (SIGNAL_MAX_AGE_MINUTES) has lapsed.
+// Tick-triggered exits alone miss crossings during restarts or quiet periods:
+// BNB/USDT fell through its TP on 2026-09-23 14:00 UTC and stayed ACTIVE for a
+// full day because no tick fired while the backend was down. This sweep runs at
+// startup and periodically so exits can never be missed for long.
+func (s *Server) ReconcileActiveSignals(ctx context.Context) {
+	if s.dbStore == nil {
+		return
+	}
+
+	signals, err := s.dbStore.ListFuturesSignals(ctx, "ACTIVE", 50)
+	if err != nil {
+		log.Printf("[Reconcile] Failed to list active signals: %v", err)
+		return
+	}
+	if len(signals) == 0 {
+		return
+	}
+
+	maxAge := time.Duration(60) * time.Minute
+	if s.cfg != nil && s.cfg.SignalMaxAgeMinutes > 0 {
+		maxAge = time.Duration(s.cfg.SignalMaxAgeMinutes) * time.Minute
+	}
+
+	now := time.Now()
+	reconciled := 0
+	for i := range signals {
+		sig := &signals[i]
+		if sig.Status != "ACTIVE" {
+			continue
+		}
+
+		// Age-based time exit: an intraday signal has a fixed lifetime
+		if now.Sub(sig.CreatedAt) >= maxAge {
+			price := s.livePriceFor(ctx, sig.Symbol)
+			exitReason := "TIME_EXIT"
+			_ = s.dbStore.CloseFuturesSignal(ctx, sig.ID, price, exitReason, 0, 0)
+			if s.execEngine != nil {
+				if closedTrade, exited := s.execEngine.CheckExit(sig.Symbol, price); exited {
+					log.Printf("[Reconcile] Closed %s position for %s on %s: pnl=%.2f",
+						closedTrade.Side, closedTrade.Symbol, exitReason, closedTrade.RealizedPnL)
+				}
+			}
+			log.Printf("[Reconcile] Time-exited signal #%d %s %s (age %s > %s)", sig.ID, sig.Symbol, sig.Direction, now.Sub(sig.CreatedAt).Round(time.Minute), maxAge)
+			reconciled++
+			continue
+		}
+
+		// Level reconciliation against the current live price
+		price := s.livePriceFor(ctx, sig.Symbol)
+		if price <= 0 {
+			continue
+		}
+		signalSvc := s.newSignalService()
+		resolved, exitReason, pnl, roi, err := signalSvc.CheckSignalResolution(ctx, sig, price)
+		if err != nil || !resolved {
+			continue
+		}
+		_ = s.dbStore.CloseFuturesSignal(ctx, sig.ID, price, exitReason, pnl, roi)
+		if s.execEngine != nil {
+			if closedTrade, exited := s.execEngine.CheckExit(sig.Symbol, price); exited {
+				log.Printf("[Reconcile] Closed %s position for %s on %s: pnl=%.2f",
+					closedTrade.Side, closedTrade.Symbol, exitReason, closedTrade.RealizedPnL)
+			}
+		}
+		log.Printf("[Reconcile] Level-reconciled signal #%d %s %s: reason=%s pnl=%.2f roi=%.2f", sig.ID, sig.Symbol, sig.Direction, exitReason, pnl, roi)
+		reconciled++
+	}
+
+	if reconciled > 0 {
+		log.Printf("[Reconcile] %d active signal(s) reconciled this pass.", reconciled)
+	}
+}
+
+// livePriceFor returns the freshest cached price for a symbol.
+func (s *Server) livePriceFor(ctx context.Context, symbol string) float64 {
+	if s.redisClient != nil {
+		if quote, err := s.redisClient.GetTicker(ctx, symbol); err == nil && quote != nil && quote.Price > 0 {
+			return quote.Price
+		}
+	}
+	if s.marketData != nil {
+		if p, err := s.marketData.GetLatestPrice(symbol); err == nil && p > 0 {
+			return p
+		}
+	}
+	return 0
+}
+
+// StartSignalReconciler runs the reconciliation sweep periodically.
+func (s *Server) StartSignalReconciler(ctx context.Context, interval time.Duration) {
+	if interval <= 0 {
+		interval = 1 * time.Minute
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				s.ReconcileActiveSignals(ctx)
+			}
+		}
+	}()
+}
+
 // CheckSignalExitForTick inspects if an active futures signal exists for the incoming tick
 // and automatically executes Take Profit or Stop Loss resolution if triggered.
 func (s *Server) CheckSignalExitForTick(tick cache.TickerQuote) {
