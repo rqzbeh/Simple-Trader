@@ -53,7 +53,7 @@ func TestSignalService_EvaluateMarketSignal(t *testing.T) {
 	}
 	headlines := []string{"BlackRock spot ETF reports record $1.1B single-day inflow."}
 
-	sig, err := service.EvaluateMarketSignal(
+	sig, _, err := service.EvaluateMarketSignal(
 		ctx, "BTC/USD", "ALPHA", quote, snap, nil, headlines, 100000.0, 40000.0,
 	)
 	if err != nil {
@@ -94,7 +94,7 @@ func TestSignalService_EvaluateMarketSignal(t *testing.T) {
 	}
 	serviceBear := trader.NewSignalService(nil, mockAIBear)
 
-	sigBear, err := serviceBear.EvaluateMarketSignal(
+	sigBear, _, err := serviceBear.EvaluateMarketSignal(
 		ctx, "BTC/USD", "ALPHA", quote, snap, nil, []string{"Whale deposit of 45k BTC to Binance detected."}, 100000.0, 40000.0,
 	)
 	if err != nil {
@@ -121,7 +121,7 @@ func TestSignalService_EvaluateMarketSignal(t *testing.T) {
 		},
 	}
 	serviceHold := trader.NewSignalService(nil, mockAIHold)
-	sigHold, err := serviceHold.EvaluateMarketSignal(
+	sigHold, decisionHold, err := serviceHold.EvaluateMarketSignal(
 		ctx, "BTC/USD", "ALPHA", quote, snap, nil, nil, 100000.0, 40000.0,
 	)
 	if err != nil {
@@ -129,6 +129,14 @@ func TestSignalService_EvaluateMarketSignal(t *testing.T) {
 	}
 	if sigHold != nil {
 		t.Errorf("expected nil signal on HOLD, got %+v", sigHold)
+	}
+	// The AI decision must come back on HOLD: an operator cannot act on a
+	// silent nil, so the reasoning has to reach logs and the API.
+	if decisionHold == nil {
+		t.Fatal("expected decision response on HOLD, got nil")
+	}
+	if decisionHold.Reasoning != "No catalyst" {
+		t.Errorf("expected hold reasoning to be preserved, got %q", decisionHold.Reasoning)
 	}
 }
 
@@ -196,7 +204,7 @@ func TestSignalService_DynamicConfigEnforcement(t *testing.T) {
 			Confidence:             0.95,
 			Reasoning:              "High momentum surge breaking historical resistance.",
 			Catalyst:               "Federal Reserve announces liquidity easing window.",
-			Leverage:               15, // AI requests 15, should be bounded to DefaultLeverage (10)
+			Leverage:               15,  // AI requests 15, should be bounded to DefaultLeverage (10)
 			SuggestedStopLossPct:   0.2, // Below MinStopLossPct (1.0), should be adjusted
 			SuggestedTakeProfitPct: 2.0, // Low TP, will be forced by MinRiskRewardRatio (3.0)
 		},
@@ -207,7 +215,7 @@ func TestSignalService_DynamicConfigEnforcement(t *testing.T) {
 	quote := cache.TickerQuote{Symbol: "ETH/USDT", Price: 3000.0}
 	snap := cache.IndicatorSnapshot{Symbol: "ETH/USDT", RSI: 62.0}
 
-	sig, err := service.EvaluateMarketSignal(
+	sig, _, err := service.EvaluateMarketSignal(
 		ctx, "ETH/USDT", "ALPHA", quote, snap, nil, []string{"Federal Reserve liquidity announcement"}, 100000.0, 40000.0,
 	)
 	if err != nil {

@@ -195,10 +195,11 @@ func main() {
 	ticks := liveFeed.Subscribe(ctx, 3*time.Second)
 	log.Println("[INFO] Real-time live exchange market feed active. Ingesting online fluctuating ticks...")
 
-	// 7b. Initialize Circuit Breaker & Autonomous Trading Daemon
+	// 7b. Initialize Circuit Breaker & the position guardian.
+	// The daemon monitors existing positions (SL/TP/liquidation exits) and
+	// circuit-breaker equity only. Entries come exclusively from the news-gated
+	// signal pipeline, so a position can never exist without a catalyst record.
 	circuit := trader.NewCircuitBreaker(cfg.InitialCapital, cfg.MaxDrawdownLimitPct)
-	strategyEvaluator := trader.NewAIStrategyEvaluator(aiClient, srv.NewsCrawler())
-	strategyEvaluator.SetSnapshotProvider(srv)
 	allAssets := market.GetSupportedAssets()
 	daemonSymbols := make([]string, len(allAssets))
 	for i, a := range allAssets {
@@ -208,7 +209,7 @@ func main() {
 		TickInterval: 2 * time.Second,
 		Symbols:      daemonSymbols,
 	}
-	daemon := trader.NewTradingDaemon(daemonCfg, execEngine, allocator, circuit, srv.MarketData(), strategyEvaluator)
+	daemon := trader.NewTradingDaemon(daemonCfg, execEngine, allocator, circuit, srv.MarketData())
 
 	// Ingest live online ticks into server, cache, SSE, and process daemon cycles
 	go func() {
@@ -230,11 +231,18 @@ func main() {
 	}()
 
 	// 8. Start HTTP Server in background
+	// WriteTimeout MUST be zero: the SSE stream (/api/v1/events) and batch
+	// scans both write long after the request arrives. With WriteTimeout > 0
+	// Go arms a socket write deadline when the headers are read, so any handler
+	// still running past it silently loses its response — a 70s scan returned
+	// an empty reply at exactly the handler's finish time. Handler-level
+	// contexts bound each request instead.
 	httpServer := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),
 		Handler:      srv.Router(),
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 0,
+		IdleTimeout:  120 * time.Second,
 	}
 
 	go func() {

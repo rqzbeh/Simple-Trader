@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rqzbeh/simple-trader/internal/db"
 	"github.com/rqzbeh/simple-trader/internal/trader"
 )
 
@@ -166,15 +165,11 @@ func (m *mockMarketData) GetMarketDepth(symbol string) (float64, float64, error)
 	return 0.0002, 100.0, nil
 }
 
-type mockStrategy struct {
-	signal *db.Signal
-}
-
-func (s *mockStrategy) Evaluate(ctx context.Context, symbol string, currentPrice float64) (*db.Signal, error) {
-	return s.signal, nil
-}
-
-func TestTradingDaemon(t *testing.T) {
+// The daemon is a position guardian, not an entry path. Entries come only from
+// the news-gated signal pipeline, so an open position can never exist without a
+// matching catalyst record in futures_trade_signals. This guards against
+// reintroducing the silent order path that opened positions with no signal.
+func TestTradingDaemonNeverOpensPositions(t *testing.T) {
 	engine := trader.NewExecutionEngine(100000.0)
 	allocator := trader.NewAllocator(trader.AllocatorConfig{
 		TotalCapital:       100000.0,
@@ -184,77 +179,53 @@ func TestTradingDaemon(t *testing.T) {
 	})
 	cb := trader.NewCircuitBreaker(100000.0, 0.10)
 
-	market := &mockMarketData{
-		prices: map[string]float64{
-			"XAU/USD": 2650.0,
-		},
+	prices := map[string]float64{
+		"BTC/USD": 65000.0,
+		"XAU/USD": 2650.0,
 	}
-
-	strat := &mockStrategy{
-		signal: &db.Signal{
-			Symbol:          "XAU/USD",
-			Side:            "BUY",
-			Bucket:          "CORE",
-			EntryPrice:      2650.0,
-			StopLoss:        2600.0,
-			TakeProfit:      2750.0,
-			Confidence:      0.85,
-			ConfluenceScore: 0.88,
-			AIReasoning:     "Strong gold breakout",
-			Status:          "OPEN",
-		},
-	}
+	market := &mockMarketData{prices: prices}
 
 	cfg := trader.DaemonConfig{
 		TickInterval: 10 * time.Millisecond,
-		Symbols:      []string{"XAU/USD"},
+		Symbols:      []string{"BTC/USD", "XAU/USD"},
 	}
-
-	daemon := trader.NewTradingDaemon(cfg, engine, allocator, cb, market, strat)
+	daemon := trader.NewTradingDaemon(cfg, engine, allocator, cb, market)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	err := daemon.Start(ctx)
-	if err != nil {
+	if err := daemon.Start(ctx); err != nil {
 		t.Fatalf("failed to start daemon: %v", err)
 	}
-
 	if !daemon.IsRunning() {
-		t.Errorf("expected daemon to be running")
+		t.Error("expected daemon to be running")
 	}
 
-	// Trigger tick manually or let loop run
-	daemon.ProcessTick(ctx)
-
-	// Verify order was placed
-	totalEq := engine.GetTotalEquity(market.prices)
-	if totalEq <= 0 {
-		t.Errorf("expected valid equity, got %f", totalEq)
+	// Sweep prices hard in both directions to tempt any technical entry path.
+	for i := 0; i < 20; i++ {
+		prices["BTC/USD"] = 65000.0 * (1.0 + float64(i%7)/10.0)
+		prices["XAU/USD"] = 2650.0 * (1.0 - float64(i%5)/10.0)
+		daemon.ProcessTick(ctx)
 	}
-
-	// Move price to Take Profit
-	market.prices["XAU/USD"] = 2760.0
-	daemon.ProcessTick(ctx)
 
 	daemon.Stop()
 	if daemon.IsRunning() {
-		t.Errorf("expected daemon to be stopped")
+		t.Error("expected daemon to be stopped")
+	}
+
+	if equity := engine.GetTotalEquity(prices); equity <= 0 {
+		t.Errorf("expected valid equity, got %f", equity)
+	}
+	if trades := engine.GetOpenTrades(); len(trades) != 0 {
+		t.Errorf("daemon must never open positions (entries belong to the signal pipeline), got %d open", len(trades))
+	}
+	if closed := engine.GetClosedTrades(); len(closed) != 0 {
+		t.Errorf("daemon must never execute orders, got %d closed trades", len(closed))
 	}
 }
 
-type mockHaltedCalendar struct {
-	halted bool
-}
-
-func (m *mockHaltedCalendar) IsSymbolHalted(symbol string, now time.Time) (bool, string) {
-	if m.halted {
-		return true, "FOMC release window"
-	}
-	return false, ""
-}
-
-func TestTradingDaemonWithCalendarHalt(t *testing.T) {
+// The daemon still owns exits: a seeded position must close when price
+// crosses its stop, freeing margin without waiting for a manual close.
+func TestTradingDaemonClosesPositionOnStopLoss(t *testing.T) {
 	engine := trader.NewExecutionEngine(100000.0)
 	allocator := trader.NewAllocator(trader.AllocatorConfig{
 		TotalCapital:       100000.0,
@@ -263,48 +234,99 @@ func TestTradingDaemonWithCalendarHalt(t *testing.T) {
 		MaxRiskPerTradePct: 0.02,
 	})
 	cb := trader.NewCircuitBreaker(100000.0, 0.10)
-	market := &mockMarketData{
-		prices: map[string]float64{
-			"BTC/USD": 65000.0,
-		},
-	}
-	strat := &mockStrategy{
-		signal: &db.Signal{
-			Symbol:          "BTC/USD",
-			Side:            "BUY",
-			Bucket:          "ALPHA",
-			EntryPrice:      65000.0,
-			StopLoss:        63000.0,
-			TakeProfit:      70000.0,
-			Confidence:      0.90,
-			ConfluenceScore: 0.85,
-			Status:          "OPEN",
-		},
+
+	prices := map[string]float64{"BTC/USD": 65000.0}
+	market := &mockMarketData{prices: prices}
+
+	ctx := context.Background()
+	if _, err := engine.ExecuteOrder(ctx, trader.OrderRequest{
+		Symbol:            "BTC/USD",
+		Bucket:            "ALPHA",
+		Side:              "BUY",
+		Price:             65000.0,
+		PositionSize:      0.1,
+		StopLoss:          63000.0,
+		TakeProfit:        70000.0,
+		Leverage:          1,
+		SymbolSpreadPct:   0.0002,
+		AvailableDepthQty: 100.0,
+		IsTaker:           true,
+	}); err != nil {
+		t.Fatalf("failed to seed position: %v", err)
 	}
 
 	cfg := trader.DaemonConfig{
 		TickInterval: 10 * time.Millisecond,
 		Symbols:      []string{"BTC/USD"},
 	}
+	daemon := trader.NewTradingDaemon(cfg, engine, allocator, cb, market)
 
-	daemon := trader.NewTradingDaemon(cfg, engine, allocator, cb, market, strat)
-	cal := &mockHaltedCalendar{halted: true}
-	daemon.SetCalendar(cal)
-
-	ctx := context.Background()
 	daemon.ProcessTick(ctx)
-
-	// Since calendar is halted, no trade should be opened
-	trades := engine.GetOpenTrades()
-	if len(trades) != 0 {
-		t.Errorf("expected 0 trades opened during calendar halt, got %d", len(trades))
+	if got := len(engine.GetOpenTrades()); got != 1 {
+		t.Fatalf("expected position to stay open above stop, got %d", got)
 	}
 
-	// Unhalt and tick again
-	cal.halted = false
+	// Through the stop: the daemon must close it on the next tick.
+	prices["BTC/USD"] = 62000.0
 	daemon.ProcessTick(ctx)
-	tradesAfter := engine.GetOpenTrades()
-	if len(tradesAfter) != 1 {
-		t.Errorf("expected 1 trade opened after unhalt, got %d", len(tradesAfter))
+
+	if got := len(engine.GetOpenTrades()); got != 0 {
+		t.Errorf("expected stop-loss exit, %d still open", got)
+	}
+	if got := len(engine.GetClosedTrades()); got != 1 {
+		t.Errorf("expected 1 closed trade, got %d", got)
+	}
+	if equity := engine.GetTotalEquity(prices); equity <= 0 {
+		t.Errorf("expected valid equity after exit, got %f", equity)
+	}
+}
+
+// A manual close must release the position even when no SL/TP level is
+// crossed. Closing a signal previously left its position open and its margin
+// tied up, which then made every later signal report "capital fully reserved".
+func TestForceClosePositionIgnoresLevels(t *testing.T) {
+	engine := trader.NewExecutionEngine(100000.0)
+	ctx := context.Background()
+
+	if _, err := engine.ExecuteOrder(ctx, trader.OrderRequest{
+		Symbol:            "ETH/USDT",
+		Bucket:            "ALPHA",
+		Side:              "BUY",
+		Price:             3000.0,
+		PositionSize:      1.0,
+		StopLoss:          2900.0,
+		TakeProfit:        3300.0,
+		Leverage:          5,
+		SymbolSpreadPct:   0.0002,
+		AvailableDepthQty: 100.0,
+		IsTaker:           true,
+	}); err != nil {
+		t.Fatalf("failed to seed position: %v", err)
+	}
+
+	// Price sits between SL and TP: CheckExit must not close.
+	if _, exited := engine.CheckExit("ETH/USDT", 3100.0); exited {
+		t.Error("CheckExit should not close inside the SL/TP band")
+	}
+	if got := len(engine.GetOpenTrades()); got != 1 {
+		t.Fatalf("expected position still open, got %d", got)
+	}
+
+	// Force close at a non-triggering price must still exit.
+	closed, exited := engine.ForceClosePosition("ETH/USDT", 3100.0, "MANUAL_CLOSE")
+	if !exited {
+		t.Fatal("expected ForceClosePosition to close the position")
+	}
+	if closed.ExitReason != "MANUAL_CLOSE" {
+		t.Errorf("expected MANUAL_CLOSE exit reason, got %q", closed.ExitReason)
+	}
+	if got := len(engine.GetOpenTrades()); got != 0 {
+		t.Errorf("expected no open positions after force close, got %d", got)
+	}
+	if got := len(engine.GetClosedTrades()); got != 1 {
+		t.Errorf("expected 1 closed trade, got %d", got)
+	}
+	if engine.GetCash() <= 0 {
+		t.Errorf("expected margin released back to cash, got %f", engine.GetCash())
 	}
 }

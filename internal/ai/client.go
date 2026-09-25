@@ -336,9 +336,9 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (*DecisionRes
 		}
 	}
 
-	log.Printf("[AI-CORE] OmniRoute %s signal for %s: %s (Confidence: %.2f, WinProb: %.2f, Regime: %s, Lev: %dx, SL: %.2f%%, TP: %.2f%%)",
+	log.Printf("[AI-CORE] OmniRoute %s signal for %s: %s (Confidence: %.2f, WinProb: %.2f, Regime: %s, Lev: %dx, SL: %.2f%%, TP: %.2f%%) reasoning=%q",
 		c.cfg.ModelID, req.Symbol, decision.Decision, decision.Confidence, decision.EstimatedWinProbability, decision.Regime,
-		decision.Leverage, decision.SuggestedStopLossPct, decision.SuggestedTakeProfitPct)
+		decision.Leverage, decision.SuggestedStopLossPct, decision.SuggestedTakeProfitPct, decision.Reasoning)
 
 	return &decision, nil
 }

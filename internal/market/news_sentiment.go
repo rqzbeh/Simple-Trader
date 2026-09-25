@@ -16,10 +16,10 @@ const (
 
 // NewsSentimentReport captures the quantitative NLP score of market headlines.
 type NewsSentimentReport struct {
-	Score      float64           `json:"score"`      // -1.0 (extremely bearish) to +1.0 (extremely bullish)
-	Polarity   SentimentPolarity `json:"polarity"`   // BULLISH, BEARISH, NEUTRAL
-	HeadlineCount int            `json:"headline_count"`
-	KeyPhrases []string          `json:"key_phrases"`
+	Score         float64           `json:"score"`    // -1.0 (extremely bearish) to +1.0 (extremely bullish)
+	Polarity      SentimentPolarity `json:"polarity"` // BULLISH, BEARISH, NEUTRAL
+	HeadlineCount int               `json:"headline_count"`
+	KeyPhrases    []string          `json:"key_phrases"`
 }
 
 var bullishTerms = []string{
@@ -104,4 +104,77 @@ func AnalyzeNewsSentiment(headlines []string) NewsSentimentReport {
 		HeadlineCount: len(headlines),
 		KeyPhrases:    keyPhrases,
 	}
+}
+
+// marketWideTerms are headlines whose catalyst genuinely applies to every
+// instrument (macro policy, regulation, war), so they stay in every symbol's
+// prompt even when the symbol itself is not named.
+var marketWideTerms = []string{
+	"federal reserve", " fed ", "rate cut", "rate hike", "inflation",
+	"recession", "central bank", "tariff", "war ", "sanction", "sec ",
+	"sec approves", "sec lawsuit", "regulation", "etf approval", "etf inflow",
+	"interest rate", "monetary policy", "gdp ",
+}
+
+// broadCryptoTerms are catalysts that move the whole crypto complex.
+var broadCryptoTerms = []string{
+	"crypto", "altcoin", "stablecoin", "blockchain", "exchange hack",
+	"whale", "market crash", "market rally", "liquidation", "token unlock",
+}
+
+// HeadlinesForSymbol returns the subset of headlines that can act as a
+// catalyst for the given symbol: ones that name the asset, plus headlines
+// whose macro impact applies to everything.
+//
+// Feeding every global headline into every symbol wastes an AI round-trip on
+// instruments with no relevant news and dilutes sentiment scoring — the AI
+// then reports "zero asset-relevant catalysts" and returns HOLD anyway. An
+// empty result means no AI call is needed at all.
+func HeadlinesForSymbol(headlines []string, symbol string) []string {
+	if len(headlines) == 0 {
+		return nil
+	}
+
+	base := strings.ToUpper(strings.TrimSuffix(strings.Split(symbol, "/")[0], "USDT"))
+	name := ""
+	if def, ok := FindAsset(symbol); ok {
+		name = strings.ToLower(def.Name)
+	}
+	group := strings.ToLower(GetExposureGroup(symbol))
+	isAlpha := GetBucket(symbol) == "ALPHA"
+
+	matched := make([]string, 0, len(headlines))
+	for _, raw := range headlines {
+		lower := " " + strings.ToLower(raw) + " "
+
+		direct := base != "" && (strings.Contains(lower, " "+strings.ToLower(base)+" ") ||
+			strings.Contains(lower, " "+strings.ToLower(base)+"/") ||
+			(strings.Contains(lower, " "+strings.ToLower(base)+".")) ||
+			(name != "" && strings.Contains(lower, name)))
+
+		macro := false
+		for _, t := range marketWideTerms {
+			if strings.Contains(lower, t) {
+				macro = true
+				break
+			}
+		}
+
+		broad := false
+		if isAlpha {
+			for _, t := range broadCryptoTerms {
+				if strings.Contains(lower, t) {
+					broad = true
+					break
+				}
+			}
+		} else if group != "" && strings.Contains(lower, group) {
+			broad = true
+		}
+
+		if direct || macro || broad {
+			matched = append(matched, raw)
+		}
+	}
+	return matched
 }
