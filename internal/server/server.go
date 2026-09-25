@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -28,24 +29,25 @@ import (
 
 // Server encapsulates HTTP routes, middlewares, and services.
 type Server struct {
-	cfg         *config.Config
-	dbStore     *db.Store
-	redisClient *cache.Client
-	aiClient    *ai.Client
-	allocator   *trader.Allocator
-	execEngine  *trader.ExecutionEngine
-	newsCrawler   *market.NewsCrawler
-	screener      *market.DynamicCryptoScreener
-	telegramBot   *telegram.BotClient
-	authenticator *auth.Authenticator
-	broadcaster   *SSEBroadcaster
-	sampler       *ai.ThompsonSampler
-	gpuTrainer    *ai.GPUTrainer
+	cfg              *config.Config
+	dbStore          *db.Store
+	redisClient      *cache.Client
+	aiClient         *ai.Client
+	allocator        *trader.Allocator
+	execEngine       *trader.ExecutionEngine
+	newsCrawler      *market.NewsCrawler
+	screener         *market.DynamicCryptoScreener
+	telegramBot      *telegram.BotClient
+	authenticator    *auth.Authenticator
+	broadcaster      *SSEBroadcaster
+	sampler          *ai.ThompsonSampler
+	signalSlotMu     sync.Mutex // serialises the MAX_CONCURRENT_SIGNALS check
+	gpuTrainer       *ai.GPUTrainer
 	realDataPipeline *ai.RealDataPipeline
-	router        *chi.Mux
-	marketData    *trader.LiveMarketData
+	router           *chi.Mux
+	marketData       *trader.LiveMarketData
 	candleDownloader market.HistoricalKlineProvider
-	calendar      *market.EconomicCalendar
+	calendar         *market.EconomicCalendar
 }
 
 // NewServer configures routes and dependency injection.
@@ -548,8 +550,8 @@ func (s *Server) setupRoutes() {
 		}
 		for _, sig := range signals {
 			pair := ai.FineTunePair{
-				SystemPrompt: "You are Simple-Trader AI strategy core. Analyze market conditions and provide trading decisions.",
-				UserPrompt:   fmt.Sprintf("Analyze %s at $%.2f with direction=%s, leverage=%d, R:R=%.2f", sig.Symbol, sig.EntryPrice, sig.Direction, sig.Leverage, sig.RiskRewardRatio),
+				SystemPrompt:      "You are Simple-Trader AI strategy core. Analyze market conditions and provide trading decisions.",
+				UserPrompt:        fmt.Sprintf("Analyze %s at $%.2f with direction=%s, leverage=%d, R:R=%.2f", sig.Symbol, sig.EntryPrice, sig.Direction, sig.Leverage, sig.RiskRewardRatio),
 				AssistantResponse: fmt.Sprintf(`{"decision":"%s","confidence":%.2f,"reasoning":"%s"}`, sig.Direction, sig.RiskRewardRatio/5.0, sig.CatalystHeadline),
 			}
 			line, err := pair.ToJSONL()

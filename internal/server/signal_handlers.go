@@ -45,7 +45,29 @@ func (s *Server) newSignalService() *trader.SignalService {
 	if s.dbStore != nil {
 		store = s.dbStore
 	}
-	return trader.NewSignalService(store, s.aiClient, sigCfg)
+	svc := trader.NewSignalService(store, s.aiClient, sigCfg)
+	// Serialise the final cap check so decide-all and the background scanner
+	// cannot both pass an open-slot read and overshoot MAX_CONCURRENT_SIGNALS.
+	svc.SetSlotGuard(func() error {
+		s.signalSlotMu.Lock()
+		defer s.signalSlotMu.Unlock()
+		maxActive := 5
+		if s.cfg != nil && s.cfg.MaxConcurrentSignals > 0 {
+			maxActive = s.cfg.MaxConcurrentSignals
+		}
+		if s.dbStore == nil {
+			return nil
+		}
+		active, err := s.dbStore.ListFuturesSignals(context.Background(), "ACTIVE", 100)
+		if err != nil {
+			return nil
+		}
+		if len(active) >= maxActive {
+			return fmt.Errorf("%w (%d/%d)", trader.ErrConcurrentCap, len(active), maxActive)
+		}
+		return nil
+	})
+	return svc
 }
 
 func (s *Server) ListFuturesSignalsHandler(w http.ResponseWriter, r *http.Request) {
@@ -88,11 +110,53 @@ type GenerateFuturesSignalRequest struct {
 	NewsHeadlines []string `json:"news_headlines,omitempty"`
 }
 
+// freeSignalSlots returns how many more active signals may be opened under
+// MAX_CONCURRENT_SIGNALS. A negative result means the cap is already reached.
+func (s *Server) freeSignalSlots(ctx context.Context) int {
+	maxActive := 5
+	if s.cfg != nil && s.cfg.MaxConcurrentSignals > 0 {
+		maxActive = s.cfg.MaxConcurrentSignals
+	}
+	if s.dbStore == nil {
+		return maxActive
+	}
+	active, err := s.dbStore.ListFuturesSignals(ctx, "ACTIVE", 100)
+	if err != nil {
+		return maxActive
+	}
+	return maxActive - len(active)
+}
+
+// ensureSignalPosition opens an execution-engine position for an active signal
+// unless one already exists. Called on every path that can return an active
+// signal (creation and the "already active" early return) so a signal can never
+// exist without its position.
+func (s *Server) ensureSignalPosition(sig *db.FuturesTradeSignal) {
+	if s.execEngine == nil || sig == nil || sig.ID <= 0 || sig.Status != "ACTIVE" {
+		return
+	}
+	trade, err := s.execEngine.OpenPositionFromSignal(sig)
+	if err != nil {
+		log.Printf("[Signal->Position] Failed to open position for %s: %v", sig.Symbol, err)
+		return
+	}
+	if trade == nil {
+		return
+	}
+	if s.broadcaster != nil {
+		if tradeBytes, err := json.Marshal(trade); err == nil {
+			s.broadcaster.Broadcast("trade", string(tradeBytes))
+		}
+	}
+	log.Printf("[Signal->Position] Opened %s position for %s at $%.2f (margin=$%.2f, lev=%dx)",
+		sig.Direction, sig.Symbol, sig.EntryPrice, sig.AllocatedCapitalUSD, sig.Leverage)
+}
+
 // EvaluateSymbolSignal evaluates a single symbol against breaking news catalysts and technical confluence.
 // If high conviction is detected, it persists the signal, broadcasts via SSE and Telegram, and returns the signal.
-func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string, headlines []string) (*db.FuturesTradeSignal, error) {
+func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string, headlines []string) (*db.FuturesTradeSignal, string, error) {
 	if s.aiClient == nil {
-		return nil, errors.New("ai client not configured")
+		return nil, "AI client not configured", errors.New("ai client not configured")
 	}
 
 	if symbol == "" || symbol == "BTC/USD" {
@@ -103,9 +167,18 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 	// Ingest latest breaking news headlines from crawler if not provided
 	if len(headlines) == 0 && s.newsCrawler != nil {
 		latest := s.newsCrawler.GetLatestArticles()
-		for i := 0; i < len(latest) && i < 5; i++ {
+		for i := 0; i < len(latest) && i < 15; i++ {
 			headlines = append(headlines, latest[i].Title)
 		}
+	}
+
+	// Keep only headlines that can genuinely act as a catalyst for THIS asset.
+	// Symbols with no relevant news hold deterministically and skip an AI
+	// round-trip entirely, which is what lets a full-catalog scan finish
+	// inside the batch deadline instead of timing out on 123 AI calls.
+	headlines = market.HeadlinesForSymbol(headlines, symbol)
+	if len(headlines) == 0 {
+		return nil, "No asset-relevant news headline for " + symbol, nil
 	}
 
 	// Macroeconomic Calendar Halt Guard (FR-005)
@@ -113,7 +186,7 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 	if s.calendar != nil {
 		if halted, reason := s.calendar.IsSymbolHalted(symbol, time.Now()); halted {
 			log.Printf("[MACRO HALT] Signal generation halted for %s due to high-impact macro event: %s", symbol, reason)
-			return nil, nil // Preserves capital in HOLD
+			return nil, "Macro event halt: " + reason, nil // Preserves capital in HOLD
 		}
 	}
 
@@ -140,7 +213,7 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		}
 	}
 	if currentPrice <= 0 {
-		return nil, fmt.Errorf("live market price unavailable for %s", symbol)
+		return nil, "", fmt.Errorf("live market price unavailable for %s", symbol)
 	}
 
 	quote := cache.TickerQuote{
@@ -169,44 +242,70 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		if te, ok := allocBreakdown["total_equity"].(float64); ok && te > 0 {
 			totalEquity = te
 		}
-		if aac, ok := allocBreakdown["tier3_tactical"].(float64); ok && aac > 0 {
-			availableAlphaCapital = aac
+		// Size a CORE commodity from the Core tier and an ALPHA coin from the
+		// Tactical Alpha tier. Every candidate previously drew on Tier 3, so
+		// commodity signals were silently funded by the crypto budget.
+		tierKey := "tier3_tactical"
+		if bucket == "CORE" {
+			tierKey = "tier2_core"
+		}
+		if tierAmt, ok := allocBreakdown[tierKey].(float64); ok && tierAmt > 0 {
+			availableAlphaCapital = tierAmt
 		}
 	}
 
-	// 1. Calculate reserved capital across all currently ACTIVE signals and open positions
+	// 1. Reserved capital, scoped to this candidate's tier. CORE commodities draw
+	// on the Core budget and ALPHA crypto on the Tactical Alpha budget: counting a
+	// gold position against the alpha budget (as before) starved every crypto
+	// signal of capital and made the whole scan report "fully reserved".
 	reservedCapital := 0.0
 	activeSignalsCount := 0
+	// Signals and positions are two views of the SAME exposure: every signal
+	// opens an engine position. Counting both reserves each trade twice and
+	// reported the whole tier as exhausted. Count positions as the truth, and
+	// only count signals that have not yet become positions (pre-rehydration).
+	openPosition := make(map[string]bool)
+	if s.execEngine != nil {
+		for _, tr := range s.execEngine.GetOpenTrades() {
+			if tr == nil {
+				continue
+			}
+			openPosition[tr.Symbol] = true
+			if tr.Symbol == symbol || tr.Bucket != bucket {
+				continue
+			}
+			lev := tr.Leverage
+			if lev < 1 {
+				lev = 1
+			}
+			margin := (tr.PositionSize * tr.EntryPrice) / float64(lev)
+			reservedCapital += margin
+		}
+	}
 	if s.dbStore != nil {
 		activeSignals, err := s.dbStore.ListFuturesSignals(ctx, "ACTIVE", 50)
 		if err == nil && activeSignals != nil {
 			activeSignalsCount = len(activeSignals)
 			for _, as := range activeSignals {
-				if as.Symbol != symbol {
+				if as.Symbol != symbol && market.GetBucket(as.Symbol) == bucket && !openPosition[as.Symbol] {
 					reservedCapital += as.AllocatedCapitalUSD
 				}
 			}
 		}
 	}
-	if s.execEngine != nil {
-		for _, tr := range s.execEngine.GetOpenTrades() {
-			if tr != nil && tr.Symbol != symbol {
-				lev := tr.Leverage
-				if lev < 1 {
-					lev = 1
-				}
-				margin := (tr.PositionSize * tr.EntryPrice) / float64(lev)
-				reservedCapital += margin
-			}
-		}
-	}
 
 	// 2. Concurrency & Correlated Commodity Exposure Gating
+	maxActive := 5
+	if s.cfg != nil && s.cfg.MaxConcurrentSignals > 0 {
+		maxActive = s.cfg.MaxConcurrentSignals
+	}
 	if s.dbStore != nil {
 		existing, err := s.dbStore.GetActiveFuturesSignalBySymbol(ctx, symbol)
 		if err == nil && existing != nil {
-			// Signal already active for this symbol; return existing without duplicate notifications
-			return existing, nil
+			// Signal already active for this symbol; return existing without duplicate
+			// notifications. Still guarantee its position exists.
+			s.ensureSignalPosition(existing)
+			return existing, "", nil
 		}
 
 		// Correlated Commodity Guard: prevent concurrent active signals across correlated assets in same exposure group
@@ -215,18 +314,14 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 			for _, as := range activeSignals {
 				if market.AreCorrelatedCommodities(as.Symbol, symbol) {
 					// Correlated commodity (e.g. PAXG & XAU) already active; prevent duplicate risk and cash splitting
-					return nil, nil // HOLD
+					return nil, "Correlated commodity already active: " + as.Symbol, nil // HOLD
 				}
 			}
 		}
 
-		maxActive := 5
-		if s.cfg != nil && s.cfg.MaxConcurrentSignals > 0 {
-			maxActive = s.cfg.MaxConcurrentSignals
-		}
 		if activeSignalsCount >= maxActive {
 			// Capital guard: dynamically bounded active signals permitted
-			return nil, nil // HOLD
+			return nil, fmt.Sprintf("Max concurrent signals reached (%d/%d)", activeSignalsCount, maxActive), nil
 		}
 	}
 
@@ -234,7 +329,7 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		for _, tr := range s.execEngine.GetOpenTrades() {
 			if tr != nil && market.AreCorrelatedCommodities(tr.Symbol, symbol) {
 				// Correlated commodity already open in execution engine
-				return nil, nil // HOLD
+				return nil, "Correlated position already open: " + tr.Symbol, nil // HOLD
 			}
 		}
 	}
@@ -243,11 +338,21 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 	unreservedAlphaCapital := availableAlphaCapital - reservedCapital
 	minRequiredUnreserved := totalEquity * 0.05
 	if unreservedAlphaCapital < minRequiredUnreserved {
-		return nil, nil // HOLD - capital fully reserved in active trades
+		return nil, "Capital fully reserved by active trades", nil // HOLD
+	}
+
+	// Split the unreserved tier budget across the remaining slots. Each signal
+	// may size itself up to MAX_TRADE_MARGIN_PCT of total equity, but the tier is
+	// only ~40% of equity: two full-size ALPHA trades exhausted the whole tier and
+	// every later signal then reported "fully reserved" instead of trading.
+	if remainingSlots := maxActive - activeSignalsCount; remainingSlots > 1 {
+		if perSlot := unreservedAlphaCapital / float64(remainingSlots); perSlot > 0 {
+			unreservedAlphaCapital = perSlot
+		}
 	}
 
 	signalSvc := s.newSignalService()
-	sig, err := signalSvc.EvaluateMarketSignal(
+	sig, decision, err := signalSvc.EvaluateMarketSignal(
 		ctx,
 		symbol,
 		bucket,
@@ -259,30 +364,28 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		unreservedAlphaCapital,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("signal generation failed: %w", err)
+		if errors.Is(err, trader.ErrConcurrentCap) {
+			return nil, err.Error(), nil // slot filled mid-scan: HOLD, not ERROR
+		}
+		return nil, "", fmt.Errorf("signal generation failed: %w", err)
 	}
 
 	if sig == nil {
-		return nil, nil // HOLD
+		// Surface the AI's own explanation rather than a generic "no catalyst":
+		// an operator must be able to see WHY a scan produced no trade.
+		reason := "No high-conviction catalyst detected"
+		if decision != nil {
+			if decision.Reasoning != "" {
+				reason = decision.Reasoning
+			} else if decision.Catalyst != "" {
+				reason = "Catalyst rejected: " + decision.Catalyst
+			}
+		}
+		return nil, reason, nil // HOLD
 	}
 
-	// Wire signal into execution engine as a live position.
-	// Position state is independent of Telegram dispatch state: a signal
-	// returned from the existing-signal path must still hold a position.
-	if s.execEngine != nil && sig.ID > 0 && sig.Status == "ACTIVE" {
-		if trade, err := s.execEngine.OpenPositionFromSignal(sig); err == nil && trade != nil {
-			// Broadcast the new trade via SSE so the frontend positions table updates
-			if s.broadcaster != nil {
-				if tradeBytes, err := json.Marshal(trade); err == nil {
-					s.broadcaster.Broadcast("trade", string(tradeBytes))
-				}
-			}
-			log.Printf("[Signal→Position] Opened %s position for %s at $%.2f (margin=$%.2f, lev=%dx)",
-				sig.Direction, sig.Symbol, sig.EntryPrice, sig.AllocatedCapitalUSD, sig.Leverage)
-		} else if err != nil {
-			log.Printf("[Signal→Position] Failed to open position for %s: %v", sig.Symbol, err)
-		}
-	}
+	// Every active signal must hold a matching execution-engine position.
+	s.ensureSignalPosition(sig)
 
 	// Broadcast signal via SSE and Telegram ONLY if brand-new and not yet dispatched
 	if !sig.TelegramDispatched {
@@ -301,7 +404,7 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		}
 	}
 
-	return sig, nil
+	return sig, "", nil
 }
 
 // GenerateFuturesSignalHandler handles POST /api/v1/signals/futures/decide
@@ -321,7 +424,7 @@ func (s *Server) GenerateFuturesSignalHandler(w http.ResponseWriter, r *http.Req
 		req.Bucket = "ALPHA"
 	}
 
-	sig, err := s.EvaluateSymbolSignal(r.Context(), req.Symbol, req.Bucket, req.NewsHeadlines)
+	sig, holdReason, err := s.EvaluateSymbolSignal(r.Context(), req.Symbol, req.Bucket, req.NewsHeadlines)
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -330,7 +433,7 @@ func (s *Server) GenerateFuturesSignalHandler(w http.ResponseWriter, r *http.Req
 	if sig == nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":  "HOLD",
-			"message": "No high-conviction breaking news catalyst detected. Capital preserved in HOLD.",
+			"message": holdReason,
 			"symbol":  req.Symbol,
 		})
 		return
@@ -373,11 +476,14 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 	}
 
 	if len(symbols) == 0 {
-		// Default to the screener-qualified universe. Scanning the full catalog
-		// (~123 instruments, each up to a 15s AI call) exceeds the ~100s gateway
-		// timeout and 502s the dashboard — the qualified set bounds the batch to
-		// 2 worker rounds. Explicit symbols still override; bucket filters apply.
-		universe := s.scanUniverse()
+		// Scan the FULL catalog: the operator pressed "Scan All Assets" and
+		// expects every instrument evaluated, not just the liquidity-qualified
+		// subset. The batch is bounded by its own deadline (below) rather than
+		// by shrinking the universe, so a slow gateway can never 502 the request.
+		universe := make([]string, 0, len(market.GetSupportedAssets()))
+		for _, a := range market.GetSupportedAssets() {
+			universe = append(universe, a.Symbol)
+		}
 		switch bucket {
 		case "CORE":
 			for _, sym := range universe {
@@ -400,7 +506,7 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 	var newsHeadlines []string
 	if s.newsCrawler != nil {
 		latest := s.newsCrawler.GetLatestArticles()
-		for i := 0; i < len(latest) && i < 8; i++ {
+		for i := 0; i < len(latest) && i < 15; i++ {
 			newsHeadlines = append(newsHeadlines, latest[i].Title)
 		}
 	}
@@ -417,11 +523,28 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 	// Overall deadline for the whole batch. The response must always return:
 	// a sync handler blocked past the gateway timeout 502s and the dashboard
 	// shows a broken scan even though the backend kept working.
-	batchCtx, batchCancel := context.WithTimeout(r.Context(), 55*time.Second)
+	batchCtx, batchCancel := context.WithTimeout(r.Context(), 85*time.Second)
 	defer batchCancel()
 
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 12) // concurrency limit
+	// Modest concurrency: 24 parallel calls starved the gateway (100 of 123
+	// hit the deadline and fell back to the lexicon heuristic, which always
+	// reports neutral HOLD). Fewer in-flight calls keep each AI round-trip
+	// fast enough to finish the whole catalog inside the batch deadline.
+	//
+	// The semaphore is ALSO the concurrency-cap guard: every worker reads the
+	// active-signal count independently, so an uncapped wave all read "0 active"
+	// at once and inserted past MAX_CONCURRENT_SIGNALS (10 signals against a cap
+	// of 5). Limiting in-flight work to the free slots makes that impossible:
+	// wave one fills the slots, wave two re-reads the updated count and holds.
+	semCap := 12
+	if freeSlots := s.freeSignalSlots(r.Context()); freeSlots < semCap {
+		semCap = freeSlots
+	}
+	if semCap < 1 {
+		semCap = 1
+	}
+	sem := make(chan struct{}, semCap)
 
 	for i, sym := range symbols {
 		wg.Add(1)
@@ -439,10 +562,10 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 
 			b := market.GetBucket(symbol)
 
-			evalCtx, evalCancel := context.WithTimeout(batchCtx, 15*time.Second)
+			evalCtx, evalCancel := context.WithTimeout(batchCtx, 20*time.Second)
 			defer evalCancel()
 
-			sig, err := s.EvaluateSymbolSignal(evalCtx, symbol, b, newsHeadlines)
+			sig, holdReason, err := s.EvaluateSymbolSignal(evalCtx, symbol, b, newsHeadlines)
 			if err != nil {
 				results[idx] = AssetScanResult{
 					Symbol: symbol,
@@ -456,7 +579,7 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 				results[idx] = AssetScanResult{
 					Symbol:  symbol,
 					Status:  "HOLD",
-					Message: "No breaking catalyst found; capital preserved.",
+					Message: holdReason,
 				}
 			} else {
 				results[idx] = AssetScanResult{
@@ -547,16 +670,20 @@ func (s *Server) CloseFuturesSignalHandler(w http.ResponseWriter, r *http.Reques
 	}
 
 	signalSvc := s.newSignalService()
-	_, _, pnl, roi, err := signalSvc.CheckSignalResolution(r.Context(), targetSig, req.ExitPrice)
+	// Close unconditionally: CheckSignalResolution only settles when price has
+	// crossed SL/TP, and discarding its resolved flag returned {"status":"CLOSED"}
+	// while the database row stayed ACTIVE — the engine position disappeared but
+	// the signal never did.
+	pnl, roi, err := signalSvc.CloseSignalNow(r.Context(), targetSig, req.ExitPrice, req.ExitReason)
 	if err != nil {
-		http.Error(w, `{"error":"failed to resolve signal: `+err.Error()+`"}`, http.StatusInternalServerError)
+		http.Error(w, `{"error":"failed to close signal: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
 	}
 
-	// Close the matching execution engine position so margin is released
-	// even when no price tick crosses SL/TP afterwards.
+	// Force-close the matching engine position: a manual close means "exit now",
+	// so it must not depend on a level being crossed.
 	if s.execEngine != nil {
-		if closedTrade, exited := s.execEngine.CheckExit(targetSig.Symbol, req.ExitPrice); exited {
+		if closedTrade, exited := s.execEngine.ForceClosePosition(targetSig.Symbol, req.ExitPrice, req.ExitReason); exited {
 			log.Printf("[Signal→Position] Manual close %s position for %s: pnl=%.2f",
 				closedTrade.Side, closedTrade.Symbol, closedTrade.RealizedPnL)
 		}
@@ -647,7 +774,7 @@ func (s *Server) ReconcileActiveSignals(ctx context.Context) {
 			exitReason := "TIME_EXIT"
 			_ = s.dbStore.CloseFuturesSignal(ctx, sig.ID, price, exitReason, 0, 0)
 			if s.execEngine != nil {
-				if closedTrade, exited := s.execEngine.CheckExit(sig.Symbol, price); exited {
+				if closedTrade, exited := s.execEngine.ForceClosePosition(sig.Symbol, price, exitReason); exited {
 					log.Printf("[Reconcile] Closed %s position for %s on %s: pnl=%.2f",
 						closedTrade.Side, closedTrade.Symbol, exitReason, closedTrade.RealizedPnL)
 				}
@@ -861,7 +988,7 @@ func (s *Server) runBackgroundScan(ctx context.Context) {
 	var newsHeadlines []string
 	if s.newsCrawler != nil {
 		latest := s.newsCrawler.GetLatestArticles()
-		for i := 0; i < len(latest) && i < 8; i++ {
+		for i := 0; i < len(latest) && i < 15; i++ {
 			newsHeadlines = append(newsHeadlines, latest[i].Title)
 		}
 	}
@@ -882,7 +1009,12 @@ func (s *Server) runBackgroundScan(ctx context.Context) {
 
 		bucket := market.GetBucket(sym)
 
-		_, _ = s.EvaluateSymbolSignal(ctx, sym, bucket, newsHeadlines)
+		_, holdReason, scanErr := s.EvaluateSymbolSignal(ctx, sym, bucket, newsHeadlines)
+		if scanErr != nil {
+			log.Printf("[BackgroundScan] %s error: %v", sym, scanErr)
+		} else if holdReason != "" {
+			log.Printf("[BackgroundScan] %s HOLD: %s", sym, holdReason)
+		}
 
 		// Re-check the concurrency cap after each evaluation: overshoot
 		// is possible between the pre-scan check and this loop.
