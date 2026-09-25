@@ -135,3 +135,56 @@ export function timezoneLabel(): string {
   const offset = parts.find((part) => part.type === 'timeZoneName')?.value;
   return offset || timezone;
 }
+
+
+/**
+ * lightweight-charts renders its time axis in UTC (it formats with getUTC*
+ * internally), so candles showed UTC hours while every other timestamp on the
+ * page followed the display timezone. These formatters put the chart in the
+ * same zone as everything else.
+ */
+
+/** lightweight-charts passes UTCTimestamp in seconds, or a BusinessDay object. */
+type ChartTimeValue = number | { year: number; month: number; day: number };
+
+function chartDate(time: ChartTimeValue): Date | null {
+  if (typeof time === 'number') return new Date(time * 1000);
+  if (time && typeof time === 'object' && 'year' in time) {
+    return new Date(Date.UTC(time.year, time.month - 1, time.day));
+  }
+  return null;
+}
+
+function zoneOptions(): Intl.DateTimeFormatOptions {
+  return timezone === 'local' ? {} : { timeZone: timezone };
+}
+
+/** Axis tick label in the selected timezone (24h clock, trading convention). */
+export function formatChartTick(time: ChartTimeValue, tickMarkType: number): string {
+  const date = chartDate(time);
+  if (!date) return '';
+  const opts = zoneOptions();
+  switch (tickMarkType) {
+    case 0: // Year
+      return date.toLocaleDateString('en-GB', { year: 'numeric', ...opts });
+    case 1: // Month
+      return date.toLocaleDateString('en-GB', { month: 'short', ...opts });
+    case 2: // Day of month
+      return date.toLocaleDateString('en-GB', { day: '2-digit', ...opts });
+    default: // Time, TimeWithSeconds
+      return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', ...opts });
+  }
+}
+
+/** Crosshair label in the selected timezone. */
+export function formatChartTime(time: ChartTimeValue): string {
+  const date = chartDate(time);
+  if (!date) return '';
+  return date.toLocaleString('en-GB', {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+    ...zoneOptions(),
+  });
+}
