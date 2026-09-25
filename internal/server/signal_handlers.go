@@ -780,7 +780,17 @@ func (s *Server) ReconcileActiveSignals(ctx context.Context) {
 		if now.Sub(sig.CreatedAt) >= maxAge {
 			price := s.livePriceFor(ctx, sig.Symbol)
 			exitReason := "TIME_EXIT"
-			_ = s.dbStore.CloseFuturesSignal(ctx, sig.ID, price, exitReason, 0, 0)
+			if price > 0 {
+				// Settle PnL/ROI at the live price like every other exit path.
+				// This used to hardcode 0, 0 which erased all timed-exit results.
+				signalSvc := s.newSignalService()
+				if _, _, err := signalSvc.CloseSignalNow(ctx, sig, price, exitReason); err != nil {
+					log.Printf("[Reconcile] Failed to settle time-exit for signal #%d: %v", sig.ID, err)
+					continue
+				}
+			} else {
+				_ = s.dbStore.CloseFuturesSignal(ctx, sig.ID, price, exitReason, 0, 0)
+			}
 			if s.execEngine != nil {
 				if closedTrade, exited := s.execEngine.ForceClosePosition(sig.Symbol, price, exitReason); exited {
 					log.Printf("[Reconcile] Closed %s position for %s on %s: pnl=%.2f",
