@@ -241,7 +241,7 @@ export const App: React.FC = () => {
                 value={displayTimezone}
                 onChange={(e) => setTimezone(e.target.value)}
                 aria-label="Display timezone"
-                className="bg-transparent text-[11px] font-mono font-semibold text-slate-700 dark:text-slate-200 outline-none cursor-pointer max-w-[92px] sm:max-w-none pr-1.5 py-1"
+                className="bg-transparent text-[11px] font-mono font-semibold text-slate-700 dark:text-slate-200 outline-none cursor-pointer max-w-[150px] sm:max-w-none pr-1.5 py-1"
               >
                 {TIMEZONES.map((tz) => (
                   <option key={tz.value} value={tz.value} className="text-slate-900 bg-white">
