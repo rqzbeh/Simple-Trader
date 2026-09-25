@@ -6,6 +6,7 @@ interface Props {
 }
 
 export const QuantDashboardView: React.FC<Props> = ({ symbol }) => {
+	useTimezone();
   const [activeTab, setActiveTab] = useState<'microstructure' | 'calendar' | 'backtest'>('microstructure');
   const [loadingBT, setLoadingBT] = useState(false);
   const [btResult, setBtResult] = useState<BacktestRunResult | null>(null);
@@ -216,7 +217,7 @@ export const QuantDashboardView: React.FC<Props> = ({ symbol }) => {
                   </div>
                   <div className="text-right">
                     <span className="text-xs font-mono text-slate-600 dark:text-slate-400">
-                      {new Date(ev.scheduled_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {formatTime(ev.scheduled_at)}
                     </span>
                   </div>
                 </div>
@@ -299,3 +300,4 @@ export const QuantDashboardView: React.FC<Props> = ({ symbol }) => {
     </div>
   );
 };
+import { formatTime, useTimezone } from '../utils/time';

@@ -9,6 +9,7 @@ interface MLTrainingViewProps {
 }
 
 export const MLTrainingView: React.FC<MLTrainingViewProps> = ({ apiBaseUrl = '', assets }) => {
+	useTimezone();
   const [status, setStatus] = useState<MLStatusResponse | null>(null);
   const [runs, setRuns] = useState<MLTrainingRun[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -398,7 +399,7 @@ export const MLTrainingView: React.FC<MLTrainingViewProps> = ({ apiBaseUrl = '',
               {runs.map((r) => (
                 <tr key={r.id} className="hover:bg-slate-800/30 transition-colors">
                   <td className="p-2.5 text-slate-400">
-                    {new Date(r.created_at).toLocaleString()}
+                    {formatDateTime(r.created_at)}
                   </td>
                   <td className="p-2.5 font-bold text-slate-200">{r.symbol}</td>
                   <td className="p-2.5 text-slate-400">{r.timeframe}</td>
@@ -428,3 +429,4 @@ export const MLTrainingView: React.FC<MLTrainingViewProps> = ({ apiBaseUrl = '',
     </div>
   );
 };
+import { formatDateTime, useTimezone } from '../utils/time';

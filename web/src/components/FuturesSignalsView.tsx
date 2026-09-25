@@ -10,6 +10,7 @@ interface FuturesSignalsViewProps {
 }
 
 export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseUrl = '', currentPrice = 0, assets }) => {
+	useTimezone();
   const [signals, setSignals] = useState<FuturesTradeSignal[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [evaluating, setEvaluating] = useState<boolean>(false);
@@ -321,7 +322,7 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
                 <div className="pt-2 flex items-center justify-between border-t border-slate-100 dark:border-slate-800/80">
                   <span className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
                     <Clock className="w-3 h-3" />
-                    {new Date(sig.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {formatTime(sig.created_at)}
                   </span>
 
                   {sig.status === 'ACTIVE' && (
@@ -342,3 +343,4 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
     </div>
   );
 };
+import { formatTime, useTimezone } from '../utils/time';

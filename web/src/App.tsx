@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from './context/ThemeContext';
 import { useAuth } from './context/AuthContext';
-import { Sun, Moon, Activity, TrendingUp, Layers, SlidersHorizontal, Users, Newspaper, Filter, MessageSquare, LogOut, ShieldCheck, Menu, X, Brain, Wallet } from 'lucide-react';
+import { Sun, Moon, Activity, TrendingUp, Layers, SlidersHorizontal, Users, Newspaper, Filter, MessageSquare, LogOut, ShieldCheck, Menu, X, Brain, Wallet, Globe } from 'lucide-react';
 import { useSSE } from './hooks/useSSE';
 import { AssetTickerGrid } from './components/AssetTickerGrid';
 import { TradingViewChart } from './components/TradingViewChart';
@@ -18,12 +18,14 @@ import { LoginModal } from './components/LoginModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { IOSInstallModal } from './components/IOSInstallModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { TIMEZONES, setTimezone, timezoneLabel, useTimezone } from './utils/time';
 import { AssetInfo, CandleData, TradePosition, IndicatorWeights } from './types';
 
 type AppTab = 'terminal' | 'investors' | 'screener' | 'news' | 'ai_weights' | 'ml';
 
 export const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
+  const displayTimezone = useTimezone();
   const { isAuthenticated, tokenMasked, logout } = useAuth();
   const { isConnected, assets, positions, summary, setPositions } = useSSE();
   // Selected symbol and tab persist across refreshes: a terminal session that
@@ -231,6 +233,26 @@ export const App: React.FC = () => {
               <MessageSquare className="w-4 h-4 text-sky-500" />
               <span className="hidden 2xl:inline font-mono">Telegram</span>
             </button>
+
+            {/* Display timezone: every timestamp in the terminal follows this */}
+            <div className="flex items-center gap-1.5 p-1 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm shrink-0" title={`Showing all times as ${displayTimezone === 'local' ? 'local time' : displayTimezone}`}>
+              <Globe className="w-4 h-4 text-sky-500 ml-1.5 shrink-0" />
+              <select
+                value={displayTimezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                aria-label="Display timezone"
+                className="bg-transparent text-[11px] font-mono font-semibold text-slate-700 dark:text-slate-200 outline-none cursor-pointer max-w-[92px] sm:max-w-none pr-1.5 py-1"
+              >
+                {TIMEZONES.map((tz) => (
+                  <option key={tz.value} value={tz.value} className="text-slate-900 bg-white">
+                    {tz.label}
+                  </option>
+                ))}
+              </select>
+              <span className="hidden sm:inline text-[10px] font-mono text-slate-400 pr-1.5 border-l border-slate-200 dark:border-slate-700 pl-1.5">
+                {timezoneLabel()}
+              </span>
+            </div>
 
             {/* Dark / Light Mode Toggle */}
             <button

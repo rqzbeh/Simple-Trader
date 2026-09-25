@@ -3,6 +3,7 @@ import { Newspaper, TrendingUp, TrendingDown, Minus, ExternalLink, RefreshCw, Al
 import { NewsArticle, NewsSentimentSummary } from '../types';
 
 export const NewsStreamView: React.FC = () => {
+	useTimezone();
   const [articles, setArticles] = useState<NewsArticle[]>([]);
   const [sentiment, setSentiment] = useState<NewsSentimentSummary | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -118,7 +119,7 @@ export const NewsStreamView: React.FC = () => {
                     {art.source}
                   </span>
                   <span className="text-[10px] font-mono text-slate-400">
-                    {new Date(art.published_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {formatTime(art.published_at)}
                   </span>
                 </div>
                 <a
@@ -141,3 +142,4 @@ export const NewsStreamView: React.FC = () => {
     </div>
   );
 };
+import { formatTime, useTimezone } from '../utils/time';

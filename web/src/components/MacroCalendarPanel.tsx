@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MacroCalendarEvent } from '../types';
+import { formatTime, useTimezone } from '../utils/time';
 
 interface MacroCalendarPanelProps {
   events: MacroCalendarEvent[];
@@ -7,6 +8,7 @@ interface MacroCalendarPanelProps {
 }
 
 export const MacroCalendarPanel: React.FC<MacroCalendarPanelProps> = ({ events, activeSymbol }) => {
+	useTimezone();
   const [currentTime, setCurrentTime] = useState(new Date());
 
   useEffect(() => {
@@ -74,7 +76,7 @@ export const MacroCalendarPanel: React.FC<MacroCalendarPanelProps> = ({ events, 
                     </span>
                   </div>
                   <div className="text-slate-400 text-[11px] mt-0.5 font-mono">
-                    Time: {evDate.toLocaleTimeString()} | Forecast: {ev.forecast || 'N/A'} | Previous: {ev.previous || 'N/A'}
+                    Time: {formatTime(ev.scheduled_at)} | Forecast: {ev.forecast || 'N/A'} | Previous: {ev.previous || 'N/A'}
                   </div>
                 </div>
 
