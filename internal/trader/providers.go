@@ -7,17 +7,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rqzbeh/simple-trader/internal/ai"
 	"github.com/rqzbeh/simple-trader/internal/cache"
-	"github.com/rqzbeh/simple-trader/internal/db"
 	"github.com/rqzbeh/simple-trader/internal/market"
 )
 
 // LiveMarketData provides in-memory thread-safe ticker storage implementing MarketDataProvider.
 type LiveMarketData struct {
-	mu         sync.RWMutex
-	quotes     map[string]cache.TickerQuote
-	fetcher    *market.BinanceFetcher
+	mu      sync.RWMutex
+	quotes  map[string]cache.TickerQuote
+	fetcher *market.BinanceFetcher
 }
 
 // NewLiveMarketData creates an empty live market data store with active online exchange fetcher.
@@ -109,141 +107,4 @@ func (m *LiveMarketData) GetMarketDepth(symbol string) (spreadPct float64, avail
 	}
 
 	return 0.0005, 50.0, fmt.Errorf("no market depth data for %s", symbol)
-}
-
-// NewsArticleProvider supplies breaking news for trade catalyst checks.
-type NewsArticleProvider interface {
-	GetLatestArticles() []db.NewsArticle
-}
-
-// IndicatorSnapshotProvider provides computed multi-factor indicator snapshots.
-type IndicatorSnapshotProvider interface {
-	GetIndicatorSnapshot(ctx context.Context, symbol string) (*cache.IndicatorSnapshot, error)
-}
-
-// AIStrategyEvaluator evaluates real-time market opportunities using the AI engine.
-type AIStrategyEvaluator struct {
-	aiClient         *ai.Client
-	newsProvider     NewsArticleProvider
-	snapshotProvider IndicatorSnapshotProvider
-	lastEvals        map[string]time.Time
-	mu               sync.Mutex
-}
-
-// NewAIStrategyEvaluator creates an evaluator instance with throttling to prevent model saturation.
-func NewAIStrategyEvaluator(aiClient *ai.Client, newsProvider NewsArticleProvider) *AIStrategyEvaluator {
-	return &AIStrategyEvaluator{
-		aiClient:     aiClient,
-		newsProvider: newsProvider,
-		lastEvals:    make(map[string]time.Time),
-	}
-}
-
-// SetSnapshotProvider injects an indicator snapshot provider for authentic market context.
-func (e *AIStrategyEvaluator) SetSnapshotProvider(p IndicatorSnapshotProvider) {
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	e.snapshotProvider = p
-}
-
-// Evaluate produces a trading signal when high-conviction catalysts and confluences align.
-func (e *AIStrategyEvaluator) Evaluate(ctx context.Context, symbol string, currentPrice float64) (*db.Signal, error) {
-	if e.aiClient == nil || currentPrice <= 0 {
-		return nil, nil
-	}
-
-	// Throttle evaluations: at most once every 30 seconds per symbol
-	e.mu.Lock()
-	if lastTime, ok := e.lastEvals[symbol]; ok && time.Since(lastTime) < 30*time.Second {
-		e.mu.Unlock()
-		return nil, nil
-	}
-	e.lastEvals[symbol] = time.Now()
-	e.mu.Unlock()
-
-	var headlines []string
-	if e.newsProvider != nil {
-		latest := e.newsProvider.GetLatestArticles()
-		for i := 0; i < len(latest) && i < 3; i++ {
-			headlines = append(headlines, latest[i].Title)
-		}
-	}
-
-	bucket := market.GetBucket(symbol)
-
-	indicatorSnap := cache.IndicatorSnapshot{
-		Symbol: symbol,
-	}
-	e.mu.Lock()
-	snapProv := e.snapshotProvider
-	e.mu.Unlock()
-	if snapProv != nil {
-		if snap, err := snapProv.GetIndicatorSnapshot(ctx, symbol); err == nil && snap != nil {
-			indicatorSnap = *snap
-		}
-	}
-
-	decReq := ai.DecisionRequest{
-		Symbol: symbol,
-		Bucket: bucket,
-		Quote: cache.TickerQuote{
-			Symbol: symbol,
-			Price:  currentPrice,
-		},
-		IndicatorSnap: indicatorSnap,
-		NewsHeadlines: headlines,
-	}
-
-	evalCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	defer cancel()
-
-	resp, err := e.aiClient.Analyze(evalCtx, decReq)
-	if err != nil || resp == nil || resp.Decision == "HOLD" || resp.Decision == "" {
-		return nil, err
-	}
-
-	slPct := resp.SuggestedStopLossPct
-	if slPct <= 0 || slPct > 10.0 {
-		// Use NATR from indicator snapshot if available
-		if indicatorSnap.NATR > 0 {
-			slPct = indicatorSnap.NATR * 1.5
-			if slPct < 0.5 {
-				slPct = 0.5
-			}
-			if slPct > 3.0 {
-				slPct = 3.0
-			}
-		} else {
-			slPct = 1.0
-		}
-	}
-	tpPct := resp.SuggestedTakeProfitPct
-	if tpPct <= 0 || tpPct > 30.0 {
-		tpPct = slPct * 2.5 // Enforce minimum 2.5:1 R:R
-	}
-
-	var stopLoss, takeProfit float64
-	if resp.Decision == "BUY" {
-		stopLoss = currentPrice * (1.0 - (slPct / 100.0))
-		takeProfit = currentPrice * (1.0 + (tpPct / 100.0))
-	} else {
-		stopLoss = currentPrice * (1.0 + (slPct / 100.0))
-		takeProfit = currentPrice * (1.0 - (tpPct / 100.0))
-	}
-
-	sig := &db.Signal{
-		Symbol:          symbol,
-		Side:            resp.Decision,
-		Bucket:          bucket,
-		EntryPrice:      currentPrice,
-		StopLoss:        stopLoss,
-		TakeProfit:      takeProfit,
-		Confidence:      float32(resp.Confidence),
-		ConfluenceScore: float32(resp.Confidence),
-		AIReasoning:     resp.Reasoning,
-		Status:          "OPEN",
-		CreatedAt:       time.Now(),
-	}
-
-	return sig, nil
 }

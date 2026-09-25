@@ -5,8 +5,6 @@ import (
 	"log"
 	"sync"
 	"time"
-
-	"github.com/rqzbeh/simple-trader/internal/db"
 )
 
 // DaemonConfig holds parameters for the continuous autonomous trading daemon.
@@ -19,11 +17,6 @@ type DaemonConfig struct {
 type MarketDataProvider interface {
 	GetLatestPrice(symbol string) (float64, error)
 	GetMarketDepth(symbol string) (spreadPct float64, availableDepth float64, err error)
-}
-
-// StrategyEvaluator abstracts signal generation for daemon execution.
-type StrategyEvaluator interface {
-	Evaluate(ctx context.Context, symbol string, currentPrice float64) (*db.Signal, error)
 }
 
 // MacroCalendar abstracts event halt queries for news/macro risk control.
@@ -39,7 +32,6 @@ type TradingDaemon struct {
 	allocator  *CapitalAllocator
 	circuit    *CircuitBreaker
 	market     MarketDataProvider
-	strategy   StrategyEvaluator
 	calendar   MacroCalendar
 	running    bool
 	stopChan   chan struct{}
@@ -53,7 +45,6 @@ func NewTradingDaemon(
 	allocator *CapitalAllocator,
 	circuit *CircuitBreaker,
 	market MarketDataProvider,
-	strategy StrategyEvaluator,
 ) *TradingDaemon {
 	if cfg.TickInterval <= 0 {
 		cfg.TickInterval = 1 * time.Second
@@ -64,7 +55,6 @@ func NewTradingDaemon(
 		allocator:  allocator,
 		circuit:    circuit,
 		market:     market,
-		strategy:   strategy,
 		stopChan:   make(chan struct{}),
 		lastErrors: make(map[string]error),
 	}
@@ -157,89 +147,6 @@ func (d *TradingDaemon) ProcessTick(ctx context.Context) {
 		}
 	}
 
-	// 3. Evaluate new entry signals if not already positioned
-	for _, symbol := range d.config.Symbols {
-		price, ok := currentPrices[symbol]
-		if !ok || price <= 0 || d.strategy == nil || d.engine == nil {
-			continue
-		}
-
-		// Check if position already exists
-		d.engine.mu.RLock()
-		_, hasPos := d.engine.positions[symbol]
-		d.engine.mu.RUnlock()
-		if hasPos {
-			continue
-		}
-
-		// Check economic calendar halt (FR-005)
-		if d.calendar != nil {
-			if halted, reason := d.calendar.IsSymbolHalted(symbol, time.Now()); halted {
-				log.Printf("[Daemon] Skipped entry for %s: %s", symbol, reason)
-				continue
-			}
-		}
-
-		signal, err := d.strategy.Evaluate(ctx, symbol, price)
-		if err != nil || signal == nil || signal.Status != "OPEN" {
-			continue
-		}
-
-		// Determine spread and depth
-		spreadPct := 0.0002
-		availableDepth := 100.0
-		if d.market != nil {
-			if s, depth, err := d.market.GetMarketDepth(symbol); err == nil {
-				spreadPct = s
-				availableDepth = depth
-			}
-		}
-
-		// Calculate position size
-		slPct := 0.015
-		if signal.StopLoss > 0 {
-			slPct = (price - signal.StopLoss) / price
-			if slPct < 0 {
-				slPct = -slPct
-			}
-		}
-		if slPct <= 0 {
-			slPct = 0.015
-		}
-
-		size := 0.0
-		if d.allocator != nil {
-			size = d.allocator.CalculatePositionSize(signal.Bucket, price, slPct)
-		}
-		if size <= 0 {
-			size = 1.0 // fallback minimal
-		}
-
-		orderReq := OrderRequest{
-			Symbol:            symbol,
-			Bucket:            signal.Bucket,
-			Side:              signal.Side,
-			Price:             price,
-			PositionSize:      size,
-			StopLoss:          signal.StopLoss,
-			TakeProfit:        signal.TakeProfit,
-			AIReasoning:       signal.AIReasoning,
-			SymbolSpreadPct:   spreadPct,
-			AvailableDepthQty: availableDepth,
-			IsTaker:           true,
-		}
-
-		trade, err := d.engine.ExecuteOrder(ctx, orderReq)
-		if err != nil {
-			d.mu.Lock()
-			d.lastErrors[symbol] = err
-			d.mu.Unlock()
-			continue
-		}
-
-		log.Printf("[Daemon] Executed %s order for %s at %.2f (effective: %.2f, fee: %.4f, slippage: %.4f)",
-			trade.Side, trade.Symbol, price, trade.EntryPrice, trade.ExecutionFee, trade.SlippagePaid)
-	}
 }
 
 func (d *TradingDaemon) loop(ctx context.Context) {
