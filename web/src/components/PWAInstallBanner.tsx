@@ -7,11 +7,11 @@ interface PWAInstallBannerProps {
 }
 
 export const PWAInstallBanner: React.FC<PWAInstallBannerProps> = ({ onShowIOSGuide }) => {
-  const { isInstallable, isIOS, isStandalone, triggerInstall } = usePWAInstall();
-  const [dismissed, setDismissed] = React.useState(false);
+  const { isInstallable, isIOS, isStandalone, triggerInstall, dismissPrompt, isDismissed } = usePWAInstall();
 
-  // If already running standalone or dismissed, don't show
-  if (isStandalone || dismissed) {
+  // If already running standalone or previously dismissed (persisted in
+  // localStorage via the hook), don't show
+  if (isStandalone || isDismissed) {
     return null;
   }
 
@@ -67,7 +67,7 @@ export const PWAInstallBanner: React.FC<PWAInstallBannerProps> = ({ onShowIOSGui
             </button>
 
             <button
-              onClick={() => setDismissed(true)}
+              onClick={dismissPrompt}
               className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-slate-200 text-xs rounded-lg transition-colors"
             >
               Not now
@@ -76,8 +76,8 @@ export const PWAInstallBanner: React.FC<PWAInstallBannerProps> = ({ onShowIOSGui
         </div>
 
         <button
-          onClick={() => setDismissed(true)}
-          className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+          onClick={dismissPrompt}
+          className="p-2 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
           title="Dismiss banner"
         >
           <X className="w-4 h-4" />

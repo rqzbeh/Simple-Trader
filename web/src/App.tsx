@@ -20,12 +20,31 @@ import { IOSInstallModal } from './components/IOSInstallModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AssetInfo, CandleData, TradePosition, IndicatorWeights } from './types';
 
+type AppTab = 'terminal' | 'investors' | 'screener' | 'news' | 'ai_weights' | 'ml';
+
 export const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const { isAuthenticated, tokenMasked, logout } = useAuth();
   const { isConnected, assets, positions, summary, setPositions } = useSSE();
-  const [selectedSymbol, setSelectedSymbol] = useState<string>('BTC/USDT');
-  const [activeTab, setActiveTab] = useState<'terminal' | 'investors' | 'screener' | 'news' | 'ai_weights' | 'ml'>('terminal');
+  // Selected symbol and tab persist across refreshes: a terminal session that
+  // resets to BTC/terminal on every reload loses the operator's context.
+  const [selectedSymbol, setSelectedSymbolState] = useState<string>(() => {
+    const saved = localStorage.getItem('simple_trader_symbol');
+    return saved || 'BTC/USDT';
+  });
+  const [activeTab, setActiveTabState] = useState<AppTab>(() => {
+    const saved = localStorage.getItem('simple_trader_tab');
+    const valid: AppTab[] = ['terminal', 'investors', 'screener', 'news', 'ai_weights', 'ml'];
+    return valid.includes(saved as AppTab) ? (saved as AppTab) : 'terminal';
+  });
+  const setSelectedSymbol = (s: string) => {
+    setSelectedSymbolState(s);
+    localStorage.setItem('simple_trader_symbol', s);
+  };
+  const setActiveTab = (t: AppTab) => {
+    setActiveTabState(t);
+    localStorage.setItem('simple_trader_tab', t);
+  };
   const [weights, setWeights] = useState<IndicatorWeights>(INITIAL_WEIGHTS);
   const [isTelegramModalOpen, setIsTelegramModalOpen] = useState<boolean>(false);
   const [isIOSGuideOpen, setIsIOSGuideOpen] = useState<boolean>(false);
@@ -91,13 +110,13 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-[#070b14] text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-sky-500 selection:text-white transition-colors duration-200">
+    <div className="min-h-[100dvh] bg-slate-50 dark:bg-[#070b14] text-slate-900 dark:text-slate-100 flex flex-col font-sans selection:bg-sky-500 selection:text-white transition-colors duration-200 safe-bottom">
       {/* Top Navigation Bar */}
-      <header className="border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md sticky top-0 z-50">
+      <header className="border-b border-slate-200 dark:border-slate-800 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md sticky top-0 z-50 safe-top">
         <div className="max-w-7xl mx-auto px-3 sm:px-4 h-16 flex items-center justify-between gap-2 sm:gap-4">
           {/* Brand Logo & Title */}
           <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-tr from-sky-500 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-sky-500/20 shrink-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-sky-500 flex items-center justify-center text-white shrink-0">
               <TrendingUp className="w-5 h-5" />
             </div>
             <div>

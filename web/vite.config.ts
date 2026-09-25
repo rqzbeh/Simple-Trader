@@ -39,7 +39,7 @@ export default defineConfig({
         name: 'Simple-Trader AI Terminal',
         short_name: 'SimpleTrader',
         description: 'Autonomous Pure-Go Global Trading & Quantitative Intelligence PWA',
-        theme_color: '#0f172a',
+        theme_color: '#070b14',
         background_color: '#020617',
         display: 'standalone',
         orientation: 'portrait',
@@ -57,7 +57,23 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        globPatterns: ['**/*.{js,css,ico,png,svg}'],
+        // index.html must NEVER be precached: a stale precached HTML references
+        // asset hashes deleted by the last deploy, and installed clients
+        // blank-screen on the 404 module before the SW wakes up. Network-first
+        // with a cache fallback keeps installs working offline and fresh on load.
+        navigateFallbackDenylist: [],
+        runtimeCaching: [
+          {
+            urlPattern: ({ request }) => request.mode === 'navigate',
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'html-shell',
+              networkTimeoutSeconds: 3,
+              expiration: { maxEntries: 5, maxAgeSeconds: 60 * 60 * 24 },
+            },
+          },
+        ],
       },
     }),
   ],

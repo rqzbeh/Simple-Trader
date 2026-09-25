@@ -11,3 +11,43 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
   overflow-x: hidden;
 }
+
+/* Entry animations (tailwindcss-animate is not installed; these keyframes
+   back the animate-in / slide-in-from-* / fade-in utility classes) */
+@keyframes enter-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes enter-slide-in-from-top {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes enter-slide-in-from-bottom {
+  from { opacity: 0; transform: translateY(16px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in { animation: enter-fade-in 0.2s ease-out both; }
+.animate-in.fade-in { animation: enter-fade-in 0.2s ease-out both; }
+.animate-in.slide-in-from-top-2 { animation: enter-slide-in-from-top 0.15s ease-out both; }
+.animate-in.slide-in-from-bottom { animation: enter-slide-in-from-bottom 0.3s ease-out both; }
+.animate-in.slide-in-from-bottom-5 { animation: enter-slide-in-from-bottom 0.3s ease-out both; }
+
+/* Installed-PWA safe-area handling: without viewport-fit=cover the sticky
+   header sits under the notch and bottom content hides under the home bar. */
+.safe-top { padding-top: env(safe-area-inset-top); }
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.main-scroll {
+  padding-left: max(0px, env(safe-area-inset-left));
+  padding-right: max(0px, env(safe-area-inset-right));
+  overscroll-behavior-y: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-in.fade-in,
+  .animate-in.slide-in-from-top-2,
+  .animate-in.slide-in-from-bottom,
+  .animate-in.slide-in-from-bottom-5 {
+    animation: none;
+  }
+}

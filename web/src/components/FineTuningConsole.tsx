@@ -6,6 +6,7 @@ export const FineTuningConsole: React.FC = () => {
   const [apiKey, setApiKey] = useState<string>('');
   const [endpoint, setEndpoint] = useState<string>('Configured via Environment');
   const [isSaved, setIsSaved] = useState<boolean>(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
 
   React.useEffect(() => {
@@ -38,10 +39,10 @@ export const FineTuningConsole: React.FC = () => {
         a.click();
         document.body.removeChild(a);
       } else {
-        alert('No closed trade datasets available from database for export.');
+        setExportError('No closed trade datasets available for export yet.');
       }
     } catch (err: any) {
-      alert(err.message || 'Dataset export failed');
+      setExportError(err.message || 'Dataset export failed');
     } finally {
       setIsDownloading(false);
     }
@@ -58,6 +59,12 @@ export const FineTuningConsole: React.FC = () => {
         </div>
         <span className="text-xs text-slate-400 font-mono">Compatible with Groq, vLLM, Ollama, OpenAI</span>
       </div>
+      {exportError && (
+        <div className="p-2.5 bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 rounded-lg text-xs flex items-center justify-between gap-2">
+          <span>{exportError}</span>
+          <button onClick={() => setExportError(null)} className="shrink-0 font-bold hover:opacity-70" aria-label="Dismiss">✕</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Settings Form */}
