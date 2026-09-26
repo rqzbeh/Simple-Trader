@@ -137,6 +137,18 @@ func BuildSnapshot(symbol string, candles []db.Candle, weights map[string]float6
 	snap.Regime = regime
 	snap.VolRatio = volRatio
 
+	// 11b. Volume expansion ratio for the entry gate: last candle volume
+	// vs the mean of the previous 20 candles (0 when history too short).
+	if n >= 21 {
+		var sum float64
+		for _, c := range candles[n-21 : n-1] {
+			sum += c.Volume
+		}
+		if avg := sum / 20.0; avg > 0 {
+			snap.VolumeRatio = candles[n-1].Volume / avg
+		}
+	}
+
 	// 12. Dynamic Confluence Score & Suggested Direction
 	confScore, suggestedDir := CalculateConfluence(snap, weights)
 	snap.Price = math.Round(snap.Price*10000) / 10000

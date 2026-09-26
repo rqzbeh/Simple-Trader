@@ -127,3 +127,39 @@ func TestCalculatePositionSizing(t *testing.T) {
 		t.Errorf("expected margin 10000, got %.2f", marginReq)
 	}
 }
+
+// TestCalculateFuturesPnLSignsAndFlat locks the sign convention and the
+// flat-exit rule required by spec 012 US5 (SC-001): entry == exit must
+// produce exactly 0 (not a signed epsilon), LONG gains when price rises,
+// SHORT gains when price falls.
+func TestCalculateFuturesPnLSignsAndFlat(t *testing.T) {
+	const entry = 100.0
+	const quantity = 10.0
+	const leverage = 8
+
+	cases := []struct {
+		name      string
+		exit      float64
+		direction Direction
+		wantPnL   float64
+		wantROI   float64
+	}{
+		{"long win", 101.0, DirectionLong, 10.0, 8.0},
+		{"long loss", 99.0, DirectionLong, -10.0, -8.0},
+		{"short win", 99.0, DirectionShort, 10.0, 8.0},
+		{"short loss", 101.0, DirectionShort, -10.0, -8.0},
+		{"flat long", 100.0, DirectionLong, 0.0, 0.0},
+		{"flat short", 100.0, DirectionShort, 0.0, 0.0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pnl, roi, err := CalculateFuturesPnL(entry, tc.exit, quantity, leverage, tc.direction)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if math.Abs(pnl-tc.wantPnL) > 1e-9 || math.Abs(roi-tc.wantROI) > 1e-9 {
+				t.Errorf("got (pnl=%.10f, roi=%.10f), want (pnl=%.10f, roi=%.10f)", pnl, roi, tc.wantPnL, tc.wantROI)
+			}
+		})
+	}
+}

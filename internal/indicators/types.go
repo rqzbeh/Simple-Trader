@@ -45,6 +45,7 @@ type Snapshot struct {
 	KaufmanER          float64
 	CMF                float64
 	NATR               float64
+	VolumeRatio        float64 // last volume / SMA20 of prior volumes (entry gate, spec 012 FR-001)
 	ConfluenceScore    float64
 	SuggestedDirection string
 }

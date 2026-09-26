@@ -5,6 +5,8 @@ import (
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/rqzbeh/simple-trader/internal/indicators"
 )
 
 // BetaPosterior maintains the conjugate Beta distribution parameters for an indicator.
@@ -99,7 +101,13 @@ func sampleGamma(alpha, beta float64, r *rand.Rand) float64 {
 type ThompsonSampler struct {
 	mu         sync.RWMutex
 	posteriors map[string]*BetaPosterior
-	rng        *rand.Rand
+	// manual holds operator slider locks (FR-024). Posterior means can only
+	// express weights in (0, 2.0), so slider targets up to 3.0 cannot round
+	// trip through alpha/beta; a manual entry is served verbatim instead and
+	// is released when that indicator's next attributed outcome arrives —
+	// recorded market evidence always outranks a stale manual lock.
+	manual map[string]float64
+	rng    *rand.Rand
 }
 
 // NewThompsonSampler initializes the Thompson Sampling engine.
@@ -119,6 +127,7 @@ func NewThompsonSampler(seed int64) *ThompsonSampler {
 
 	return &ThompsonSampler{
 		posteriors: posteriors,
+		manual:     make(map[string]float64),
 		rng:        rng,
 	}
 }
@@ -131,6 +140,10 @@ func (ts *ThompsonSampler) SampleWeights() map[string]float64 {
 
 	weights := make(map[string]float64)
 	for name, post := range ts.posteriors {
+		if m, locked := ts.manual[name]; locked {
+			weights[name] = m // manual lock served verbatim (FR-024)
+			continue
+		}
 		theta := post.Sample(ts.rng) // theta in (0, 1)
 
 		// Base expectation for prior Beta(2, 2) is 0.50.
@@ -145,60 +158,86 @@ func (ts *ThompsonSampler) SampleWeights() map[string]float64 {
 	return weights
 }
 
-// RecordOutcome updates Beta posteriors based on trade performance attribution.
+// RecordOutcome updates Beta posteriors based on trade performance attribution
+// (spec 012 US7, FR-022/023).
+//
+// Attribution contract:
+//   - Only the decision-time snapshot recorded with the trade is used.
+//   - Missing snapshot (legacy rows) → no statistic moves.
+//   - Neutral/unknown measurement (zero) → no update for that indicator;
+//     absent data is never treated as evidence.
+//   - Each indicator updates only when its measurement directionally agreed
+//     with the entry; microstructure uses the same OBI+divergence score the
+//     confluence calculation uses, so learning and evaluation agree.
 func (ts *ThompsonSampler) RecordOutcome(outcome TradeOutcome) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 
+	if !outcome.HasSnapshot {
+		return // FR-023: unknown data must not change any statistic
+	}
+
 	isWin := outcome.Pnl > 0
 
-	// 1. SuperTrend
-	if post, exists := ts.posteriors["SUPERTREND"]; exists {
-		stAligned := (outcome.Side == "BUY" && outcome.SuperTrendTrend == "BULL") ||
-			(outcome.Side == "SELL" && outcome.SuperTrendTrend == "BEAR")
-		if stAligned {
-			post.Update(isWin, 1.0)
-		}
-	}
-
-	// 2. MACD
-	if post, exists := ts.posteriors["MACD"]; exists {
-		macdAligned := (outcome.Side == "BUY" && outcome.MACDHistogram > 0) ||
-			(outcome.Side == "SELL" && outcome.MACDHistogram < 0)
-		if macdAligned {
-			post.Update(isWin, 1.0)
-		}
-	}
-
-	// 3. RSI
-	if post, exists := ts.posteriors["RSI"]; exists {
-		rsiAligned := (outcome.Side == "BUY" && outcome.RSI >= 50) ||
-			(outcome.Side == "SELL" && outcome.RSI <= 50)
-		if rsiAligned {
-			post.Update(isWin, 1.0)
-		}
-	}
-
-	// 4. Microstructure
-	if post, exists := ts.posteriors["MICROSTRUCTURE"]; exists {
+	// apply records one attributed outcome: the update itself, plus release
+	// of any manual slider lock for this indicator (recorded evidence
+	// outranks a stale manual calibration; FR-024 semantics).
+	apply := func(name string, post *BetaPosterior) {
+		delete(ts.manual, name)
 		post.Update(isWin, 1.0)
 	}
 
-	// 5. Chaikin Money Flow (CMF)
-	if post, exists := ts.posteriors["CMF"]; exists {
-		cmfAligned := (outcome.Side == "BUY" && outcome.CMF > 0) ||
-			(outcome.Side == "SELL" && outcome.CMF < 0)
-		if cmfAligned {
-			post.Update(isWin, 1.0)
+	// 1. SuperTrend ("" = no measurement → skip)
+	if post, exists := ts.posteriors["SUPERTREND"]; exists && outcome.SuperTrendTrend != "" {
+		stAligned := (outcome.Side == "BUY" && outcome.SuperTrendTrend == "BULL") ||
+			(outcome.Side == "SELL" && outcome.SuperTrendTrend == "BEAR")
+		if stAligned {
+			apply("SUPERTREND", post)
 		}
 	}
 
-	// 6. Kaufman Efficiency Ratio (KER)
-	if post, exists := ts.posteriors["KER"]; exists {
-		// High efficiency (>0.40) aligns with trend following
-		if outcome.KaufmanER >= 0.40 {
-			post.Update(isWin, 1.0)
+	// 2. MACD histogram (0 = neutral, not evidence)
+	if post, exists := ts.posteriors["MACD"]; exists && outcome.MACDHistogram != 0 {
+		macdAligned := (outcome.Side == "BUY" && outcome.MACDHistogram > 0) ||
+			(outcome.Side == "SELL" && outcome.MACDHistogram < 0)
+		if macdAligned {
+			apply("MACD", post)
 		}
+	}
+
+	// 3. RSI (>0 = measured; 0 = missing)
+	if post, exists := ts.posteriors["RSI"]; exists && outcome.RSI > 0 {
+		rsiAligned := (outcome.Side == "BUY" && outcome.RSI >= 50) ||
+			(outcome.Side == "SELL" && outcome.RSI <= 50)
+		if rsiAligned {
+			apply("RSI", post)
+		}
+	}
+
+	// 4. Microstructure (OBI + CVD divergence) — direction-aware: a bullish
+	// flow only counts as evidence for a long entry and vice versa.
+	if post, exists := ts.posteriors["MICROSTRUCTURE"]; exists && outcome.OBI != 0 {
+		score := indicators.EvaluateMicrostructure(outcome.OBI, indicators.DivergenceType(outcome.Divergence))
+		microAligned := (outcome.Side == "BUY" && score > 0) ||
+			(outcome.Side == "SELL" && score < 0)
+		if microAligned {
+			apply("MICROSTRUCTURE", post)
+		}
+	}
+
+	// 5. Chaikin Money Flow (0 = neutral)
+	if post, exists := ts.posteriors["CMF"]; exists && outcome.CMF != 0 {
+		cmfAligned := (outcome.Side == "BUY" && outcome.CMF > 0) ||
+			(outcome.Side == "SELL" && outcome.CMF < 0)
+		if cmfAligned {
+			apply("CMF", post)
+		}
+	}
+
+	// 6. Kaufman Efficiency Ratio (>0 = measured; high efficiency aligns with
+	// trend following in either direction)
+	if post, exists := ts.posteriors["KER"]; exists && outcome.KaufmanER >= 0.40 {
+		apply("KER", post)
 	}
 }
 
@@ -209,6 +248,10 @@ func (ts *ThompsonSampler) GetWeights() map[string]float64 {
 
 	weights := make(map[string]float64)
 	for name, post := range ts.posteriors {
+		if m, locked := ts.manual[name]; locked {
+			weights[name] = m // FR-024: saved slider edits are served verbatim
+			continue
+		}
 		ev := post.ExpectedValue()
 		rawWeight := ev / 0.50
 		clamped := math.Max(0.20, math.Min(3.00, rawWeight))
@@ -238,6 +281,23 @@ func (ts *ThompsonSampler) GetPosteriorStats() map[string]map[string]float64 {
 		}
 	}
 	return stats
+}
+
+// SetWeights locks each indicator's served weight to the operator's slider
+// target (spec 012 US7, FR-024). Targets are clamped to the documented
+// [0.20, 3.00] band and served verbatim by GetWeights/SampleWeights until
+// the indicator's next attributed outcome releases the lock.
+func (ts *ThompsonSampler) SetWeights(targets map[string]float64) {
+	ts.mu.Lock()
+	defer ts.mu.Unlock()
+
+	for name, target := range targets {
+		if _, exists := ts.posteriors[name]; !exists {
+			continue
+		}
+		w := math.Max(0.20, math.Min(3.00, target))
+		ts.manual[name] = math.Round(w*1000) / 1000
+	}
 }
 
 // UpdatePosteriors batches custom alpha and beta updates (e.g. from real-data GPU ML training).
