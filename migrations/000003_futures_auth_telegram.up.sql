@@ -1,9 +1,9 @@
 -- 000003_futures_auth_telegram.up.sql
--- Two-Sided Futures Trading, Dynamic Macro Allocation, Auth Security, Telegram Signals, and ML Training Runs
+-- Administrative Authentication, System Secrets, Futures Signals, Macro Regimes, and ML Runs
 
 BEGIN;
 
--- 1. Administrative Users Table
+-- 1. Administrative Users Table (Salted bcrypt passwords)
 CREATE TABLE IF NOT EXISTS admin_users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username VARCHAR(64) UNIQUE NOT NULL,
@@ -15,7 +15,7 @@ CREATE TABLE IF NOT EXISTS admin_users (
 
 CREATE INDEX IF NOT EXISTS idx_admin_users_username ON admin_users(username);
 
--- 2. Encrypted System Secrets (AES-GCM-256 for Telegram tokens, API keys, etc.)
+-- 2. Encrypted System Secrets (AES-GCM-256 encrypted credentials)
 CREATE TABLE IF NOT EXISTS encrypted_system_secrets (
     key_name VARCHAR(64) PRIMARY KEY,
     encrypted_payload TEXT NOT NULL,
@@ -23,12 +23,12 @@ CREATE TABLE IF NOT EXISTS encrypted_system_secrets (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- 3. Two-Sided Futures Trade Signals
+-- 3. Two-Sided Futures Trade Signals & Execution Telemetry
 CREATE TABLE IF NOT EXISTS futures_trade_signals (
     id BIGSERIAL PRIMARY KEY,
     symbol VARCHAR(32) NOT NULL,
     direction VARCHAR(8) NOT NULL CHECK (direction IN ('LONG', 'SHORT')),
-    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE', -- ACTIVE, CLOSED, CANCELLED, PENDING
+    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE', -- ACTIVE, CLOSED, CANCELLED
     catalyst_headline TEXT NOT NULL,
     catalyst_source VARCHAR(64) NOT NULL,
     catalyst_sentiment DOUBLE PRECISION NOT NULL,
@@ -50,11 +50,11 @@ CREATE TABLE IF NOT EXISTS futures_trade_signals (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX IF NOT EXISTS idx_futures_signals_symbol ON futures_trade_signals(symbol);
 CREATE INDEX IF NOT EXISTS idx_futures_signals_status ON futures_trade_signals(status);
+CREATE INDEX IF NOT EXISTS idx_futures_signals_symbol ON futures_trade_signals(symbol);
 CREATE INDEX IF NOT EXISTS idx_futures_signals_created ON futures_trade_signals(created_at DESC);
 
--- 4. Dynamic Macroeconomic Regimes
+-- 4. Real-World Macroeconomic Regimes & Dynamic Allocation Snapshots
 CREATE TABLE IF NOT EXISTS macro_regimes (
     id BIGSERIAL PRIMARY KEY,
     timestamp TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -70,7 +70,7 @@ CREATE TABLE IF NOT EXISTS macro_regimes (
 
 CREATE INDEX IF NOT EXISTS idx_macro_regimes_timestamp ON macro_regimes(timestamp DESC);
 
--- 5. Machine Learning Training Runs (Real Binance Data Calibration)
+-- 5. Machine Learning Real-Data Training Runs
 CREATE TABLE IF NOT EXISTS ml_training_runs (
     id BIGSERIAL PRIMARY KEY,
     symbol VARCHAR(32) NOT NULL,
