@@ -536,6 +536,28 @@ func (s *Server) setupRoutes() {
 		})
 	})
 
+	// Persist manual indicator-weight edits (spec 012 US7, FR-024): the saved
+	// values become the posteriors the evaluation path serves, so UI controls
+	// and served weights can never silently diverge.
+	r.Post("/api/v1/weights", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if s.sampler == nil {
+			http.Error(w, `{"error":"weight sampler not configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+		var req struct {
+			Weights map[string]float64 `json:"weights"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Weights) == 0 {
+			http.Error(w, `{"error":"body must contain a non-empty weights map"}`, http.StatusBadRequest)
+			return
+		}
+		s.sampler.SetWeights(req.Weights)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"weights": s.sampler.GetWeights(),
+		})
+	})
+
 	// Continuous Fine-Tuning JSONL Export
 	r.Get("/api/v1/learning/dataset.jsonl", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/x-ndjson")
@@ -740,6 +762,11 @@ func (s *Server) setupRoutes() {
 	r.Post("/api/v1/signals/futures/decide", s.GenerateFuturesSignalHandler)
 	r.Post("/api/v1/signals/futures/decide-all", s.GenerateAllFuturesSignalsHandler)
 	r.Post("/api/v1/signals/futures/{id}/close", s.CloseFuturesSignalHandler)
+
+	// Signal optimization (spec 012): performance summary + entry-filter audit
+	r.Get("/api/v1/signals/summary", s.SignalSummaryHandler)
+	r.Get("/api/v1/signals/filters", s.ListEntryFilterLogsHandler)
+	r.Get("/api/v1/risk-profiles", s.ListRiskProfilesHandler)
 
 	// Dynamic Macroeconomic Regime & 3-Tier Allocation (US2, FR-004)
 	r.Get("/api/v1/macro/regime", s.GetMacroRegimeHandler)

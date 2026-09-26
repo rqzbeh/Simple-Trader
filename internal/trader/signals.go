@@ -2,6 +2,7 @@ package trader
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/rqzbeh/simple-trader/internal/ai"
 	"github.com/rqzbeh/simple-trader/internal/cache"
+	"github.com/rqzbeh/simple-trader/internal/config"
 	"github.com/rqzbeh/simple-trader/internal/db"
 	"github.com/rqzbeh/simple-trader/internal/market"
 )
@@ -21,6 +23,7 @@ type SignalStoreInterface interface {
 	CloseFuturesSignal(ctx context.Context, id int64, exitPrice float64, exitReason string, pnl, roi float64) error
 	MarkSignalDispatched(ctx context.Context, id int64) error
 	MarkSignalResolved(ctx context.Context, id int64) error
+	InsertEntryFilterLog(ctx context.Context, symbol, direction string, catalystEventID *int64, rule string, detail json.RawMessage) error
 }
 
 // AIAnalyzer defines the interface to obtain trading intelligence and catalyst evaluations.
@@ -335,6 +338,18 @@ func (s *SignalService) EvaluateMarketSignal(
 	}
 
 	// 7. Assemble and persist the signal
+	// Decision-time indicator snapshot (spec 012 US7, FR-022): recorded once
+	// here so closed-trade outcomes attribute to the indicators that were
+	// actually bold in THIS decision, not to whatever the market shows later.
+	snapRecord, _ := json.Marshal(db.IndicatorSnapshotRecord{
+		RSI:           snap.RSI,
+		MACDHistogram: snap.Histogram,
+		SuperTrend:    snap.SuperTrend,
+		CMF:           snap.CMF,
+		KaufmanER:     snap.KaufmanER,
+		OBI:           snap.OBI,
+		Divergence:    snap.Divergence,
+	})
 	sig := &db.FuturesTradeSignal{
 		Symbol:              symbol,
 		Direction:           string(dir),
@@ -351,6 +366,53 @@ func (s *SignalService) EvaluateMarketSignal(
 		AllocatedCapitalPct: allocatedCapitalPct,
 		TelegramDispatched:  false,
 		TelegramResolved:    false,
+		IndicatorSnapshot:   snapRecord,
+	}
+
+	// Entry gate (spec 012 US1 / research R1): veto candidates that fail
+	// trend, volume, chase, OI or liquidation-buffer checks BEFORE they are
+	// persisted. Rejections land in entry_filter_log (FR-020) and surface via
+	// DecisionResponse.GateRejected so the server can broadcast them.
+	gateProfile := config.GetRiskProfile("CRYPTO")
+	if bucket == "CORE" {
+		gateProfile = config.GetRiskProfile("COMMODITY")
+	}
+	var oiPtr *float64
+	if oiDelta, oiErr := market.NewBinanceFetcher().FetchOIDeltaPct(ctx, symbol); oiErr == nil {
+		oiPtr = oiDelta
+	}
+	gateIn := EntryGateInput{
+		Symbol:               symbol,
+		Direction:            string(dir),
+		Price:                entryPrice,
+		VWAP:                 snap.VWAP,
+		UpperBand:            snap.UpperBand,
+		LowerBand:            snap.LowerBand,
+		MidBand:              snap.MiddleBand,
+		SuperTrend:           snap.SuperTrend,
+		VolumeRatio:          snap.VolumeRatio,
+		OIDeltaPct:           oiPtr,
+		SlPct:                slPct,
+		Leverage:             leverage,
+		LiqBufferMin:         gateProfile.LiqBufferMin,
+		MaintenanceMarginPct: 0,
+	}
+	if gate := EvaluateEntryGate(gateIn); !gate.Allowed {
+		detail, _ := json.Marshal(gate.Detail)
+		if s.store != nil {
+			logCtx, logCancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			_ = s.store.InsertEntryFilterLog(logCtx, symbol, string(dir), nil, gate.Rule, detail)
+			logCancel()
+		}
+		aiResp.GateRejected = gate.Rule
+		aiResp.GateRejectedDetail = gate.Detail
+		prefix := "[entry gate: " + gate.Rule + "] "
+		if aiResp.Reasoning == "" {
+			aiResp.Reasoning = prefix + "candidate rejected"
+		} else {
+			aiResp.Reasoning = prefix + aiResp.Reasoning
+		}
+		return nil, aiResp, nil
 	}
 
 	if s.store != nil {
