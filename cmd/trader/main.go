@@ -58,6 +58,44 @@ func main() {
 				}
 			}
 			migCancel()
+
+			// Validate + persist effective risk profiles (spec 012, FR-019).
+			// Invalid config logs loudly but never blocks startup.
+			if err := trader.ValidateRiskProfiles(); err != nil {
+				log.Printf("[WARN] Risk profile validation failed: %v", err)
+			} else if store != nil {
+				for _, name := range []string{"CRYPTO", "COMMODITY"} {
+					p := config.GetRiskProfile(name)
+					windows := make([]db.BlackoutWindow, 0, len(p.BlackoutWindows))
+					for _, w := range p.BlackoutWindows {
+						windows = append(windows, db.BlackoutWindow{Name: w.Name, BeforeMin: w.BeforeMin, AfterMin: w.AfterMin})
+					}
+					row := db.RiskProfileRow{
+						Name:                 p.Name,
+						HorizonMin:           p.HorizonMin,
+						HorizonMax:           p.HorizonMax,
+						DecayBreakevenAtMin:  p.DecayBreakevenAtMin,
+						DecayFlatAtMin:       p.DecayFlatAtMin,
+						SLAtrMult:            p.SLAtrMult,
+						SLSwingOffset:        p.SLSwingOffset,
+						SLMinPct:             p.SLMinPct,
+						SLMaxPct:             p.SLMaxPct,
+						TP1AtrMult:           p.TP1AtrMult,
+						TP2AtrMult:           p.TP2AtrMult,
+						TP1CloseFrac:         p.TP1CloseFrac,
+						TargetHourlyVolPct:   p.TargetHourlyVolPct,
+						LiqBufferMin:         p.LiqBufferMin,
+						RiskPerTradePct:      p.RiskPerTradePct,
+						FreshnessHalfLifeMin: p.FreshnessHalfLifeMin,
+						WeekendFlat:          p.WeekendFlat,
+						BlackoutCalendar:     windows,
+					}
+					if err := store.UpsertRiskProfile(ctx, row); err != nil {
+						log.Printf("[WARN] Failed to seed risk profile %s: %v", name, err)
+					}
+				}
+				log.Printf("[INFO] Risk profiles seeded (CRYPTO, COMMODITY).")
+			}
 		}
 	}
 

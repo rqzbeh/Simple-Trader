@@ -383,7 +383,26 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		// an operator must be able to see WHY a scan produced no trade.
 		reason := "No high-conviction catalyst detected"
 		if decision != nil {
-			if decision.Reasoning != "" {
+			if decision.GateRejected != "" {
+				// Entry gate veto (spec 012 US1): broadcast for the audit UI.
+				reason = "Entry gate [" + decision.GateRejected + "]"
+				if decision.Reasoning != "" {
+					reason += ": " + decision.Reasoning
+				}
+				if s.broadcaster != nil {
+					payload := map[string]interface{}{
+						"symbol":    symbol,
+						"direction": decision.Decision,
+						"rule":      decision.GateRejected,
+						"detail":    decision.GateRejectedDetail,
+						"ts":        time.Now().UTC().Format(time.RFC3339),
+					}
+					if b, err := json.Marshal(payload); err == nil {
+						s.broadcaster.Broadcast("filter_rejected", string(b))
+					}
+				}
+				log.Printf("[ENTRY GATE] rejected %s %s: %s", symbol, decision.Decision, decision.GateRejected)
+			} else if decision.Reasoning != "" {
 				reason = decision.Reasoning
 			} else if decision.Catalyst != "" {
 				reason = "Catalyst rejected: " + decision.Catalyst
@@ -720,16 +739,7 @@ func (s *Server) CloseFuturesSignalHandler(w http.ResponseWriter, r *http.Reques
 
 	// Online Thompson Sampling fine-tuning for CPU-only VPS runtime
 	if s.sampler != nil {
-		side := "BUY"
-		if targetSig.Direction == "SHORT" {
-			side = "SELL"
-		}
-		s.sampler.RecordOutcome(ai.TradeOutcome{
-			Symbol:    targetSig.Symbol,
-			Side:      side,
-			Pnl:       pnl,
-			ReturnPct: roi,
-		})
+		s.sampler.RecordOutcome(tradeOutcomeFromSignal(targetSig, pnl, roi))
 	}
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
@@ -920,17 +930,42 @@ func (s *Server) CheckSignalExitForTick(tick cache.TickerQuote) {
 
 	// 4. Online fine-tuning telemetry update
 	if s.sampler != nil {
-		side := "BUY"
-		if sig.Direction == "SHORT" {
-			side = "SELL"
-		}
-		s.sampler.RecordOutcome(ai.TradeOutcome{
-			Symbol:    sig.Symbol,
-			Side:      side,
-			Pnl:       pnl,
-			ReturnPct: roi,
-		})
+		s.sampler.RecordOutcome(tradeOutcomeFromSignal(sig, pnl, roi))
 	}
+}
+
+// tradeOutcomeFromSignal converts a closed signal into the learning outcome
+// fed to Thompson sampling (spec 012 US7, FR-022/023). The indicator fields
+// come from the decision-time snapshot recorded with the signal; rows without
+// a snapshot keep HasSnapshot=false and move no statistic.
+func tradeOutcomeFromSignal(sig *db.FuturesTradeSignal, pnlUSD, roiPct float64) ai.TradeOutcome {
+	side := "BUY"
+	if sig.Direction == "SHORT" {
+		side = "SELL"
+	}
+	out := ai.TradeOutcome{
+		Symbol:      sig.Symbol,
+		Side:        side,
+		Pnl:         pnlUSD,
+		ReturnPct:   roiPct,
+		HasSnapshot: false,
+	}
+	if len(sig.IndicatorSnapshot) == 0 {
+		return out
+	}
+	var rec db.IndicatorSnapshotRecord
+	if err := json.Unmarshal(sig.IndicatorSnapshot, &rec); err != nil {
+		return out
+	}
+	out.SuperTrendTrend = rec.SuperTrend
+	out.RSI = rec.RSI
+	out.MACDHistogram = rec.MACDHistogram
+	out.CMF = rec.CMF
+	out.KaufmanER = rec.KaufmanER
+	out.OBI = rec.OBI
+	out.Divergence = rec.Divergence
+	out.HasSnapshot = true
+	return out
 }
 
 // StartBackgroundSignalScanner runs transparent background scans across the active asset universe.
@@ -1044,4 +1079,140 @@ func (s *Server) runBackgroundScan(ctx context.Context) {
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
+}
+
+// SignalSummary is the response payload for GET /api/v1/signals/summary
+// (contracts/api.md §2). All ratios are computed server-side so old clients
+// and the web UI stay display-agnostic.
+type SignalSummary struct {
+	Profile       string  `json:"profile"`
+	Closed        int     `json:"closed"`
+	Wins          int     `json:"wins"`
+	Losses        int     `json:"losses"`
+	Flat          int     `json:"flat"`
+	WinRate       float64 `json:"win_rate"`
+	AvgWinPct     float64 `json:"avg_win_pct"`
+	AvgLossPct    float64 `json:"avg_loss_pct"`
+	PayoffRatio   float64 `json:"payoff_ratio"`
+	ExpectancyPct float64 `json:"expectancy_pct"`
+	TotalPnlUSD   float64 `json:"total_pnl_usd"`
+	StopOutRate   float64 `json:"stop_out_rate"`
+	Tp1HitRate    float64 `json:"tp1_hit_rate"`
+}
+
+// SignalSummaryHandler handles GET /api/v1/signals/summary?profile=&since=
+func (s *Server) SignalSummaryHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	profile := r.URL.Query().Get("profile")
+	since := r.URL.Query().Get("since")
+
+	summary := SignalSummary{Profile: profile}
+	if s.dbStore == nil || s.dbStore.Pool == nil {
+		json.NewEncoder(w).Encode(summary)
+		return
+	}
+
+	var (
+		wins, losses, flat, closed int
+		stopLosses, tpHits         int
+		sumWin, sumLoss            *float64
+		sumPnl                     float64
+	)
+	err := s.dbStore.Pool.QueryRow(r.Context(), `
+		SELECT
+			count(*)::int AS closed,
+			count(*) FILTER (WHERE realized_roi_pct > 0)::int AS wins,
+			count(*) FILTER (WHERE realized_roi_pct < 0)::int AS losses,
+			count(*) FILTER (WHERE realized_roi_pct = 0)::int AS flat,
+			avg(realized_roi_pct) FILTER (WHERE realized_roi_pct > 0) AS sum_win,
+			avg(realized_roi_pct) FILTER (WHERE realized_roi_pct < 0) AS sum_loss,
+			coalesce(sum(realized_pnl_usd), 0) AS sum_pnl,
+			count(*) FILTER (WHERE exit_reason = 'STOP_LOSS')::int AS stop_losses,
+			count(*) FILTER (WHERE exit_reason LIKE 'TP%')::int AS tp_hits
+		FROM futures_trade_signals
+		WHERE status = 'CLOSED'
+		  AND ($1 = '' OR profile = $1)
+		  AND ($2 = '' OR created_at >= $2::timestamptz)
+	`, profile, since).Scan(
+		&closed, &wins, &losses, &flat,
+		&sumWin, &sumLoss, &sumPnl,
+		&stopLosses, &tpHits,
+	)
+	if err != nil {
+		http.Error(w, `{"error":"failed to compute summary: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	summary.Closed = closed
+	summary.Wins = wins
+	summary.Losses = losses
+	summary.Flat = flat
+	summary.TotalPnlUSD = sumPnl
+	if sumWin != nil {
+		summary.AvgWinPct = *sumWin
+	}
+	if sumLoss != nil {
+		summary.AvgLossPct = *sumLoss
+	}
+	if closed > 0 {
+		summary.WinRate = float64(wins) / float64(closed)
+		summary.StopOutRate = float64(stopLosses) / float64(closed)
+		summary.Tp1HitRate = float64(tpHits) / float64(closed)
+		if wins > 0 && losses > 0 && summary.AvgLossPct != 0 {
+			summary.PayoffRatio = summary.AvgWinPct / absFloat(summary.AvgLossPct)
+		}
+		if wins > 0 || losses > 0 {
+			summary.ExpectancyPct = (float64(wins)*summary.AvgWinPct +
+				float64(losses)*summary.AvgLossPct) / float64(closed)
+		}
+	}
+	json.NewEncoder(w).Encode(summary)
+}
+
+// absFloat returns the absolute value of v.
+func absFloat(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// ListEntryFilterLogsHandler handles GET /api/v1/signals/filters?limit=&rule=&symbol=
+func (s *Server) ListEntryFilterLogsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	limit := 50
+	if lStr := r.URL.Query().Get("limit"); lStr != "" {
+		if parsed, err := strconv.Atoi(lStr); err == nil && parsed > 0 && parsed <= 200 {
+			limit = parsed
+		}
+	}
+	rule := r.URL.Query().Get("rule")
+	symbol := r.URL.Query().Get("symbol")
+
+	if s.dbStore == nil {
+		json.NewEncoder(w).Encode([]db.EntryFilterLog{})
+		return
+	}
+	logs, err := s.dbStore.ListEntryFilterLogs(r.Context(), limit, rule, symbol)
+	if err != nil {
+		http.Error(w, `{"error":"failed to fetch entry filter log: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(logs)
+}
+
+// ListRiskProfilesHandler handles GET /api/v1/risk-profiles (contracts/api.md §4).
+func (s *Server) ListRiskProfilesHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.dbStore == nil {
+		json.NewEncoder(w).Encode([]db.RiskProfileRow{})
+		return
+	}
+	profiles, err := s.dbStore.ListRiskProfiles(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"failed to fetch risk profiles: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(profiles)
 }

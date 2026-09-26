@@ -27,6 +27,29 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
   );
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
+  const [weightsDirty, setWeightsDirty] = useState<boolean>(false);
+  const [weightsSaving, setWeightsSaving] = useState<boolean>(false);
+  const [weightsError, setWeightsError] = useState<string | null>(null);
+
+  // Load the weights the evaluation path actually serves (spec 012 US7 FR-024):
+  // the sliders must reflect served state, not a placeholder.
+  useEffect(() => {
+    fetch('/api/v1/weights')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.weights && Object.keys(data.weights).length > 0) {
+          setWeights({
+            symbol: 'LIVE_SAMPLER',
+            regime: 'Thompson Sampling',
+            weights: data.weights,
+            lastUpdated: formatTime(new Date()),
+          });
+        }
+      })
+      .catch(() => {
+        /* offline preview: keep initial state */
+      });
+  }, []);
 
   // AI Model settings state (binds dynamically to live backend .env)
   const [modelId, setModelId] = useState<string>('');
@@ -73,24 +96,55 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
       lastUpdated: formatTime(new Date()),
     };
     setWeights(updated);
+    setWeightsDirty(true);
     onUpdateWeights?.(updated);
   };
 
   const handleResetBaseline = () => {
+    const resetWeights: Record<string, number> = {};
+    Object.keys(weights.weights).forEach((key) => {
+      resetWeights[key] = 1.0;
+    });
     const reset = {
       ...weights,
-      weights: {
-        RSI: 1.0,
-        MACD: 1.0,
-        SuperTrend: 1.0,
-        BollingerBands: 1.0,
-        ATR: 1.0,
-        VWAP: 1.0,
-      },
+      weights: resetWeights,
       lastUpdated: formatTime(new Date()),
     };
     setWeights(reset);
+    setWeightsDirty(true);
     onUpdateWeights?.(reset);
+  };
+
+  // FR-024: persist slider edits to the served posteriors; only a successful
+  // POST clears the dirty flag, so an unsaved edit is never shown as applied.
+  const handleSaveWeights = async () => {
+    setWeightsSaving(true);
+    setWeightsError(null);
+    try {
+      const res = await fetch('/api/v1/weights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ weights: weights.weights }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      if (data.weights) {
+        const saved = {
+          ...weights,
+          weights: data.weights,
+          lastUpdated: formatTime(new Date()),
+        };
+        setWeights(saved);
+        onUpdateWeights?.(saved);
+      }
+      setWeightsDirty(false);
+    } catch (err) {
+      setWeightsError(err instanceof Error ? err.message : 'save failed');
+    } finally {
+      setWeightsSaving(false);
+    }
   };
 
   const handleExportJSONL = async () => {
@@ -163,8 +217,32 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
                 <RefreshCw className="w-3 h-3" />
                 <span>Reset 1.0x</span>
               </button>
+              <button
+                onClick={handleSaveWeights}
+                disabled={!weightsDirty || weightsSaving}
+                className={`text-xs px-2.5 py-1 rounded-lg border font-mono flex items-center space-x-1 transition-colors ${
+                  weightsDirty
+                    ? 'border-sky-500/40 bg-sky-500/10 text-sky-600 dark:text-sky-400 hover:bg-sky-500/20'
+                    : 'border-slate-200 dark:border-slate-800 text-slate-400 cursor-not-allowed'
+                }`}
+                title="Persist edited weights to the served posteriors"
+              >
+                <CheckCircle2 className="w-3 h-3" />
+                <span>{weightsSaving ? 'Saving…' : weightsDirty ? 'Save Weights' : 'Saved'}</span>
+              </button>
             </div>
           </div>
+
+          {weightsError && (
+            <div className="mb-3 px-2.5 py-1.5 rounded bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-[11px] font-mono">
+              Weight save failed: {weightsError}
+            </div>
+          )}
+          {!weightsError && weightsDirty && (
+            <div className="mb-3 px-2.5 py-1.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-[11px] font-mono">
+              Unsaved edits — evaluation still uses the last saved weights.
+            </div>
+          )}
 
           {/* Sliders Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

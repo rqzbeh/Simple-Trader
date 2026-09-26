@@ -133,6 +133,8 @@ type IndicatorSnapshot struct {
 	KaufmanER       float64 `json:"kaufman_er"`
 	CMF             float64 `json:"cmf"`
 	NATR            float64 `json:"natr"`
+	VWAP            float64 `json:"vwap"`
+	VolumeRatio     float64 `json:"volume_ratio"`
 	UpdatedAt       int64   `json:"updated_at"`
 }
 

@@ -2,11 +2,45 @@ package telegram
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
 	"github.com/rqzbeh/simple-trader/internal/db"
 )
+
+// FormatPrice renders a token price with precision safe for micro-cap assets.
+// Fixed 2-decimal formatting collapses prices like 0.000002334544 to "0.00",
+// making entry, stop loss and take profit indistinguishable in the alert.
+//
+// Rules:
+//   - price >= 100: 2 decimals (BTC-scale)
+//   - 1 <= price < 100: 4 decimals
+//   - price < 1: enough decimals for ~7 significant digits (capped at 18)
+func FormatPrice(v float64) string {
+	switch {
+	case v == 0:
+		return "0.00"
+	case v >= 100:
+		return fmt.Sprintf("%.2f", v)
+	case v >= 1:
+		return fmt.Sprintf("%.4f", v)
+	default:
+		// Digits after the decimal point so ~7 significant digits survive.
+		prec := int(math.Ceil(-math.Log10(v))) + 6
+		if prec > 18 {
+			prec = 18
+		}
+		s := fmt.Sprintf("%.*f", prec, v)
+		// Drop padding zeros the precision estimate may add; keep >=2 decimals.
+		if i := strings.IndexByte(s, '.'); i >= 0 && len(s) > i+3 {
+			if t := strings.TrimRight(s, "0"); len(t) > i+3 {
+				s = t
+			}
+		}
+		return s
+	}
+}
 
 // EscapeMarkdownV2 escapes characters reserved in Telegram MarkdownV2 format:
 // '_', '*', '[', ']', '(', ')', '~', '`', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!'
@@ -41,7 +75,7 @@ func FormatSignalEntry(sig *db.FuturesTradeSignal) string {
 
 	tp2Line := ""
 	if sig.TakeProfit2 != nil && *sig.TakeProfit2 > 0 {
-		tp2Line = fmt.Sprintf("\n🎯 *Take Profit 2:* $%s", EscapeMarkdownV2(fmt.Sprintf("%.2f", *sig.TakeProfit2)))
+		tp2Line = fmt.Sprintf("\n🎯 *Take Profit 2:* $%s", EscapeMarkdownV2(FormatPrice(*sig.TakeProfit2)))
 	}
 
 	rrFormatted := EscapeMarkdownV2(fmt.Sprintf("1:%.2f", sig.RiskRewardRatio))
@@ -68,9 +102,9 @@ func FormatSignalEntry(sig *db.FuturesTradeSignal) string {
 		dirEmoji,
 		EscapeMarkdownV2(sig.Direction),
 		sig.Leverage,
-		EscapeMarkdownV2(fmt.Sprintf("%.2f", sig.EntryPrice)),
-		EscapeMarkdownV2(fmt.Sprintf("%.2f", sig.StopLoss)),
-		EscapeMarkdownV2(fmt.Sprintf("%.2f", sig.TakeProfit1)),
+		EscapeMarkdownV2(FormatPrice(sig.EntryPrice)),
+		EscapeMarkdownV2(FormatPrice(sig.StopLoss)),
+		EscapeMarkdownV2(FormatPrice(sig.TakeProfit1)),
 		tp2Line,
 		rrFormatted,
 		EscapeMarkdownV2(fmt.Sprintf("%.2f", sig.AllocatedCapitalUSD)),
@@ -162,8 +196,8 @@ func FormatSignalResolution(sig *db.FuturesTradeSignal, exitPrice float64, exitR
 		EscapeMarkdownV2(sig.Direction),
 		sig.Leverage,
 		EscapeMarkdownV2(reasonLabel),
-		EscapeMarkdownV2(fmt.Sprintf("%.2f", sig.EntryPrice)),
-		EscapeMarkdownV2(fmt.Sprintf("%.2f", exitPrice)),
+		EscapeMarkdownV2(FormatPrice(sig.EntryPrice)),
+		EscapeMarkdownV2(FormatPrice(exitPrice)),
 		EscapeMarkdownV2(durationStr),
 		signPnL,
 		EscapeMarkdownV2(fmt.Sprintf("%.2f", absPnL)),

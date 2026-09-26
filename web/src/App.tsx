@@ -8,6 +8,8 @@ import { TradingViewChart } from './components/TradingViewChart';
 import { AllocationGauge } from './components/AllocationGauge';
 import { PositionsTable } from './components/PositionsTable';
 import { AISignalFeed } from './components/AISignalFeed';
+import { PerformanceSummary } from './components/PerformanceSummary';
+import { EntryFilterLog } from './components/EntryFilterLog';
 import { AIWeightMatrix, INITIAL_WEIGHTS } from './components/AIWeightMatrix';
 import { MLTrainingView } from './components/MLTrainingView';
 import { InvestorLedgerView } from './components/InvestorLedgerView';
@@ -526,6 +528,16 @@ export const App: React.FC = () => {
                   />
                 </ErrorBoundary>
               </div>
+            </div>
+
+            {/* Signal performance + entry-gate audit (spec 012: US5, US1) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <ErrorBoundary fallbackTitle="Performance Summary Offline">
+                <PerformanceSummary />
+              </ErrorBoundary>
+              <ErrorBoundary fallbackTitle="Entry Filter Log Offline">
+                <EntryFilterLog />
+              </ErrorBoundary>
             </div>
           </>
         ) : activeTab === 'investors' ? (
