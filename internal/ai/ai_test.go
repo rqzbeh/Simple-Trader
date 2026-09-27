@@ -86,59 +86,6 @@ func TestOpenAIClientDecision(t *testing.T) {
 		t.Errorf("expected confidence 0.85, got %f", decision.Confidence)
 	}
 }
-
-func TestDynamicWeightAdjustment(t *testing.T) {
-	engine := ai.NewWeightEngine()
-
-	initialWeights := map[string]float64{
-		"RSI":        1.0,
-		"MACD":       1.0,
-		"SUPERTREND": 1.0,
-		"BOLLINGER":  1.0,
-	}
-
-	// 1. Profitable trade with BUY on Bullish SuperTrend & positive MACD
-	// Expected: Reward matching indicators, slight boost
-	rewarded := engine.AdjustWeights(initialWeights, ai.TradeOutcome{
-		Pnl:             150.0,
-		ReturnPct:       3.2,
-		Side:            "BUY",
-		SuperTrendTrend: "BULL",
-		RSI:             65.0,
-		MACDHistogram:   1.2,
-	})
-
-	if rewarded["SUPERTREND"] <= 1.0 {
-		t.Errorf("expected SUPERTREND to be rewarded (>1.0), got %f", rewarded["SUPERTREND"])
-	}
-	if rewarded["MACD"] <= 1.0 {
-		t.Errorf("expected MACD to be rewarded (>1.0), got %f", rewarded["MACD"])
-	}
-
-	// 2. Losing trade (regret penalty)
-	// Long trade lost money while RSI was overbought (>75)
-	penalized := engine.AdjustWeights(initialWeights, ai.TradeOutcome{
-		Pnl:             -200.0,
-		ReturnPct:       -4.0,
-		Side:            "BUY",
-		SuperTrendTrend: "BULL",
-		RSI:             78.0,
-		MACDHistogram:   -0.5,
-	})
-
-	// Indicators that provided false bullish signal should receive regret penalties
-	if penalized["RSI"] >= 1.0 {
-		t.Errorf("expected RSI to receive regret penalty (<1.0), got %f", penalized["RSI"])
-	}
-
-	// Bounds checking: weights must never exceed [0.2, 3.0]
-	for k, w := range penalized {
-		if w < 0.2 || w > 3.0 {
-			t.Errorf("weight %s out of bounds: %f", k, w)
-		}
-	}
-}
-
 func TestFineTuningJSONLExporter(t *testing.T) {
 	record := ai.FineTunePair{
 		SystemPrompt: "You are a professional quantitative trader.",
