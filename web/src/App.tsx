@@ -126,7 +126,7 @@ export const App: React.FC = () => {
             <div>
               <div className="flex items-center space-x-1.5">
                 <h1 className="font-bold text-base sm:text-lg leading-tight tracking-tight whitespace-nowrap">Simple-Trader</h1>
-                <span className="text-[10px] uppercase font-bold font-mono tracking-wider px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-500 border border-sky-500/20">
+                <span className="hidden sm:inline text-[10px] uppercase font-bold font-mono tracking-wider px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-500 border border-sky-500/20">
                   v2.0
                 </span>
               </div>
@@ -236,8 +236,10 @@ export const App: React.FC = () => {
               <span className="hidden 2xl:inline font-mono">Telegram</span>
             </button>
 
-            {/* Display timezone: every timestamp in the terminal follows this */}
-            <div className="flex items-center gap-1.5 p-1 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm shrink-0" title={`Showing all times as ${displayTimezone === 'local' ? 'local time' : displayTimezone}`}>
+            {/* Display timezone: every timestamp in the terminal follows this.
+                Hidden below sm — the select + label overflows the 375px header
+                and pushed the whole action cluster off-screen on phones. */}
+            <div className="hidden sm:flex items-center gap-1.5 p-1 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm shrink-0" title={`Showing all times as ${displayTimezone === 'local' ? 'local time' : displayTimezone}`}>
               <Globe className="w-4 h-4 text-sky-500 ml-1.5 shrink-0" />
               <select
                 value={displayTimezone}
