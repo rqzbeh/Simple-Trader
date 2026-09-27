@@ -820,6 +820,10 @@ func (s *Server) ReconcileActiveSignals(ctx context.Context) {
 		signalSvc := s.newSignalService()
 		resolved, exitReason, pnl, roi, err := signalSvc.CheckSignalResolution(ctx, sig, price)
 		if err != nil || !resolved {
+			// Not closed by TP/SL: run the time-decay state machine (spec 012
+			// US2, FR-005). The reconciler is the only driver: the profile's
+			// breakeven/flat checkpoints decide protection and closure.
+			s.applyDecayState(ctx, sig, price)
 			continue
 		}
 		_ = s.dbStore.CloseFuturesSignal(ctx, sig.ID, price, exitReason, pnl, roi)
@@ -837,6 +841,89 @@ func (s *Server) ReconcileActiveSignals(ctx context.Context) {
 		log.Printf("[Reconcile] %d active signal(s) reconciled this pass.", reconciled)
 	}
 }
+
+// applyDecayState runs the time-decay state machine for one ACTIVE signal
+// (spec 012 US2, FR-005): protects (stop to break-even) a laggard at the
+// breakeven checkpoint, closes a still-unprofitable trade at the flat
+// checkpoint, and time-exits at the hard horizon. Profile comes from the
+// signal's own class; failures log and never panic.
+func (s *Server) applyDecayState(ctx context.Context, sig *db.FuturesTradeSignal, price float64) {
+	if sig == nil || sig.Status != "ACTIVE" || sig.EntryPrice <= 0 || sig.StopLoss <= 0 {
+		return
+	}
+
+	prof, err := trader.EffectiveProfile(trader.ProfileNameForBucket(sig.Profile))
+	if err != nil {
+		log.Printf("[Decay] invalid profile for signal #%d: %v", sig.ID, err)
+		return
+	}
+
+	ageMin := time.Since(sig.CreatedAt).Minutes()
+	riskDist := sig.EntryPrice - sig.StopLoss
+	if sig.Direction == "SHORT" {
+		riskDist = sig.StopLoss - sig.EntryPrice
+	}
+	if riskDist <= 0 {
+		return
+	}
+
+	// R multiple from the live price (unrealized).
+	var rMultiple float64
+	if sig.Direction == "LONG" {
+		rMultiple = (price - sig.EntryPrice) / riskDist
+	} else {
+		rMultiple = (sig.EntryPrice - price) / riskDist
+	}
+
+	decayState := sig.DecayState
+	if decayState == "" {
+		decayState = "NONE"
+	}
+	state, action := trader.EvaluateDecay(ageMin, rMultiple, decayState, prof)
+	switch action {
+	case "":
+		return
+	case "BREAKEVEN":
+		// Protect: stop to break-even + round-trip fees (FR-004/005).
+		beStop := trader.BreakevenStopPrice(sig.EntryPrice, trader.Direction(sig.Direction), 0.001)
+		// Only move the stop in the protective direction.
+		moved := beStop > sig.StopLoss && sig.Direction == "LONG" || beStop < sig.StopLoss && sig.Direction == "SHORT"
+		if !moved {
+			return
+		}
+		if err := s.dbStore.UpdateSignalStop(ctx, sig.ID, beStop); err != nil {
+			log.Printf("[Decay] failed to move stop for #%d: %v", sig.ID, err)
+			return
+		}
+		if err := s.dbStore.UpdateSignalDecay(ctx, sig.ID, state); err != nil {
+			log.Printf("[Decay] failed to persist decay state for #%d: %v", sig.ID, err)
+			return
+		}
+		sig.StopLoss = beStop
+		sig.DecayState = state
+		log.Printf("[Decay] signal #%d %s protected: stop -> %.6f (age %.0fm, %.2fR)", sig.ID, sig.Symbol, beStop, ageMin, rMultiple)
+	case "CLOSE", "TIME_EXIT":
+		// Close the dead trade at the live price (never persist zero: the
+		// close path settles PnL/ROI like every other exit).
+		signalSvc := s.newSignalService()
+		pnlUSD, roiPct, err := signalSvc.CloseSignalNow(ctx, sig, price, "TIME_EXIT")
+		if err != nil {
+			log.Printf("[Decay] failed to close signal #%d: %v", sig.ID, err)
+			return
+		}
+		if s.execEngine != nil {
+			if closedTrade, exited := s.execEngine.ForceClosePosition(sig.Symbol, price, "TIME_EXIT"); exited {
+				log.Printf("[Decay] Closed %s position for %s: pnl=%.2f", closedTrade.Side, closedTrade.Symbol, closedTrade.RealizedPnL)
+			}
+		}
+		_ = s.dbStore.UpdateSignalDecay(context.WithoutCancel(ctx), sig.ID, "CLOSED")
+		log.Printf("[Decay] signal #%d %s closed by decay: pnl=%.2f roi=%.2f (age %.0fm, %.2fR)", sig.ID, sig.Symbol, pnlUSD, roiPct, ageMin, rMultiple)
+		reconciledDecay++
+	}
+}
+
+// reconciledDecay counts decay-driven closures for the reconcile summary log.
+var reconciledDecay int
 
 // livePriceFor returns the freshest cached price for a symbol.
 func (s *Server) livePriceFor(ctx context.Context, symbol string) float64 {
