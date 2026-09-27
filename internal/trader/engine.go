@@ -33,6 +33,7 @@ type PriceProvider interface {
 
 // ExecutionEngine simulates paper order execution and tracks open/closed positions in-memory.
 type ExecutionEngine struct {
+	shadowExit func(trade *db.Trade, reason string) // spec-013 T041: core exit judgment hook
 	mu            sync.RWMutex
 	initialEquity float64
 	cash          float64
@@ -221,6 +222,9 @@ func (e *ExecutionEngine) closePositionLocked(trade *db.Trade, symbol string, cu
 	trade.ExitPrice = exitQuote.EffectivePrice
 	trade.ExitReason = exitReason
 	trade.Status = "CLOSED"
+	if e.shadowExit != nil {
+		e.shadowExit(trade, exitReason)
+	}
 	trade.ExecutionFee += exitQuote.TotalFee
 	trade.SlippagePaid += exitQuote.Slippage
 	now := time.Now()

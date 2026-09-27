@@ -47,6 +47,13 @@ func (s *Server) newSignalService() *trader.SignalService {
 		store = s.dbStore
 	}
 	svc := trader.NewSignalService(store, s.aiClient, sigCfg)
+	if s.decisionRouter != nil {
+		svc.SetDecisionRouter(s.decisionRouter)
+	}
+	if s.shadow != nil {
+		svc.SetShadow(s.shadow)
+	}
+	svc.SetNewsClassifier(s.newsClassifier)
 	// Serialise the final cap check so decide-all and the background scanner
 	// cannot both pass an open-slot read and overshoot MAX_CONCURRENT_SIGNALS.
 	svc.SetSlotGuard(func(symbol string) (*db.FuturesTradeSignal, error) {

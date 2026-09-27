@@ -29,8 +29,6 @@ func jevServer(t *testing.T, conf float64, choice string) *httptest.Server {
 	}))
 }
 
-var entryVocab = map[string]bool{"LONG": true, "SHORT": true, "NO_TRADE": true}
-
 func TestRouterRequiresThreshold(t *testing.T) {
 	r := &DecisionRouter{Threshold: 0}
 	_, err := r.Route(context.Background(), "c1", nil, nil, nil)

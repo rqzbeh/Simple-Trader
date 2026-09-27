@@ -127,59 +127,24 @@ func (s *Store) ShadowReport(ctx context.Context, judgmentType string, days int)
 	if days <= 0 {
 		days = 14
 	}
-	rows, err := s.Pool.Query(ctx, `
-		SELECT judge, route, status,
-		       COUNT(*) AS n,
-		       AVG(latency_ms) AS avg_ms,
-		       AVG(confidence) AS avg_conf,
-		       SUM(input_tokens) AS in_tok,
-		       SUM(output_tokens) AS out_tok,
-		       CASE WHEN choice IS NOT NULL AND choice = baseline_choice THEN 1 ELSE 0 END AS agree,
-		       outcome
+	var total, ok, errs, agree, withOutcome int
+	var avgMS, avgConf, inTok, outTok float64
+	err := s.Pool.QueryRow(ctx, `
+		SELECT
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status = 'ok'),
+			COUNT(*) FILTER (WHERE status = 'error'),
+			COALESCE(AVG(latency_ms), 0),
+			COALESCE(AVG(confidence), 0),
+			COALESCE(SUM(input_tokens), 0),
+			COALESCE(SUM(output_tokens), 0),
+			COUNT(*) FILTER (WHERE status = 'ok' AND choice = baseline_choice),
+			COUNT(*) FILTER (WHERE outcome IS NOT NULL)
 		FROM shadow_decisions
-		WHERE judgment_type = $1 AND created_at > now() - make_interval(days => $2)
-		GROUP BY judge, route, status, outcome`, judgmentType, days)
+		WHERE judgment_type = $1 AND created_at > now() - make_interval(days => $2)`,
+		judgmentType, days).Scan(&total, &ok, &errs, &avgMS, &avgConf, &inTok, &outTok, &agree, &withOutcome)
 	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	total, ok, errs := 0, 0, 0
-	var latSum, confSum, inTok, outTok float64
-	var agree, withOutcome int
-	for rows.Next() {
-		var judge, route, status string
-		var n, avgMS, avgConf, inT, outT, agree1, outcome *float64
-		if err := rows.Scan(&judge, &route, &status, &n, &avgMS, &avgConf, &inT, &outT, &agree1, &outcome); err != nil {
-			return nil, err
-		}
-		if n == nil {
-			continue
-		}
-		total += int(*n)
-		if status == "error" {
-			errs += int(*n)
-		} else {
-			ok += int(*n)
-		}
-		if avgMS != nil {
-			latSum += *avgMS * *n
-		}
-		if avgConf != nil {
-			confSum += *avgConf * *n
-		}
-		if inT != nil {
-			inTok += *inT
-		}
-		if outT != nil {
-			outTok += *outT
-		}
-		if agree1 != nil {
-			agree += int(*agree1)
-		}
-		if outcome != nil {
-			withOutcome += int(*n)
-		}
+		return nil, fmt.Errorf("shadow report: %w", err)
 	}
 	if total == 0 {
 		return nil, fmt.Errorf("shadow report: no records for type=%s days=%d", judgmentType, days)
@@ -189,15 +154,44 @@ func (s *Store) ShadowReport(ctx context.Context, judgmentType string, days int)
 		agreement = float64(agree) / float64(ok)
 	}
 	return map[string]interface{}{
-		"type":                    judgmentType,
-		"days":                    days,
-		"pairs":                   total,
-		"ok":                      ok,
-		"errors":                  errs,
-		"agreement_rate":          agreement,
-		"avg_latency_ms":          latSum / float64(total),
-		"avg_confidence":          confSum / float64(total),
-		"cost_per_1k":             (inTok + outTok) / float64(total),
-		"records_with_outcome":    withOutcome,
+		"type":                 judgmentType,
+		"days":                 days,
+		"pairs":                total,
+		"ok":                   ok,
+		"errors":               errs,
+		"agreement_rate":       agreement,
+		"avg_latency_ms":       avgMS,
+		"avg_confidence":       avgConf,
+		"cost_per_1k":          (inTok + outTok) / float64(total),
+		"records_with_outcome": withOutcome,
+		"calibration":          s.calibrationBuckets(ctx, judgmentType, days),
 	}, nil
+}
+
+// calibrationBuckets: SC-006 — predicted confidence vs realized outcome rate.
+func (s *Store) calibrationBuckets(ctx context.Context, judgmentType string, days int) []map[string]interface{} {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT width_bucket(confidence, 0, 1, 5) AS bucket,
+		       AVG(confidence) AS predicted,
+		       AVG(CASE WHEN outcome > 0 THEN 1.0 ELSE 0.0 END) AS realized,
+		       COUNT(*) AS n
+		FROM shadow_decisions
+		WHERE judgment_type = $1 AND status = 'ok' AND outcome IS NOT NULL
+		  AND created_at > now() - make_interval(days => $2)
+		GROUP BY bucket ORDER BY bucket`, judgmentType, days)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []map[string]interface{}
+	for rows.Next() {
+		var b, predicted, realized, n interface{}
+		if rows.Scan(&b, &predicted, &realized, &n) != nil {
+			return out
+		}
+		out = append(out, map[string]interface{}{
+			"bucket": b, "predicted": predicted, "realized": realized, "n": n,
+		})
+	}
+	return out
 }

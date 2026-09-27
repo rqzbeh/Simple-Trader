@@ -101,3 +101,15 @@
 **MVP scope**: Phase 1+2+US1 (T001-T018) — decision core with entry routing, non-interference proven.
 
 **Implementation strategy**: tests first, one story at a time in priority order, deletion guards green at all times, full regression after each story (T018 pattern).
+
+## Phase 8: Convergence
+
+- [X] T039 CRITICAL Wire DecisionRouter into live entry path: EvaluateMarketSignal must route via Jev-first/9Router-escalated core (SignalService holds legacy aiClient.Analyze only) per FR-001, FR-003 (missing)
+- [X] T040 CRITICAL Wire ShadowOrchestrator: Start()+JudgeEntry never invoked anywhere in cmd/ or server/ — shadow store unreachable at runtime per FR-002, US1/AC4 (missing)
+- [X] T041 CRITICAL Wire JudgeExit into exit-evaluation cycle of ExecutionEngine per FR-003, US3 (missing)
+- [X] T042 HIGH Create missing test files marked done in tasks: internal/ai/jev_test.go, internal/ai/newsclassify_test.go, internal/trader/exit_test.go, internal/trader/news_test.go, internal/trader/config_test.go, internal/db/shadow_store_test.go — contracts per T009/T019/T025/T022/T007/T008 (partial)
+- [X] T043 HIGH Create internal/trader/news_hook.go + SetNewsClassifier on SignalService call-site wiring (server currently only wires crawler; signal path classifier injected but cluster→shadow record missing) per FR-002 news rows (partial)
+- [X] T044 HIGH ShadowReport SQL bug: GROUP BY includes outcome (row per outcome) making totals/agreement wrong; also route column selected but absent from GROUP BY — fix query per FR-017 (contradicts)
+- [X] T045 HIGH Startup gate: ROUTING_CONFIDENCE_THRESHOLD parse (Config.RoutingThreshold) never called at boot — FR-016 startup error unreachable (partial)
+- [X] T046 MEDIUM Config toggles (SHADOW_REPORT_DAYS/MIN_PAIRS, per-type shadow flags) not read from env/config — FR-010 unenforced (missing)
+- [X] T047 MEDIUM Calibration bucketing per SC-006 absent from report (confidence buckets vs realized outcome frequency) (missing)

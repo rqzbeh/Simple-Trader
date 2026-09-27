@@ -60,12 +60,12 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                 <td className="px-4 py-3">
                   <span
                     className={`font-bold px-1.5 py-0.5 rounded text-[11px] ${
-                      pos.side === 'BUY'
+                      (pos.side === 'BUY' || pos.side === 'LONG')
                         ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                         : 'bg-rose-500/10 text-rose-600 dark:text-rose-400'
                     }`}
                   >
-                    {pos.side}
+                    {pos.side === 'BUY' ? 'LONG' : pos.side === 'SELL' ? 'SHORT' : pos.side}
                   </span>
                 </td>
                 <td className="px-4 py-3">

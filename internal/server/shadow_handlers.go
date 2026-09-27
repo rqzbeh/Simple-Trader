@@ -32,7 +32,7 @@ func (s *Server) handleShadowReport(w http.ResponseWriter, r *http.Request) {
 	}
 	rep, err := s.dbStore.ShadowReport(r.Context(), typ, days)
 	if err != nil {
-		http.Error(w, "component=shadow-report: "+err.Error(), http.StatusNotFound)
+		http.Error(w, "component=shadow-report: report unavailable", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

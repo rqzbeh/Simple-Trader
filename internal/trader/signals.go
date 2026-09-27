@@ -103,7 +103,18 @@ type SignalService struct {
 	// newsClassify classifies headlines via the decision core. Explicit-error
 	// contract: never returns a fabricated neutral (spec-013 FR-007).
 	newsClassify market.NewsClassifier
+
+	// router is the Jev-first/9Router-escalated decision core (spec-013 FR-001/003).
+	router *DecisionRouter
+	// shadow records decisions post-commit (spec-013 FR-002).
+	shadow *ShadowOrchestrator
 }
+
+// SetDecisionRouter installs the spec-013 decision core for entry judgments.
+func (s *SignalService) SetDecisionRouter(r *DecisionRouter) { s.router = r }
+
+// SetShadow installs the post-commit shadow recorder.
+func (s *SignalService) SetShadow(o *ShadowOrchestrator) { s.shadow = o }
 
 // SetNewsClassifier injects the core-backed headline classifier.
 func (s *SignalService) SetNewsClassifier(fn market.NewsClassifier) {
@@ -254,11 +265,24 @@ func (s *SignalService) EvaluateMarketSignal(
 	// context meant a slow model consumed the evaluation window and the INSERT
 	// then failed with "context deadline exceeded" after the answer had already
 	// arrived.
-	aiCtx, aiCancel := context.WithTimeout(ctx, 20*time.Second)
-	aiResp, err := s.aiClient.Analyze(aiCtx, decReq)
-	aiCancel()
-	if err != nil {
-		return nil, nil, fmt.Errorf("ai analysis failed: %w", err)
+	var aiResp *ai.DecisionResponse
+	if s.router != nil {
+		// Decision core: Jev-first, 9Router-escalated (FR-001/FR-003).
+		aiCtx, aiCancel := context.WithTimeout(ctx, 20*time.Second)
+		coreDecision, rerr := s.judgeEntryCore(aiCtx, symbol, decReq)
+		aiCancel()
+		if rerr != nil {
+			return nil, nil, rerr
+		}
+		aiResp = coreDecision
+	} else {
+		aiCtx, aiCancel := context.WithTimeout(ctx, 20*time.Second)
+		var err error
+		aiResp, err = s.aiClient.Analyze(aiCtx, decReq)
+		aiCancel()
+		if err != nil {
+			return nil, nil, fmt.Errorf("ai analysis failed: %w", err)
+		}
 	}
 
 	if aiResp == nil || aiResp.Decision == "HOLD" || aiResp.Decision == "" {
@@ -641,4 +665,70 @@ func (s *SignalService) settleAndClose(ctx context.Context, sig *db.FuturesTrade
 	sig.RealizedROIPct = &roiPct
 
 	return pnlUSD, roiPct, nil
+}
+
+// judgeEntryCore runs the decision core (Jev first → optional 9Router
+// escalation) and maps the typed outcome onto the legacy DecisionResponse
+// consumed by signal assembly (position intent → BUY/SELL mapping unchanged).
+func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req ai.DecisionRequest) (*ai.DecisionResponse, error) {
+	state, err := BuildState(symbol, time.Now().UTC().Format(time.RFC3339),
+		snapToMap(req.IndicatorSnap), 1.5, 3.0,
+		market.NewsSentimentReport{HeadlineCount: len(req.NewsHeadlines)},
+		FeedState{}, map[string]string{})
+	if err != nil {
+		return nil, err
+	}
+	cycle := fmt.Sprintf("%s-%d", symbol, time.Now().UnixNano())
+	out, err := s.router.Route(ctx, cycle, state, EntryQuestions(), entryVocab)
+	if err != nil {
+		return nil, err
+	}
+	// Position intent only — execution layer maps to order sides (FR-005).
+	decision := "HOLD"
+	switch out.Choice {
+	case "LONG":
+		decision = "BUY"
+	case "SHORT":
+		decision = "SELL"
+	}
+	resp := &ai.DecisionResponse{
+		Decision:   decision,
+		Confidence: out.Confidence,
+		Reasoning:  fmt.Sprintf("route=%s", out.Route),
+	}
+	if s.shadow != nil {
+		s.shadow.JudgeEntry(cycle, symbol, state, EntryQuestions(), entryVocab, out.Baseline)
+	}
+	return resp, nil
+}
+
+var entryVocab = map[string]bool{"LONG": true, "SHORT": true, "NO_TRADE": true}
+
+// snapToMap flattens the snapshot into context fields (pre-computed — the
+// core never does arithmetic, research.md rule).
+func snapToMap(snap cache.IndicatorSnapshot) map[string]float64 {
+	return map[string]float64{
+		"rsi": snap.RSI, "macd": snap.MACD, "macd_signal": snap.Signal,
+		"macd_histogram": snap.Histogram, "bb_upper": snap.UpperBand,
+		"bb_middle": snap.MiddleBand, "bb_lower": snap.LowerBand,
+		"confluence": snap.ConfluenceScore, "obi": snap.OBI,
+	}
+}
+
+// EntryQuestions: one batched Jev request per cycle (research.md batch rule).
+func EntryQuestions() map[string]ai.JevQuestion {
+	return map[string]ai.JevQuestion{
+		"entry": {
+			Type: "choice",
+			Instructions: map[string]interface{}{
+				"question": "Position intent for this perpetual futures symbol given the state.",
+				"not_for":  "order sides; execution layer owns BUY/SELL conversion",
+			},
+			Criteria: map[string]string{
+				"LONG":     "Enter long: uptrend confirmed, catalyst aligns, risk gate passes",
+				"SHORT":    "Enter short: downtrend confirmed, catalyst aligns, risk gate passes",
+				"NO_TRADE": "No edge, mixed signals, or gate failure",
+			},
+		},
+	}
 }

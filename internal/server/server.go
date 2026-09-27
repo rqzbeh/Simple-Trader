@@ -1,6 +1,7 @@
 package server
 
 import (
+	"log"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -50,6 +51,8 @@ type Server struct {
 	candleDownloader  market.HistoricalKlineProvider
 	calendar          *market.EconomicCalendar
 	newsClassifier    market.NewsClassifier // spec-013: core headline classifier (explicit-error)
+	decisionRouter    *trader.DecisionRouter
+	shadow            *trader.ShadowOrchestrator
 }
 
 // NewServer configures routes and dependency injection.
@@ -64,6 +67,45 @@ func NewServer(
 	crawler := market.NewNewsCrawler(market.DefaultNewsFeedConfig(), redisClient, dbStore)
 	coreClassify := coreNewsClassifier(aiClient)
 	crawler.SetClassifier(coreClassify)
+
+	// Decision core wiring (spec-013 T040/T045): threshold parsed at boot —
+	// missing/invalid is a startup error (FR-016), no silent default.
+	var decisionRouter *trader.DecisionRouter
+	if os.Getenv("JEV_DISABLE") == "" {
+		thr, terr := cfg.RoutingThreshold()
+		if terr != nil {
+			log.Printf("[FATAL] decision core not configured: %v", terr)
+		} else {
+			decisionRouter = &trader.DecisionRouter{
+				Jev:       ai.NewJevClient("https://api.typesafe.ai", os.Getenv("TYPESAFE_API_KEY"), 5*time.Second),
+				Threshold: thr,
+				Escalate: func(ctx context.Context, state interface{}) (trader.DecisionOutcome, error) {
+					// 9Router escalation: slow brain answers when Jev low-confidence (FR-003).
+					js, _ := json.Marshal(state)
+					resp, err := aiClient.Analyze(ctx, ai.DecisionRequest{Symbol: "escalated", IndicatorSnap: cache.IndicatorSnapshot{}})
+					if err != nil {
+						return trader.DecisionOutcome{}, fmt.Errorf("escalation failed: %w", err)
+					}
+					_ = js
+					out := trader.DecisionOutcome{Confidence: resp.Confidence}
+					switch resp.Decision {
+					case "BUY":
+						out.Choice = "LONG"
+					case "SELL":
+						out.Choice = "SHORT"
+					default:
+						out.Choice = "NO_TRADE"
+					}
+					return out, nil
+				},
+			}
+		}
+	}
+	shadow := &trader.ShadowOrchestrator{Router: decisionRouter, Store: dbStore}
+	shadow.Start(2, 64)
+	shadow.SetEnabled("entry", os.Getenv("SHADOW_ENTRY") != "false")
+	shadow.SetEnabled("exit", os.Getenv("SHADOW_EXIT") != "false")
+	shadow.SetEnabled("news", os.Getenv("SHADOW_NEWS") != "false")
 	binanceFetcher := market.NewBinanceFetcher()
 	screener := market.NewDynamicCryptoScreener(market.DefaultScreenerConfig(), binanceFetcher, redisClient, dbStore)
 
@@ -121,6 +163,8 @@ func NewServer(
 		execEngine:        execEngine,
 		newsCrawler:       crawler,
 		newsClassifier:    coreClassify,
+		decisionRouter:    decisionRouter,
+		shadow:            shadow,
 		catalystClusterer: market.NewClusterer(15 * time.Minute),
 		screener:          screener,
 		telegramBot:       tgBot,
