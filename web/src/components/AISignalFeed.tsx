@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FuturesTradeSignal } from '../types';
+import { FuturesTradeSignal, formatSignalPrice } from '../types';
 import {
   Zap,
   TrendingUp,
@@ -271,31 +271,54 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
                   </div>
                 )}
 
-                {/* Key Execution Levels: Entry, SL, TP */}
-                <div className="grid grid-cols-3 gap-1 py-1.5 border-y border-slate-200/60 dark:border-slate-800 font-mono text-[11px]">
+                {/* Key Execution Levels: Entry, SL, TP1(frac), TP2 (spec 012 US2) */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 py-1.5 border-y border-slate-200/60 dark:border-slate-800 font-mono text-[11px]">
                   <div>
                     <span className="text-[10px] text-slate-400 block">Entry</span>
                     <span className="font-semibold text-slate-800 dark:text-slate-200">
-                      ${sig.entry_price.toLocaleString()}
+                      {formatSignalPrice(sig.entry_price)}
                     </span>
                   </div>
                   <div>
                     <span className="text-[10px] text-rose-400 flex items-center gap-0.5">
-                      <ShieldAlert className="w-2.5 h-2.5" /> SL
+                      <ShieldAlert className="w-2.5 h-2.5" /> SL{sig.decay_state === 'BREAKEVEN' ? ' (BE)' : ''}
                     </span>
                     <span className="font-semibold text-rose-500">
-                      ${sig.stop_loss.toLocaleString()}
+                      {formatSignalPrice(sig.stop_loss)}
                     </span>
                   </div>
                   <div>
                     <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <Target className="w-2.5 h-2.5" /> TP
+                      <Target className="w-2.5 h-2.5" /> TP1{sig.tp1_close_fraction ? ` (${Math.round(sig.tp1_close_fraction * 100)}%)` : ''}
                     </span>
                     <span className="font-semibold text-emerald-500">
-                      ${sig.take_profit_1.toLocaleString()}
+                      {formatSignalPrice(sig.take_profit_1)}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-emerald-300 flex items-center gap-0.5">
+                      <Target className="w-2.5 h-2.5" /> TP2
+                    </span>
+                    <span className="font-semibold text-emerald-400">
+                      {sig.take_profit_2 ? formatSignalPrice(sig.take_profit_2) : '--'}
                     </span>
                   </div>
                 </div>
+                {(sig.atr_at_entry || sig.profile) && (
+                  <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                    {sig.atr_at_entry ? (
+                      <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80">ATR@entry {formatSignalPrice(sig.atr_at_entry)}</span>
+                    ) : null}
+                    {sig.profile ? (
+                      <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80">{sig.profile}</span>
+                    ) : null}
+                    {sig.decay_state && sig.decay_state !== 'NONE' ? (
+                      <span className={`px-1.5 py-0.5 rounded ${sig.decay_state === 'BREAKEVEN' ? 'bg-amber-500/10 text-amber-500' : 'bg-slate-500/10'}`}>
+                        {sig.decay_state}
+                      </span>
+                    ) : null}
+                  </div>
+                )}
 
                 {/* Risk Parameters & Capital Sizing */}
                 <div className="flex items-center justify-between text-[11px] font-mono text-slate-500 dark:text-slate-400">
