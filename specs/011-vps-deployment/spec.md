@@ -1,7 +1,7 @@
 # Feature: VPS Production Deployment
 
-**Branch/PR naming**: `deploy/vps-REDACTED_VPS_HOST`
-**Target host**: REDACTED_VPS_HOST (root@, port 22, key `REDACTED_SSH_KEY_PATH`)
+**Branch/PR naming**: `deploy/vps-<VPS_HOST>`
+**Target host**: <VPS_HOST> (root@, port 22, key `<SSH_KEY_PATH>`)
 
 ## Overview
 Deploy the Simple-Trader containerized stack (PostgreSQL 16 + Redis 7 + Go backend serving the compiled PWA) on the user's ARM64 VPS behind Nginx, following GitHub Spec Kit discipline.
@@ -9,7 +9,7 @@ Deploy the Simple-Trader containerized stack (PostgreSQL 16 + Redis 7 + Go backe
 ## Requirements
 
 ### R1: Host preparation
-- SSH reachability verified (done: hostname REDACTED_VPS_HOST, aarch64, Ubuntu 26.04.1, Docker 29.8.0, Compose v5.5.1, 23Gi RAM, 79G free disk).
+- SSH reachability verified (done: hostname <VPS_HOST>, aarch64, Ubuntu 26.04.1, Docker 29.8.0, Compose v5.5.1, 23Gi RAM, 79G free disk).
 - Application directory `/opt/simple-trader` with env file holding production secrets (not the dev .env).
 
 ### R2: Image deployment
@@ -22,7 +22,7 @@ Deploy the Simple-Trader containerized stack (PostgreSQL 16 + Redis 7 + Go backe
 - Every value read from env at boot — zero hardcoded risk parameters in code (already enforced in codebase).
 
 ### R4: Networking
-- Backend binds 8080 in-container; Nginx on host terminates SSL for REDACTED_VPS_HOST and proxies to 127.0.0.1:8080.
+- Backend binds 8080 in-container; Nginx on host terminates SSL for <VPS_HOST> and proxies to 127.0.0.1:8080.
 - SSE route must disable proxy_buffering (spec: `/api/v1/events`).
 - Proxy usage from dev machine only if needed: 127.0.0.1:10808.
 

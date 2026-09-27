@@ -1,0 +1,307 @@
+openapi: 3.0.3
+info:
+  title: Simple-Trader Futures Intelligence & Security API
+  version: 2.1.0
+  description: >
+    REST API specifications for administrative authentication, two-sided futures signals,
+    dynamic real-world macro regime allocation, Telegram signals bot management,
+    and real-data machine learning model calibration.
+
+paths:
+  /api/v1/auth/login:
+    post:
+      summary: Administrator Password Authentication
+      description: Validates manager credentials against bcrypt hash and issues a secure session token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username:
+                  type: string
+                  example: admin
+                password:
+                  type: string
+                  format: password
+                  example: <ADMIN_PASSWORD>
+      responses:
+        '200':
+          description: Successfully authenticated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                    example: "4f8a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a"
+                  expires_in:
+                    type: integer
+                    example: 604800
+                  role:
+                    type: string
+                    example: "ADMIN"
+        '401':
+          description: Invalid credentials
+        '429':
+          description: Too many failed login attempts; rate limit triggered
+
+  /api/v1/auth/logout:
+    post:
+      summary: Invalidate Session
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Session invalidated
+
+  /api/v1/auth/status:
+    get:
+      summary: Get Session Status
+      responses:
+        '200':
+          description: Current authentication state
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  authenticated:
+                    type: boolean
+                  username:
+                    type: string
+
+  /api/v1/signals/futures:
+    get:
+      summary: List Two-Sided Futures Trade Signals
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ACTIVE, CLOSED, ALL]
+            default: ACTIVE
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: List of futures trade signals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FuturesTradeSignal'
+
+  /api/v1/allocator/macro-regime:
+    get:
+      summary: Get Real-World Dynamic Macro Allocation
+      responses:
+        '200':
+          description: Current macroeconomic regime and dynamic 3-tier target allocations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MacroRegime'
+
+  /api/v1/telegram/config:
+    get:
+      summary: Get Telegram Bot Status
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Current Telegram integration status (bot token is masked)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled:
+                    type: boolean
+                  chat_id:
+                    type: string
+                  bot_username:
+                    type: string
+                  last_broadcast_at:
+                    type: string
+                    format: date-time
+    post:
+      summary: Update Telegram Bot Credentials
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bot_token, chat_id]
+              properties:
+                bot_token:
+                  type: string
+                chat_id:
+                  type: string
+                enabled:
+                  type: boolean
+                  default: true
+      responses:
+        '200':
+          description: Configuration updated and stored with AES-GCM encryption
+
+  /api/v1/telegram/test:
+    post:
+      summary: Send Test Telegram Signal
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Test message transmitted successfully
+
+  /api/v1/ml/train:
+    post:
+      summary: Trigger Real-Data Model Training
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [symbol]
+              properties:
+                symbol:
+                  type: string
+                  example: "BTC/USDT"
+                timeframe:
+                  type: string
+                  default: "1h"
+                sample_bars:
+                  type: integer
+                  default: 1000
+      responses:
+        '200':
+          description: Training completed on real market data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MLTrainingResult'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Hex256
+
+  schemas:
+    FuturesTradeSignal:
+      type: object
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+          example: "BTC/USDT"
+        direction:
+          type: string
+          enum: [LONG, SHORT]
+        catalyst_headline:
+          type: string
+        catalyst_source:
+          type: string
+        catalyst_sentiment:
+          type: number
+          format: float
+        entry_price:
+          type: number
+        stop_loss:
+          type: number
+        take_profit_1:
+          type: number
+        take_profit_2:
+          type: number
+        leverage:
+          type: integer
+          example: 5
+        risk_reward_ratio:
+          type: number
+          example: 2.15
+        allocated_capital_usd:
+          type: number
+          example: 1250.00
+        allocated_capital_pct:
+          type: number
+          example: 3.12
+        status:
+          type: string
+          enum: [ACTIVE, CLOSED]
+        realized_pnl_usd:
+          type: number
+        realized_roi_pct:
+          type: number
+        created_at:
+          type: string
+          format: date-time
+
+    MacroRegime:
+      type: object
+      properties:
+        stress_score:
+          type: number
+          example: 0.68
+        regime_name:
+          type: string
+          example: "GEOPOLITICAL_CRISIS"
+        geopolitical_risk_index:
+          type: number
+          example: 0.82
+        inflation_rate_pct:
+          type: number
+          example: 3.4
+        interest_rate_bias:
+          type: string
+          example: "HAWKISH"
+        target_tier1_cash_pct:
+          type: number
+          example: 22.0
+        target_tier2_alpha_pct:
+          type: number
+          example: 20.0
+        target_tier3_core_pct:
+          type: number
+          example: 58.0
+        rationale:
+          type: string
+
+    MLTrainingResult:
+      type: object
+      properties:
+        id:
+          type: integer
+        symbol:
+          type: string
+        sample_count:
+          type: integer
+        date_start:
+          type: string
+          format: date-time
+        date_end:
+          type: string
+          format: date-time
+        training_loss:
+          type: number
+        directional_accuracy:
+          type: number
+          example: 0.642
+        weights:
+          type: object

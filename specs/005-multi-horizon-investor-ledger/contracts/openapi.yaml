@@ -1,0 +1,298 @@
+openapi: 3.0.3
+info:
+  title: Simple-Trader Investor Ledger & Multi-Horizon Trading API
+  version: 1.0.0
+  description: Administrative endpoints for non-login investor ledger tracking, 3-tier capital allocation, news sentiment, and dynamic crypto screener.
+paths:
+  /api/v1/investors:
+    get:
+      summary: List all investors with live equity, ROI, and pool share
+      responses:
+        '200':
+          description: List of investors
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Investor'
+    post:
+      summary: Register a new investor profile with optional initial deposit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, contact_tag]
+              properties:
+                name:
+                  type: string
+                  example: "Alice Smith"
+                contact_tag:
+                  type: string
+                  example: "alice@example.com"
+                initial_deposit:
+                  type: number
+                  example: 10000.0
+                notes:
+                  type: string
+                  example: "Strategic LP Partner"
+      responses:
+        '201':
+          description: Investor created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Investor'
+
+  /api/v1/investors/{id}:
+    get:
+      summary: Get single investor details and performance metrics
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Investor profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Investor'
+        '404':
+          description: Investor not found
+
+  /api/v1/investors/{id}/transactions:
+    get:
+      summary: Get transaction history for an investor
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of capital transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CapitalTransaction'
+
+  /api/v1/investors/{id}/deposit:
+    post:
+      summary: Post a deposit to an investor account
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount:
+                  type: number
+                  example: 5000.0
+                notes:
+                  type: string
+                  example: "Q3 Additional Allocation"
+      responses:
+        '200':
+          description: Deposit recorded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapitalTransaction'
+
+  /api/v1/investors/{id}/withdraw:
+    post:
+      summary: Request a withdrawal from an investor account (settled from Tier 1 Cash)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount:
+                  type: number
+                  example: 2500.0
+                notes:
+                  type: string
+                  example: "Monthly Distribution"
+      responses:
+        '200':
+          description: Withdrawal processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CapitalTransaction'
+        '400':
+          description: Insufficient Tier 1 liquidity or investor balance
+
+  /api/v1/allocator/tiers:
+    get:
+      summary: Get live status of 3-Tier Capital Allocation
+      responses:
+        '200':
+          description: 3-Tier Allocation breakdown
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ThreeTierAllocation'
+
+  /api/v1/market/screener:
+    get:
+      summary: Get list of dynamically screened crypto assets
+      responses:
+        '200':
+          description: Screened candidate assets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ScreenedAsset'
+
+  /api/v1/news/stream:
+    get:
+      summary: Get recent market headlines and sentiment polarity
+      responses:
+        '200':
+          description: News articles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NewsArticle'
+
+components:
+  schemas:
+    Investor:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        contact_tag:
+          type: string
+        total_deposited:
+          type: number
+        total_withdrawn:
+          type: number
+        pool_units:
+          type: number
+        current_equity:
+          type: number
+        net_profit:
+          type: number
+        roi:
+          type: number
+        pool_share_pct:
+          type: number
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    CapitalTransaction:
+      type: object
+      properties:
+        id:
+          type: string
+        investor_id:
+          type: string
+        tx_type:
+          type: string
+        amount:
+          type: number
+        pool_units:
+          type: number
+        nav_at_execution:
+          type: number
+        notes:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    ThreeTierAllocation:
+      type: object
+      properties:
+        total_equity:
+          type: number
+        tier1_cash:
+          type: number
+        tier1_target_pct:
+          type: number
+        tier2_core:
+          type: number
+        tier2_target_pct:
+          type: number
+        tier3_tactical:
+          type: number
+        tier3_target_pct:
+          type: number
+        available_for_withdrawal:
+          type: number
+
+    ScreenedAsset:
+      type: object
+      properties:
+        symbol:
+          type: string
+        price:
+          type: number
+        volume_24h:
+          type: number
+        bid_ask_spread:
+          type: number
+        status:
+          type: string
+        last_checked_at:
+          type: string
+          format: date-time
+
+    NewsArticle:
+      type: object
+      properties:
+        content_hash:
+          type: string
+        title:
+          type: string
+        source:
+          type: string
+        url:
+          type: string
+        sentiment_score:
+          type: number
+        polarity:
+          type: string
+        key_phrases:
+          type: array
+          items:
+            type: string
+        published_at:
+          type: string
+          format: date-time
