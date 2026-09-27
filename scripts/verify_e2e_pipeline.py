@@ -148,7 +148,9 @@ def run_tests():
     print(f" -> Initial Session State: Authenticated={session.get('authenticated')}")
 
     # Test login with admin password
-    admin_password = os.environ.get("ADMIN_PASSWORD", "REDACTED_ADMIN_PASSWORD")
+    # No default: the admin credential must come from the environment
+    # (the real value previously shipped as a fallback here — removed).
+    admin_password = os.environ.get("ADMIN_PASSWORD", "")
     login_payload = {"password": admin_password}
     st, login_res = make_req(f"{BASE_URL}/api/v1/auth/login", method="POST", data=login_payload)
     assert st == 200, f"Login failed: {st}, {login_res}"
