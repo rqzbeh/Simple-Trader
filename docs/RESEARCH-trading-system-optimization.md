@@ -108,3 +108,39 @@ RSI-14, MACD, SuperTrend, Bollinger, **ATR/NATR**, Garman-Klass, Parkinson, Kauf
 | G8 | One headline repeated across 8 feeds → multi-entries (observed 6× LONG on one story) | story_count dedup → one position per event per symbol |
 
 **Open questions for spec clarification:** G7 root cause (needs a debug pass on CORE signal generation); commodities UI = new page vs tab; whether forex is in scope (4 blockers listed in §1.4 source trace).
+
+---
+
+## Appendix A — FR-013 Core-commodities zero-signal diagnosis (T039, 2026-09-27)
+
+Live dry-run instrumentation (`[DRY]` stage logs in `EvaluateSymbolSignal`) on an
+in-memory backend, synthetic gold headline + background scan of the commodity
+universe. Findings against R7 hypotheses:
+
+- **H1 (scan-order/slot starvation) — DISPROVED.** Background scan evaluated
+  CORE first: `COPPER/XPT/XPD/XAU` at 14:02:36 before `BTC/USDT` at 14:02:38
+  (`[DRY] … bucket=CORE stages: headlines_matched=1`). CORE is not queued
+  behind ALPHA candidates.
+- **H2 (macro/regime gate veto) — INNOCENT.** Zero `[MACRO HALT]` lines for
+  commodity symbols across the run; the calendar halt fires only inside the
+  15-minute window before a USD high-impact release.
+- **H3 (catalyst scarcity / feed coverage) — DISPROVED for the current feed
+  set.** Every commodity symbol matched ≥1 headline straight from the
+  crawler's retention with no synthetic input, so gold/metals/oil headlines
+  already reach `HeadlinesForSymbol`.
+- **H4 (NEWS-CATALYST-FIRST prompt ⇒ HOLD) — CONFIRMED as the operative
+  mechanism.** The model's own reasoning on the matched headline:
+  "HOLD on Low conviction macro headline … yields neutral sentiment (+0.000),
+  failing mandatory directional threshold (≥ +0.25 or ≤ −0.25)". The blocker
+  is OUR precomputed lexicon sentiment scoring commodity-relevant headlines
+  0.000 (neutral), which the prompt then treats as noise. A commodity-specific
+  model probe was blocked by the US4 weekend-gap guard (diagnosis ran on a
+  Sunday) — noted as follow-up for the next weekday session.
+
+**Fixes shipped (T040):**
+1. Commodity directional terms added to the NLP lexicon (gold/oil/silver/
+   copper/OPEC/inventory) so genuine commodity catalysts score non-neutral
+   and clear the ±0.25 directional threshold.
+2. The prompt carries the profile holding horizon (FR-014: 4h CORE) instead
+   of the hardcoded "2-hour swing" frame the model was judging commodity
+   catalysts against.

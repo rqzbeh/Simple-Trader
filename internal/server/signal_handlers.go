@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rqzbeh/simple-trader/internal/ai"
 	"github.com/rqzbeh/simple-trader/internal/cache"
+	"github.com/rqzbeh/simple-trader/internal/config"
 	"github.com/rqzbeh/simple-trader/internal/db"
 	"github.com/rqzbeh/simple-trader/internal/market"
 	"github.com/rqzbeh/simple-trader/internal/trader"
@@ -98,7 +99,14 @@ func (s *Server) ListFuturesSignalsHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	signals, err := s.dbStore.ListFuturesSignals(r.Context(), status, limit)
+	// US4 T043: ?profile=COMMODITY scopes the Commodities view.
+	var signals []db.FuturesTradeSignal
+	var err error
+	if profile := r.URL.Query().Get("profile"); profile != "" {
+		signals, err = s.dbStore.ListFuturesSignalsByProfile(r.Context(), status, limit, profile)
+	} else {
+		signals, err = s.dbStore.ListFuturesSignals(r.Context(), status, limit)
+	}
 	if err != nil {
 		http.Error(w, `{"error":"failed to fetch futures signals: `+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -160,6 +168,36 @@ func (s *Server) ensureSignalPosition(sig *db.FuturesTradeSignal) {
 		sig.Direction, sig.Symbol, sig.EntryPrice, sig.AllocatedCapitalUSD, sig.Leverage)
 }
 
+// blackoutEventName maps a macro-calendar title onto a configured blackout
+// window name (NFP/CPI/FOMC/EIA) or "" when the event has no blackout.
+func blackoutEventName(title string) string {
+	lower := strings.ToLower(title)
+	switch {
+	case strings.Contains(lower, "non-farm") || strings.Contains(lower, "nonfarm") ||
+		strings.Contains(lower, "nfp") || strings.Contains(lower, "payroll"):
+		return "NFP"
+	case strings.Contains(lower, "cpi") || strings.Contains(lower, "consumer price"):
+		return "CPI"
+	case strings.Contains(lower, "fomc") || strings.Contains(lower, "federal funds") ||
+		strings.Contains(lower, "fed chair") || strings.Contains(lower, "fomc member"):
+		return "FOMC"
+	case strings.Contains(lower, "eia") || strings.Contains(lower, "crude oil") ||
+		strings.Contains(lower, "gasoline"):
+		return "EIA"
+	default:
+		return ""
+	}
+}
+
+// metaSlice adapts an optional catalyst meta to the variadic EvaluateMarketSignal
+// argument (nil -> no argument).
+func metaSlice(m *trader.CatalystMeta) []trader.CatalystMeta {
+	if m == nil {
+		return nil
+	}
+	return []trader.CatalystMeta{*m}
+}
+
 // EvaluateSymbolSignal evaluates a single symbol against breaking news catalysts and technical confluence.
 // If high conviction is detected, it persists the signal, broadcasts via SSE and Telegram, and returns the signal.
 func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string, headlines []string) (*db.FuturesTradeSignal, string, error) {
@@ -185,8 +223,156 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 	// round-trip entirely, which is what lets a full-catalog scan finish
 	// inside the batch deadline instead of timing out on 123 AI calls.
 	headlines = market.HeadlinesForSymbol(headlines, symbol)
+	// T039 (FR-013) dry-run stage log: records exactly where the commodity
+	// evaluation branch dies (catalyst scarcity vs later stages).
+	log.Printf("[DRY] %s bucket=%s stages: headlines_matched=%d", symbol, bucket, len(headlines))
 	if len(headlines) == 0 {
 		return nil, "No asset-relevant news headline for " + symbol, nil
+	}
+
+	prof, profErr := trader.EffectiveProfile(trader.ProfileNameForBucket(bucket))
+	if profErr != nil {
+		prof = config.GetRiskProfile(trader.ProfileNameForBucket(bucket))
+	}
+
+	// --- Spec 012 US4: commodity session entry guards (FR-014) ---
+	// Weekend gap and event blackouts block NEW entries only for commodity
+	// (weekendFlat) profiles; each veto lands in entry_filter_log (quickstart §5).
+	if prof.WeekendFlat {
+		now := time.Now()
+		if trader.WeekendGapOpen(now) {
+			detail, _ := json.Marshal(map[string]interface{}{
+				"window": "Fri 16:45 ET - Sun 18:00 ET",
+				"at":     now.UTC().Format(time.RFC3339),
+			})
+			if s.dbStore != nil {
+				_ = s.dbStore.InsertEntryFilterLog(ctx, symbol, "", nil, "WEEKEND_GAP", detail)
+			}
+			log.Printf("[US4] weekend gap blocks new entries for %s", symbol)
+			return nil, "Commodity weekend gap: market closed (Fri 16:45 - Sun 18:00 ET)", nil
+		}
+		if s.calendar != nil {
+			var events []trader.ScheduledEvent
+			for _, ev := range s.calendar.GetEvents() {
+				if name := blackoutEventName(ev.Title); name != "" {
+					events = append(events, trader.ScheduledEvent{Name: name, Time: ev.ScheduledAt})
+				}
+			}
+			if blocked, name := trader.InBlackoutWindow(prof, events, now); blocked {
+				detail, _ := json.Marshal(map[string]interface{}{
+					"event":     name,
+					"at":        now.UTC().Format(time.RFC3339),
+					"blackouts": prof.BlackoutWindows,
+				})
+				if s.dbStore != nil {
+					_ = s.dbStore.InsertEntryFilterLog(ctx, symbol, "", nil, "EVENT_BLACKOUT", detail)
+				}
+				log.Printf("[US4] %s blackout blocks new entries for %s", name, symbol)
+				return nil, fmt.Sprintf("EVENT_BLACKOUT: %s window active", name), nil
+			}
+		}
+	}
+
+	// --- Spec 012 US3: catalyst clustering + polarization veto (FR-008/011) ---
+	// Near-identical syndicated headlines merge into ONE Catalyst Event; a
+	// polarized (contradictorily balanced) story is vetoed BEFORE the AI
+	// round-trip, with the veto recorded in entry_filter_log (T033/T034).
+	var catalystMeta *trader.CatalystMeta
+	if s.catalystClusterer != nil {
+		// Source lookup: title -> feed source from the crawler's in-memory
+		// retention (100 newest); unknown titles fall back to tier 0.2.
+		srcOf := make(map[string]string)
+		if s.newsCrawler != nil {
+			for _, a := range s.newsCrawler.GetLatestArticles() {
+				srcOf[a.Title] = a.Source
+			}
+		}
+		for _, h := range headlines {
+			rep := market.AnalyzeNewsSentiment([]string{h})
+			s.catalystClusterer.Ingest(srcOf[h], h, rep.Score, time.Now())
+		}
+
+		// Clusters covering at least one supplied headline.
+		var covering []*market.NewsCluster
+		for _, cl := range s.catalystClusterer.Clusters(time.Now()) {
+			for _, h := range headlines {
+				if market.TrigramJaccard(h, cl.Headline) >= market.ClusterJaccardThreshold {
+					covering = append(covering, cl)
+					break
+				}
+			}
+		}
+
+		// Dominant = most-covered story (the one the AI will cite).
+		var dominant *market.NewsCluster
+		for _, cl := range covering {
+			if dominant == nil || cl.StoryCount >= dominant.StoryCount {
+				dominant = cl
+			}
+		}
+
+		// Persist each covering event; keep the dominant event id (T034).
+		var dominantID int64
+		if s.dbStore != nil {
+			for _, cl := range covering {
+				fresh := market.FreshnessWeight(time.Since(cl.LastSeen), prof.FreshnessHalfLifeMin)
+				id, err := s.dbStore.InsertCatalystEvent(
+					ctx, cl.Fingerprint, cl.Headline, cl.Sources, []string{symbol},
+					cl.StoryCount, cl.FusedSentiment, cl.Polarization, fresh,
+					int(prof.FreshnessHalfLifeMin),
+				)
+				if err != nil {
+					log.Printf("[US3] insert catalyst event for %s: %v", symbol, err)
+					continue
+				}
+				if cl == dominant {
+					dominantID = id
+				}
+			}
+		}
+
+		if dominant != nil {
+			// FR-011: contradictory balanced coverage -> no trade, audited.
+			if market.PolarizationVetoed(dominant.Polarization) {
+				detail, _ := json.Marshal(map[string]interface{}{
+					"polarization": dominant.Polarization,
+					"threshold":    0.40,
+					"story_count":  dominant.StoryCount,
+					"sources":      dominant.Sources,
+					"headline":     dominant.Headline,
+				})
+				if s.dbStore != nil {
+					var evtID *int64
+					if dominantID > 0 {
+						evtID = &dominantID
+					}
+					_ = s.dbStore.InsertEntryFilterLog(ctx, symbol, "", evtID, "POLARIZED", detail)
+				}
+				log.Printf("[US3] POLARIZED veto for %s: P=%.2f on '%s'", symbol, dominant.Polarization, dominant.Headline)
+				return nil, fmt.Sprintf("POLARIZED: contradictory coverage (P=%.2f > 0.40) on '%s'", dominant.Polarization, dominant.Headline), nil
+			}
+
+			// Collapse the dominant cluster's members to its representative
+			// headline; distinct stories pass through untouched (T036).
+			kept := make([]string, 0, len(headlines))
+			for _, h := range headlines {
+				if market.TrigramJaccard(h, dominant.Headline) >= market.ClusterJaccardThreshold {
+					continue
+				}
+				kept = append(kept, h)
+			}
+			kept = append(kept, dominant.Headline)
+			headlines = kept
+
+			catalystMeta = &trader.CatalystMeta{
+				EventID:        dominantID,
+				Headline:       dominant.Headline,
+				StoryCount:     dominant.StoryCount,
+				FusedSentiment: dominant.FusedSentiment,
+				Freshness:      market.FreshnessWeight(time.Since(dominant.LastSeen), prof.FreshnessHalfLifeMin),
+				Sources:        dominant.Sources,
+			}
+		}
 	}
 
 	// Macroeconomic Calendar Halt Guard (FR-005)
@@ -370,6 +556,7 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		headlines,
 		totalEquity,
 		unreservedAlphaCapital,
+		metaSlice(catalystMeta)...,
 	)
 	if err != nil {
 		if errors.Is(err, trader.ErrConcurrentCap) {
@@ -842,6 +1029,43 @@ func (s *Server) ReconcileActiveSignals(ctx context.Context) {
 	}
 }
 
+// ListCommoditiesStatusHandler serves GET /api/v1/commodities/status
+// (spec 012 US4, FR-014/015): horizon, weekend-gap state and active event
+// blackouts for the Commodities view banner.
+func (s *Server) ListCommoditiesStatusHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	prof, profErr := trader.EffectiveProfile("COMMODITY")
+	if profErr != nil {
+		prof = config.GetRiskProfile("COMMODITY")
+	}
+	now := time.Now()
+
+	blocked := make([]string, 0, 2)
+	if s.calendar != nil {
+		var events []trader.ScheduledEvent
+		for _, ev := range s.calendar.GetEvents() {
+			if name := blackoutEventName(ev.Title); name != "" {
+				events = append(events, trader.ScheduledEvent{Name: name, Time: ev.ScheduledAt})
+			}
+		}
+		if b, name := trader.InBlackoutWindow(prof, events, now); b {
+			blocked = append(blocked, name)
+		}
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"profile":                prof.Name,
+		"weekend_flat":           prof.WeekendFlat,
+		"in_weekend_gap":         trader.WeekendGapOpen(now),
+		"blocked_events":         blocked,
+		"horizon_min":            prof.HorizonMin,
+		"horizon_max":            prof.HorizonMax,
+		"freshness_halflife_min": prof.FreshnessHalfLifeMin,
+		"as_of":                  now.UTC().Format(time.RFC3339),
+	})
+}
+
 // applyDecayState runs the time-decay state machine for one ACTIVE signal
 // (spec 012 US2, FR-005): protects (stop to break-even) a laggard at the
 // breakeven checkpoint, closes a still-unprofitable trade at the flat
@@ -880,6 +1104,11 @@ func (s *Server) applyDecayState(ctx context.Context, sig *db.FuturesTradeSignal
 		decayState = "NONE"
 	}
 	state, action := trader.EvaluateDecay(ageMin, rMultiple, decayState, prof)
+	// US4 FR-014: forced flat-before-close — weekend-gap edge (or the
+	// horizon) can hit before the decay state machine's checkpoints.
+	if action == "" && trader.MustFlatten(time.Now(), sig.CreatedAt, prof) {
+		state, action = "CLOSED", "TIME_EXIT"
+	}
 	switch action {
 	case "":
 		return

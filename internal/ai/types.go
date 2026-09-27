@@ -32,13 +32,25 @@ type NewsSentimentInput struct {
 
 // DecisionRequest bundles market state, indicators, and dynamic weights for LLM inference.
 type DecisionRequest struct {
-	Symbol        string
-	Bucket        string
-	Quote         cache.TickerQuote
-	IndicatorSnap cache.IndicatorSnapshot
-	Weights       map[string]float64
-	NewsHeadlines []string
-	NewsSentiment *NewsSentimentInput
+	Symbol         string
+	Bucket         string
+	Quote          cache.TickerQuote
+	IndicatorSnap  cache.IndicatorSnapshot
+	Weights        map[string]float64
+	NewsHeadlines  []string
+	NewsSentiment  *NewsSentimentInput
+	CatalystEvents []CatalystEventInput // clustered events (US3 T036)
+	HorizonMinutes int                 // profile holding horizon for the bucket (US4 T040)
+}
+
+// CatalystEventInput is the clustered Catalyst Event payload sent to the
+// model instead of a flat list of duplicate headlines (spec 012 US3, T036).
+type CatalystEventInput struct {
+	Headline   string   `json:"headline"`
+	StoryCount int      `json:"story_count"`
+	FusedScore float64  `json:"fused_score"`
+	Freshness  float64  `json:"freshness"`
+	Sources    []string `json:"sources,omitempty"`
 }
 
 // DecisionResponse represents the structured trading decision output by the LLM or heuristic fallback.

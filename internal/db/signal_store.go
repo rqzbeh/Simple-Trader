@@ -18,13 +18,21 @@ var (
 // futuresSignalColumns is the canonical column list for futures_trade_signals.
 // Every SELECT must use it so scans stay in sync with the schema
 // (migration 000004 added the optimization columns).
-const futuresSignalColumns = `id, symbol, direction, status, catalyst_headline, catalyst_source, catalyst_sentiment,
-		entry_price, stop_loss, take_profit_1, take_profit_2, leverage,
-		risk_reward_ratio, allocated_capital_usd, allocated_capital_pct,
-		exit_price, exit_time, exit_reason, realized_pnl_usd, realized_roi_pct,
-		telegram_dispatched, telegram_resolved, created_at,
-		profile, model_confidence, catalyst_event_id, atr_at_entry, tp1_close_fraction,
-		recomputed, decay_state, rejected_reason, indicator_snapshot`
+const futuresSignalColumns = `s.id, s.symbol, s.direction, s.status, s.catalyst_headline, s.catalyst_source, s.catalyst_sentiment,
+		s.entry_price, s.stop_loss, s.take_profit_1, s.take_profit_2, s.leverage,
+		s.risk_reward_ratio, s.allocated_capital_usd, s.allocated_capital_pct,
+		s.exit_price, s.exit_time, s.exit_reason, s.realized_pnl_usd, s.realized_roi_pct,
+		s.telegram_dispatched, s.telegram_resolved, s.created_at,
+		s.profile, s.model_confidence, s.catalyst_event_id, s.atr_at_entry, s.tp1_close_fraction,
+		s.recomputed, s.decay_state, s.rejected_reason, s.indicator_snapshot,
+		e.story_count, e.sources, e.created_at`
+
+// futuresSignalFrom joins futures_trade_signals to its catalyst_events row
+// (spec 012 US3, FR-008/T037): the event's story_count/sources feed the UI
+// badge; LEFT JOIN keeps signals without a linked event (legacy rows).
+const futuresSignalFrom = futuresSignalColumns + `
+		FROM futures_trade_signals s
+		LEFT JOIN catalyst_events e ON e.id = s.catalyst_event_id`
 
 // defaultString returns fallback when v is empty so CHECK-constrained
 // columns (profile, decay_state) never receive ”.
@@ -54,6 +62,7 @@ func scanFuturesSignal(row pgx.Row) (FuturesTradeSignal, error) {
 		&sig.TelegramDispatched, &sig.TelegramResolved, &sig.CreatedAt,
 		&sig.Profile, &sig.ModelConfidence, &sig.CatalystEventID, &sig.ATRAtEntry, &sig.TP1CloseFraction,
 		&sig.Recomputed, &sig.DecayState, &sig.RejectedReason, &sig.IndicatorSnapshot,
+		&sig.CatalystEventStoryCount, &sig.CatalystEventSources, &sig.CatalystEventAt,
 	)
 	return sig, err
 }
@@ -93,6 +102,12 @@ type FuturesTradeSignal struct {
 	Recomputed       bool     `json:"recomputed"`
 	DecayState       string   `json:"decay_state"`
 	RejectedReason   *string  `json:"rejected_reason,omitempty"`
+	// Catalyst linkage (spec 012 US3): event row joined for the UI badge
+	// (T037). NULL for signals without a linked catalyst event.
+	CatalystEventStoryCount *int64          `json:"catalyst_event_story_count,omitempty"`
+	CatalystEventSources    json.RawMessage `json:"catalyst_event_sources,omitempty"`
+	CatalystEventAt         *time.Time      `json:"catalyst_event_at,omitempty"`
+
 	// IndicatorSnapshot records the decision-time indicator measurements that
 	// produced this signal (spec 012 US7, FR-022). Null for legacy rows;
 	// null means "unknown" and must never be back-filled (Amendment A1).
@@ -196,17 +211,15 @@ func (s *Store) ListFuturesSignals(ctx context.Context, status string, limit int
 
 	if status != "" && status != "ALL" {
 		rows, err = s.Pool.Query(ctx, `
-			SELECT `+futuresSignalColumns+`
-			FROM futures_trade_signals
-			WHERE status = $1
-			ORDER BY created_at DESC
+			SELECT `+futuresSignalFrom+`
+			WHERE s.status = $1
+			ORDER BY s.created_at DESC
 			LIMIT $2
 		`, status, limit)
 	} else {
 		rows, err = s.Pool.Query(ctx, `
-			SELECT `+futuresSignalColumns+`
-			FROM futures_trade_signals
-			ORDER BY created_at DESC
+			SELECT `+futuresSignalFrom+`
+			ORDER BY s.created_at DESC
 			LIMIT $1
 		`, limit)
 	}
@@ -228,6 +241,39 @@ func (s *Store) ListFuturesSignals(ctx context.Context, status string, limit int
 	return signals, nil
 }
 
+// ListFuturesSignalsByProfile filters the list by asset-class profile
+// (spec 012 US4, T043): the Commodities view fetches profile=COMMODITY,
+// the terminal fetches everything through the plain list.
+func (s *Store) ListFuturesSignalsByProfile(ctx context.Context, status string, limit int, profile string) ([]FuturesTradeSignal, error) {
+	if s.Pool == nil {
+		return nil, errors.New("database pool not initialized")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+futuresSignalFrom+`
+		WHERE s.profile = $1
+		  AND ($2 = '' OR $2 = 'ALL' OR s.status = $2)
+		ORDER BY s.created_at DESC
+		LIMIT $3
+	`, profile, status, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query profiled futures signals: %w", err)
+	}
+	defer rows.Close()
+
+	signals := make([]FuturesTradeSignal, 0)
+	for rows.Next() {
+		sig, err := scanFuturesSignal(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan futures signal row: %w", err)
+		}
+		signals = append(signals, sig)
+	}
+	return signals, rows.Err()
+}
+
 // GetActiveFuturesSignalBySymbol gets the currently active futures signal for an asset if any.
 func (s *Store) GetActiveFuturesSignalBySymbol(ctx context.Context, symbol string) (*FuturesTradeSignal, error) {
 	if s.Pool == nil {
@@ -235,10 +281,9 @@ func (s *Store) GetActiveFuturesSignalBySymbol(ctx context.Context, symbol strin
 	}
 
 	row := s.Pool.QueryRow(ctx, `
-		SELECT `+futuresSignalColumns+`
-		FROM futures_trade_signals
-		WHERE symbol = $1 AND status = 'ACTIVE'
-		ORDER BY created_at DESC
+		SELECT `+futuresSignalFrom+`
+		WHERE s.symbol = $1 AND s.status = 'ACTIVE'
+		ORDER BY s.created_at DESC
 		LIMIT 1
 	`, symbol)
 	sig, err := scanFuturesSignal(row)
@@ -408,6 +453,80 @@ func (s *Store) InsertEntryFilterLog(ctx context.Context, symbol, direction stri
 	}
 	return nil
 }
+
+// InsertCatalystEvent persists a news cluster as a catalyst_events row
+// (spec 012 US3, FR-008). A story re-evaluated inside its 45-minute window
+// reuses the existing row (fingerprint match) so every signal and rejection
+// links to ONE event per story. Returns the event id.
+func (s *Store) InsertCatalystEvent(
+	ctx context.Context,
+	fingerprint, headline string,
+	sources, symbols []string,
+	storyCount int,
+	fused, polarization, fresh float64,
+	halfLifeMin int,
+) (int64, error) {
+	if s.Pool == nil {
+		return 0, errors.New("database pool not initialized")
+	}
+	if storyCount < 1 {
+		storyCount = 1
+	}
+	if halfLifeMin <= 0 {
+		halfLifeMin = 15
+	}
+	srcJSON, err := json.Marshal(sources)
+	if err != nil {
+		return 0, fmt.Errorf("marshal sources: %w", err)
+	}
+
+	// Reuse the open event for this fingerprint (window_end in the future).
+	var id int64
+	err = s.Pool.QueryRow(ctx, `
+		SELECT id FROM catalyst_events
+		WHERE fingerprint = $1 AND window_end > NOW()
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, fingerprint).Scan(&id)
+	if err == nil {
+		// Late-arriving coverage can only grow the story or update scores.
+		_, updErr := s.Pool.Exec(ctx, `
+			UPDATE catalyst_events
+			SET story_count = GREATEST(story_count, $1),
+			    fused_sentiment = $2,
+			    polarization = $3,
+			    fresh_weight = $4
+			WHERE id = $5
+		`, storyCount, fused, polarization, fresh, id)
+		if updErr != nil {
+			return 0, fmt.Errorf("update catalyst event: %w", updErr)
+		}
+		return id, nil
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return 0, fmt.Errorf("lookup catalyst event: %w", err)
+	}
+
+	err = s.Pool.QueryRow(ctx, `
+		INSERT INTO catalyst_events
+			(fingerprint, headline, sources, story_count, symbols,
+			 fused_sentiment, polarization, fresh_weight, half_life_minutes,
+			 window_end)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+			NOW() + make_interval(mins => $10))
+		RETURNING id
+	`, fingerprint, headline, srcJSON, storyCount, symbols,
+		fused, polarization, fresh, halfLifeMin, ClusterWindowMinutes,
+	).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("insert catalyst event: %w", err)
+	}
+	return id, nil
+}
+
+// ClusterWindowMinutes mirrors market.ClusterMergeWindow (FR-008) for the
+// window_end default — kept as a literal to avoid an import cycle.
+const ClusterWindowMinutes = 45
 
 // ListEntryFilterLogs returns the newest rejected-entry audit rows.
 func (s *Store) ListEntryFilterLogs(ctx context.Context, limit int, rule, symbol string) ([]EntryFilterLog, error) {
