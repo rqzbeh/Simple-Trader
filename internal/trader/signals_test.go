@@ -1,6 +1,7 @@
 package trader_test
 
 import (
+	"github.com/rqzbeh/simple-trader/internal/market"
 	"context"
 	"encoding/json"
 	"testing"
@@ -43,6 +44,7 @@ func TestSignalService_EvaluateMarketSignal(t *testing.T) {
 	}
 
 	service := trader.NewSignalService(nil, mockAI)
+	service.SetNewsClassifier(stubClassifier())
 
 	quote := cache.TickerQuote{
 		Symbol: "BTC/USD",
@@ -95,6 +97,7 @@ func TestSignalService_EvaluateMarketSignal(t *testing.T) {
 		},
 	}
 	serviceBear := trader.NewSignalService(nil, mockAIBear)
+	serviceBear.SetNewsClassifier(stubClassifier())
 
 	sigBear, _, err := serviceBear.EvaluateMarketSignal(
 		ctx, "BTC/USD", "ALPHA", quote, snap, nil, []string{"Whale deposit of 45k BTC to Binance detected."}, 100000.0, 40000.0,
@@ -123,6 +126,7 @@ func TestSignalService_EvaluateMarketSignal(t *testing.T) {
 		},
 	}
 	serviceHold := trader.NewSignalService(nil, mockAIHold)
+	serviceHold.SetNewsClassifier(stubClassifier())
 	sigHold, decisionHold, err := serviceHold.EvaluateMarketSignal(
 		ctx, "BTC/USD", "ALPHA", quote, snap, nil, nil, 100000.0, 40000.0,
 	)
@@ -213,6 +217,7 @@ func TestSignalService_DynamicConfigEnforcement(t *testing.T) {
 	}
 
 	service := trader.NewSignalService(nil, mockAI, customCfg)
+	service.SetNewsClassifier(stubClassifier())
 
 	quote := cache.TickerQuote{Symbol: "ETH/USDT", Price: 3000.0}
 	snap := cache.IndicatorSnapshot{Symbol: "ETH/USDT", RSI: 62.0}
@@ -371,5 +376,11 @@ func TestEvaluateDecayCheckpointsInOrder(t *testing.T) {
 	state, action = trader.EvaluateDecay(60, 1.5, "BREAKEVEN", prof)
 	if state != "CLOSED" || action != "TIME_EXIT" {
 		t.Errorf("hard horizon: state=%q action=%q, want CLOSED/TIME_EXIT", state, action)
+	}
+}
+
+func stubClassifier() market.NewsClassifier {
+	return func(headlines []string) (market.NewsSentimentReport, error) {
+		return market.NewsSentimentReport{Score: 0.5, Polarity: market.PolarityBullish, HeadlineCount: len(headlines)}, nil
 	}
 }

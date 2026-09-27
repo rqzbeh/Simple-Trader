@@ -26,9 +26,22 @@ jobs:
           go-version: 'stable'
           cache: true
 
-      - name: Run Backend Tests
+      - name: Static Analysis (go vet)
+        run: go vet ./...
+
+      - name: Run Backend Tests (race detector, spec-013 hardened)
+        run: go test -race -count=1 ./internal/...
+
+      - name: Zero-Fallback Deletion Guards (spec-013 FR-007a/FR-013)
         run: |
-          go test -v ./internal/...
+          if grep -rn --include='*.go' -E 'fallbackHeuristic|AnalyzeNewsSentiment|bullishTerms|bearishTerms' internal/ | grep -v deleted_test; then
+            echo "::error::Deleted fallback/lexicon symbols reappeared"
+            exit 1
+          fi
+
+      - name: Migration Naming Check (root migrations/ dual-directory rule)
+        run: |
+          ls migrations/*.up.sql >/dev/null 2>&1 || { echo "::error::no root migrations"; exit 1; }
 
       - name: Compile Static Go Binary
         run: |

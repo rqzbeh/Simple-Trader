@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/rqzbeh/simple-trader/internal/market"
 )
 
 // SentimentResult holds quantitative sentiment extraction from news headlines.
@@ -30,15 +29,8 @@ func (c *Client) ExtractNewsSentiment(ctx context.Context, headlines []string) (
 		}, nil
 	}
 
-	// If no LLM endpoint configured, use fast financial lexicon parser
 	if c == nil || c.cfg.BaseURL == "" || c.cfg.APIKey == "" {
-		report := market.AnalyzeNewsSentiment(headlines)
-		return SentimentResult{
-			Score:      report.Score,
-			Polarity:   string(report.Polarity),
-			Confidence: 0.85,
-			Summary:    fmt.Sprintf("Analyzed %d headlines via lexicon; %d key terms matched", report.HeadlineCount, len(report.KeyPhrases)),
-		}, nil
+		return SentimentResult{}, WrapDecision("news-classifier", "none", ErrLLMClassify, "client unconfigured (no fallback)")
 	}
 
 	prompt := fmt.Sprintf(`You are a quantitative macro sentiment analyzer.
@@ -88,25 +80,12 @@ Output ONLY valid JSON matching this schema:
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		// Fallback to lexical analyzer on network failure
-		report := market.AnalyzeNewsSentiment(headlines)
-		return SentimentResult{
-			Score:      report.Score,
-			Polarity:   string(report.Polarity),
-			Confidence: 0.70,
-			Summary:    fmt.Sprintf("Fallback lexical analysis (%v)", err),
-		}, nil
+		return SentimentResult{}, WrapDecision("news-classifier", "none", fmt.Errorf("%w: %v", ErrLLMTimeout, err), "gateway network failure")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		report := market.AnalyzeNewsSentiment(headlines)
-		return SentimentResult{
-			Score:      report.Score,
-			Polarity:   string(report.Polarity),
-			Confidence: 0.70,
-			Summary:    fmt.Sprintf("Fallback lexical analysis (HTTP %d)", resp.StatusCode),
-		}, nil
+		return SentimentResult{}, WrapDecision("news-classifier", "none", ErrLLMClassify, fmt.Sprintf("http status %d", resp.StatusCode))
 	}
 
 	var chatResp openAIChatResponse

@@ -1,189 +1,117 @@
 package market
 
-import (
-	"math"
-	"strings"
-)
-
 // SentimentPolarity classifies aggregated news sentiment.
 type SentimentPolarity string
 
 const (
-	PolarityBullish SentimentPolarity = "BULLISH"
-	PolarityBearish SentimentPolarity = "BEARISH"
-	PolarityNeutral SentimentPolarity = "NEUTRAL"
+	PolarityBullish  SentimentPolarity = "BULLISH"
+	PolarityBearish  SentimentPolarity = "BEARISH"
+	PolarityNeutral  SentimentPolarity = "NEUTRAL"
+	PolarityMixed    SentimentPolarity = "MIXED"
 )
 
-// NewsSentimentReport captures the quantitative NLP score of market headlines.
+// NewsSentimentReport captures classified news impact (spec-013 v3.0).
+// Production values come from the decision core (Jev → 9Router escalation),
+// never from a local word list — the lexicon classifier was deleted.
 type NewsSentimentReport struct {
-	Score         float64           `json:"score"`    // -1.0 (extremely bearish) to +1.0 (extremely bullish)
-	Polarity      SentimentPolarity `json:"polarity"` // BULLISH, BEARISH, NEUTRAL
+	Score         float64           `json:"score"` // -1.0 (bearish) to +1.0 (bullish)
+	Polarity      SentimentPolarity `json:"polarity"`
 	HeadlineCount int               `json:"headline_count"`
 	KeyPhrases    []string          `json:"key_phrases"`
 }
 
-var bullishTerms = []string{
-	"rate cut", "inflation cool", "inflation drops", "etf approved", "etf inflow",
-	"record high", "bullish", "stimulus", "accumulate", "reserve currency",
-	"breakout", "rally", "easing", "dovish", "liquidity surge", "halving",
-	// Whale & Institutional accumulation signals
-	"whale buy", "whale accumulation", "whale alert", "massive transfer to cold",
-	"institutional accumulation", "spot etf inflow", "billionaire buy", "treasury reserve",
-	"strategic bitcoin reserve", "whale loading", "holding supply",
-	// Politician & High-Profile Insiders
-	"trump crypto", "trump backing", "trump endorsement", "world liberty financial",
-	"trump son", "barron trump", "eric trump", "pelosi buy", "congressional buy",
-	"senator buy", "pro-crypto legislation", "insider accumulation",
-	// Commodities directional (spec 012 US4/T040: clears the ±0.25
-	// directional threshold for genuine commodity catalysts)
-	"gold surges", "gold jumps", "gold rally", "silver surges",
-	"oil jumps", "oil rallies", "crude rallies", "opec+ cuts",
-	"copper surges", "supply disruption",
+// NewsClassifier classifies a set of headlines. Implementations MUST return
+// an explicit error on failure (FR-007) — never a neutral/default guess.
+type NewsClassifier func(headlines []string) (NewsSentimentReport, error)
+
+// ErrNoClassifier is returned by the default classifier: classification is a
+// core decision, not something a fallback can fabricate.
+type ClassifierNotConfiguredError struct{}
+
+func (ClassifierNotConfiguredError) Error() string {
+	return "news classifier not configured: decision core unavailable (no fallback exists)"
 }
 
-var bearishTerms = []string{
-	"rate hike", "hawkish", "inflation surges", "war", "recession", "insolvency",
-	"bank run", "sec lawsuit", "sanction", "selloff", "crash", "bearish",
-	"liquidation cascade", "hack", "stolen", "contagion", "downgrade",
-	// Whale dump & Manipulation signals
-	"whale dump", "whale sell", "transfer to exchange", "whale liquidation",
-	"market manipulation", "pump and dump", "rug pull", "wash trading",
-	// Politician & Regulatory enforcement signals
-	"insider dump", "insider selling", "politician sell", "pelosi sell",
-	"congressional disclosure dump", "sec subpoena", "sec investigation",
-	"fraud charges", "crypto crackdown", "subpoena", "anti-crypto",
-	// Commodities bearish (spec 012 US4/T040: supply build, demand destruction)
-	"inventory build", "crude stockpiles", "oil slumps", "gold falls",
-	"gold slides", "silver drops", "copper slides", "opec+ raises output",
-	"demand destruction",
+// DefaultClassifier fails explicitly until a core-backed classifier is injected.
+func DefaultClassifier(headlines []string) (NewsSentimentReport, error) {
+	return NewsSentimentReport{}, ClassifierNotConfiguredError{}
 }
 
-// AnalyzeNewsSentiment evaluates financial headlines using a quantitative financial lexicon.
-// Produces a normalized polarity score in [-1.0, 1.0].
-func AnalyzeNewsSentiment(headlines []string) NewsSentimentReport {
-	if len(headlines) == 0 {
-		return NewsSentimentReport{
-			Score:         0.0,
-			Polarity:      PolarityNeutral,
-			HeadlineCount: 0,
-			KeyPhrases:    []string{},
-		}
-	}
-
-	var rawScore float64
-	var keyPhrases []string
-
-	for _, raw := range headlines {
-		line := strings.ToLower(raw)
-		for _, b := range bullishTerms {
-			if strings.Contains(line, b) {
-				rawScore += 1.0
-				keyPhrases = append(keyPhrases, b)
-			}
-		}
-		for _, b := range bearishTerms {
-			if strings.Contains(line, b) {
-				rawScore -= 1.0
-				keyPhrases = append(keyPhrases, b)
-			}
-		}
-	}
-
-	// Normalize by number of headlines with hyperbolic tangent compression
-	denom := math.Max(1.0, float64(len(headlines))*0.5)
-	normalized := math.Tanh(rawScore / denom)
-	normalized = math.Round(normalized*1000) / 1000
-
-	var polarity SentimentPolarity
-	if normalized >= 0.20 {
-		polarity = PolarityBullish
-	} else if normalized <= -0.20 {
-		polarity = PolarityBearish
-	} else {
-		polarity = PolarityNeutral
-	}
-
-	if keyPhrases == nil {
-		keyPhrases = []string{}
-	}
-
-	return NewsSentimentReport{
-		Score:         normalized,
-		Polarity:      polarity,
-		HeadlineCount: len(headlines),
-		KeyPhrases:    keyPhrases,
-	}
-}
-
-// marketWideTerms are headlines whose catalyst genuinely applies to every
-// instrument (macro policy, regulation, war), so they stay in every symbol's
-// prompt even when the symbol itself is not named.
+// marketWideTerms headlines whose catalyst genuinely applies to every
+// instrument (macro policy, regulation, war), so stay in every symbol's
+// prompt even when symbol itself not named.
 var marketWideTerms = []string{
-	"federal reserve", " fed ", "rate cut", "rate hike", "inflation",
-	"recession", "central bank", "tariff", "war ", "sanction", "sec ",
-	"sec approves", "sec lawsuit", "regulation", "etf approval", "etf inflow",
-	"interest rate", "monetary policy", "gdp ",
+	"federal reserve", " fed ", "rate cut", "rate hike", "inflation", "recession",
+	"central bank", "tariff", "war ", "sanction", "sec ", "sec approves", "sec lawsuit",
+	"regulation", "etf approval", "etf inflow", "interest rate", "monetary policy", "gdp ",
 }
 
-// broadCryptoTerms are catalysts that move the whole crypto complex.
+// broadCryptoTerms catalysts move the whole crypto complex.
 var broadCryptoTerms = []string{
-	"crypto", "altcoin", "stablecoin", "blockchain", "exchange hack",
-	"whale", "market crash", "market rally", "liquidation", "token unlock",
+	"crypto", "altcoin", "stablecoin", "blockchain", "exchange hack", "whale",
+	"market crash", "market rally", "liquidation", "token unlock",
 }
 
-// HeadlinesForSymbol returns the subset of headlines that can act as a
-// catalyst for the given symbol: ones that name the asset, plus headlines
-// whose macro impact applies to everything.
-//
-// Feeding every global headline into every symbol wastes an AI round-trip on
-// instruments with no relevant news and dilutes sentiment scoring — the AI
-// then reports "zero asset-relevant catalysts" and returns HOLD anyway. An
-// empty result means no AI call is needed at all.
+// HeadlinesForSymbol returns subset of headlines whose catalyst plausibly
+// applies to the symbol (term-based scoping only — scoring is core-owned).
 func HeadlinesForSymbol(headlines []string, symbol string) []string {
-	if len(headlines) == 0 {
-		return nil
-	}
-
-	base := strings.ToUpper(strings.TrimSuffix(strings.Split(symbol, "/")[0], "USDT"))
-	name := ""
-	if def, ok := FindAsset(symbol); ok {
-		name = strings.ToLower(def.Name)
-	}
-	group := strings.ToLower(GetExposureGroup(symbol))
-	isAlpha := GetBucket(symbol) == "ALPHA"
-
-	matched := make([]string, 0, len(headlines))
+	var out []string
+	sym := lower(symbol)
+	base, quote := splitPair(sym)
 	for _, raw := range headlines {
-		lower := " " + strings.ToLower(raw) + " "
-
-		direct := base != "" && (strings.Contains(lower, " "+strings.ToLower(base)+" ") ||
-			strings.Contains(lower, " "+strings.ToLower(base)+"/") ||
-			(strings.Contains(lower, " "+strings.ToLower(base)+".")) ||
-			(name != "" && strings.Contains(lower, name)))
-
-		macro := false
-		for _, t := range marketWideTerms {
-			if strings.Contains(lower, t) {
-				macro = true
-				break
-			}
-		}
-
-		broad := false
-		if isAlpha {
-			for _, t := range broadCryptoTerms {
-				if strings.Contains(lower, t) {
-					broad = true
+		line := lower(raw)
+		keep := containsTerm(line, sym) || containsTerm(line, base) || containsTerm(line, quote)
+		if !keep {
+			for _, t := range marketWideTerms {
+				if containsTerm(line, t) {
+					keep = true
 					break
 				}
 			}
-		} else if group != "" && strings.Contains(lower, group) {
-			broad = true
 		}
-
-		if direct || macro || broad {
-			matched = append(matched, raw)
+		if !keep {
+			for _, t := range broadCryptoTerms {
+				if containsTerm(line, t) {
+					keep = true
+					break
+				}
+			}
+		}
+		if keep {
+			out = append(out, raw)
 		}
 	}
-	return matched
+	return out
+}
+
+func lower(s string) string {
+	b := []byte(s)
+	for i := range b {
+		if b[i] >= 'A' && b[i] <= 'Z' {
+			b[i] += 'a' - 'A'
+		}
+	}
+	return string(b)
+}
+
+func containsTerm(line, term string) bool {
+	return len(term) > 0 && indexSub(line, term) >= 0
+}
+
+func indexSub(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
+func splitPair(sym string) (string, string) {
+	for _, sep := range []string{"/", "-", "_"} {
+		if idx := indexSub(sym, sep); idx >= 0 {
+			return sym[:idx], sym[idx+1:]
+		}
+	}
+	return sym, ""
 }

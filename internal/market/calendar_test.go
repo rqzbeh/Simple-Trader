@@ -70,41 +70,15 @@ func TestEconomicCalendarHalt(t *testing.T) {
 	}
 }
 
-func TestNewsSentimentAnalyzer(t *testing.T) {
-	// Bullish news headlines
-	bullishHeadlines := []string{
-		"Fed signals unexpected rate cut as inflation drops to 2%",
-		"Bitcoin ETF inflows surge to new record high",
-		"Gold breaks out amidst global liquidity easing",
+func TestNewsClassifierContract(t *testing.T) {
+	// Spec-013 v3.0: no lexicon — default classifier must fail explicitly
+	// and never fabricate a polarity.
+	_, err := market.DefaultClassifier([]string{"Bitcoin ETF inflows surge to new record high"})
+	if err == nil {
+		t.Fatal("expected explicit error from unconfigured classifier, got nil")
 	}
-
-	report := market.AnalyzeNewsSentiment(bullishHeadlines)
-	if report.Polarity != market.PolarityBullish {
-		t.Errorf("expected BULLISH polarity, got %s (score=%f)", report.Polarity, report.Score)
-	}
-	if report.Score <= 0.20 {
-		t.Errorf("expected score > 0.20, got %f", report.Score)
-	}
-
-	// Bearish news headlines
-	bearishHeadlines := []string{
-		"SEC files emergency lawsuit, triggering major selloff",
-		"Contagion risk rises as crypto lending firm halts withdrawals after major hack",
-		"Recession fears escalate as inflation surges higher",
-	}
-
-	bearReport := market.AnalyzeNewsSentiment(bearishHeadlines)
-	if bearReport.Polarity != market.PolarityBearish {
-		t.Errorf("expected BEARISH polarity, got %s (score=%f)", bearReport.Polarity, bearReport.Score)
-	}
-	if bearReport.Score >= -0.20 {
-		t.Errorf("expected score < -0.20, got %f", bearReport.Score)
-	}
-
-	// Empty headlines
-	emptyReport := market.AnalyzeNewsSentiment(nil)
-	if emptyReport.Polarity != market.PolarityNeutral || emptyReport.Score != 0.0 {
-		t.Errorf("expected NEUTRAL for empty headlines, got %s (%f)", emptyReport.Polarity, emptyReport.Score)
+	if _, ok := err.(market.ClassifierNotConfiguredError); !ok {
+		t.Fatalf("expected ClassifierNotConfiguredError, got %T: %v", err, err)
 	}
 }
 

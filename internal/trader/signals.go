@@ -99,6 +99,15 @@ type SignalService struct {
 	// ~20s model call, so two evaluators both read "free" and both inserted
 	// (duplicate XRP signals, and 10 signals against a cap of 5).
 	slotGuard func(symbol string) (*db.FuturesTradeSignal, error)
+
+	// newsClassify classifies headlines via the decision core. Explicit-error
+	// contract: never returns a fabricated neutral (spec-013 FR-007).
+	newsClassify market.NewsClassifier
+}
+
+// SetNewsClassifier injects the core-backed headline classifier.
+func (s *SignalService) SetNewsClassifier(fn market.NewsClassifier) {
+	s.newsClassify = fn
 }
 
 // SetSlotGuard installs the concurrency guard evaluated just before persist.
@@ -198,20 +207,23 @@ func (s *SignalService) EvaluateMarketSignal(
 		HorizonMinutes: horizonMin,
 	}
 
-	// Pre-compute the NLP sentiment packet so every prompt carries scored
-	// evidence (score, polarity, headline mix, trigger phrases) instead of
-	// raw headlines alone. Lexicon path is offline and deterministic.
+	// Core-classified sentiment packet (semantic, Jev+9Router). Failure is an
+	// explicit error — no lexicon fallback exists (spec-013 FR-013).
 	if len(headlines) > 0 {
-		report := market.AnalyzeNewsSentiment(headlines)
+		classify := s.newsClassify
+		if classify == nil {
+			classify = market.DefaultClassifier
+		}
+		report, err := classify(headlines)
+		if err != nil {
+			return nil, nil, fmt.Errorf("component=news-classifier cycle=%s: %w", symbol, err)
+		}
 		bullish, bearish := 0, 0
-		for _, h := range headlines {
-			hs := market.AnalyzeNewsSentiment([]string{h})
-			switch hs.Polarity {
-			case market.PolarityBullish:
-				bullish++
-			case market.PolarityBearish:
-				bearish++
-			}
+		switch report.Polarity {
+		case market.PolarityBullish:
+			bullish = len(headlines)
+		case market.PolarityBearish:
+			bearish = len(headlines)
 		}
 		decReq.NewsSentiment = &ai.NewsSentimentInput{
 			Score:         report.Score,

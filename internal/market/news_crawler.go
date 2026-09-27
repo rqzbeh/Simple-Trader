@@ -68,6 +68,7 @@ type NewsCrawler struct {
 	articles     []db.NewsArticle
 	running      bool
 	stopChan     chan struct{}
+	classifier   NewsClassifier
 }
 
 // NewNewsCrawler creates a news crawler instance.
@@ -87,6 +88,7 @@ func NewNewsCrawler(cfg NewsFeedConfig, redisClient *cache.Client, dbStore *db.S
 		seenHashes:  make(map[string]time.Time),
 		articles:    make([]db.NewsArticle, 0, 100),
 		stopChan:    make(chan struct{}),
+		classifier:  DefaultClassifier,
 	}
 
 	// Hydrate from PostgreSQL database if available
@@ -127,25 +129,25 @@ func ComputeContentHash(title string) string {
 
 // IngestHeadline processes a single article headline, performing SHA-256 deduplication and sentiment scoring.
 // Returns (article, true) if it was fresh and successfully ingested.
-func (c *NewsCrawler) IngestHeadline(ctx context.Context, source, title, url string, pubTime time.Time) (*db.NewsArticle, bool) {
+func (c *NewsCrawler) IngestHeadline(ctx context.Context, source, title, url string, pubTime time.Time) (*db.NewsArticle, bool, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	norm := NormalizeTitle(title)
 	if norm == "" {
-		return nil, false
+		return nil, false, nil
 	}
 
 	hash := ComputeContentHash(title)
 	if _, exists := c.seenHashes[hash]; exists {
-		return nil, false
+		return nil, false, nil
 	}
 
 	// Check Redis deduplication set if available
 	if c.redisClient != nil {
 		if seen, err := c.redisClient.IsNewsHashSeen(ctx, hash); err == nil && seen {
 			c.seenHashes[hash] = time.Now()
-			return nil, false
+			return nil, false, nil
 		}
 	}
 
@@ -154,8 +156,12 @@ func (c *NewsCrawler) IngestHeadline(ctx context.Context, source, title, url str
 		_ = c.redisClient.AddNewsHash(ctx, hash)
 	}
 
-	// Score sentiment for this headline
-	report := AnalyzeNewsSentiment([]string{title})
+	// Classify this headline via decision core (explicit error, no lexicon).
+	report, err := c.classifier([]string{title})
+	if err != nil {
+		return nil, false, err
+	}
+	_ = report
 
 	if pubTime.IsZero() {
 		pubTime = time.Now()
@@ -188,7 +194,7 @@ func (c *NewsCrawler) IngestHeadline(ctx context.Context, source, title, url str
 		`, article.ContentHash, article.Title, article.Source, article.URL, article.SentimentScore, article.Polarity, article.KeyPhrases, article.PublishedAt, article.IngestedAt)
 	}
 
-	return &article, true
+	return &article, true, nil
 }
 
 // GetLatestArticles returns recent news articles sorted newest first.
@@ -202,7 +208,7 @@ func (c *NewsCrawler) GetLatestArticles() []db.NewsArticle {
 }
 
 // GetAggregateSentiment calculates sentiment over all currently tracked articles.
-func (c *NewsCrawler) GetAggregateSentiment() NewsSentimentReport {
+func (c *NewsCrawler) GetAggregateSentiment() (NewsSentimentReport, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
@@ -211,7 +217,7 @@ func (c *NewsCrawler) GetAggregateSentiment() NewsSentimentReport {
 			Score:         0.0,
 			Polarity:      PolarityNeutral,
 			HeadlineCount: 0,
-		}
+		}, nil
 	}
 
 	headlines := make([]string, len(c.articles))
@@ -219,7 +225,7 @@ func (c *NewsCrawler) GetAggregateSentiment() NewsSentimentReport {
 		headlines[i] = a.Title
 	}
 
-	return AnalyzeNewsSentiment(headlines)
+	return c.classifier(headlines)
 }
 
 // FetchFeed pulls and parses a single RSS feed endpoint.
@@ -259,7 +265,11 @@ func (c *NewsCrawler) FetchFeed(ctx context.Context, source, feedURL string) (in
 				pubTime, _ = time.Parse(time.RFC1123, item.PubDate)
 			}
 		}
-		if _, ok := c.IngestHeadline(ctx, source, item.Title, item.Link, pubTime); ok {
+		_, ok, err := c.IngestHeadline(ctx, source, item.Title, item.Link, pubTime)
+		if err != nil {
+			return 0, fmt.Errorf("component=news_crawler cycle=%s: ingest failed: %w", source, err)
+		}
+		if ok {
 			ingested++
 		}
 	}
