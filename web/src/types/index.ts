@@ -251,6 +251,12 @@ export interface FuturesTradeSignal {
   realized_roi_pct?: number;
   created_at: string;
   closed_at?: string;
+  // Spec 012 US3 catalyst-event badge (T037)
+  catalyst_event_id?: number;
+  catalyst_event_story_count?: number;
+  catalyst_event_sources?: string[] | string;
+  catalyst_event_at?: string;
+
   // Spec 012 US2 audit fields (staged exits + decay)
   atr_at_entry?: number;
   tp1_close_fraction?: number;
