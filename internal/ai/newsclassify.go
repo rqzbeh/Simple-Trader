@@ -1,12 +1,14 @@
 package ai
 
 import (
+	"bytes"
 	"context"
-	"io"
-	"net/http"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"strings"
+	"time"
 )
 
 // NewsLabel vocabulary (spec-013 FR-004).
@@ -18,6 +20,42 @@ type ClassifyNewsResult struct {
 	Reasoning  string   `json:"reasoning"`
 	Label      string   `json:"label"`
 	Confidence float64  `json:"confidence"`
+}
+
+// UnmarshalJSON handles both array and string shapes for the evidence field from gateway completions.
+func (r *ClassifyNewsResult) UnmarshalJSON(data []byte) error {
+	type rawResult struct {
+		Evidence   json.RawMessage `json:"evidence"`
+		Reasoning  string          `json:"reasoning"`
+		Label      string          `json:"label"`
+		Confidence float64         `json:"confidence"`
+	}
+	var raw rawResult
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	r.Reasoning = raw.Reasoning
+	r.Label = raw.Label
+	r.Confidence = raw.Confidence
+
+	rawEv := bytes.TrimSpace(raw.Evidence)
+	if len(rawEv) == 0 || string(rawEv) == "null" {
+		r.Evidence = nil
+		return nil
+	}
+	if rawEv[0] == '[' {
+		return json.Unmarshal(rawEv, &r.Evidence)
+	}
+	var single string
+	if err := json.Unmarshal(rawEv, &single); err != nil {
+		return err
+	}
+	if single != "" {
+		r.Evidence = []string{single}
+	} else {
+		r.Evidence = nil
+	}
+	return nil
 }
 
 // newsClassifySchema: field order evidence → reasoning → label
@@ -117,7 +155,16 @@ func stripCodeFence(s string) string {
 }
 
 // completeJSON posts a chat request and returns the assistant content.
-func (c *Client) completeJSON(ctx context.Context, req openAIChatRequest) (string, error) {
+func (c *Client) completeJSON(ctx context.Context, req openAIChatRequest) (contentOut string, errOut error) {
+	start := time.Now()
+	defer func() {
+		latencyMs := float64(time.Since(start).Microseconds()) / 1000.0
+		if errOut != nil {
+			RecordGateway(false, latencyMs, errOut.Error())
+		} else {
+			RecordGateway(true, latencyMs, "")
+		}
+	}()
 	data, err := json.Marshal(req)
 	if err != nil {
 		return "", fmt.Errorf("%w: marshal: %v", ErrLLMClassify, err)

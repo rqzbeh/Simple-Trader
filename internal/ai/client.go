@@ -210,7 +210,16 @@ Analyze catalyst priority first. If no high-conviction news catalyst exists, out
 }
 
 // Analyze requests trade analysis from the OpenAI-compatible engine with heuristic fallback.
-func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (*DecisionResponse, error) {
+func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (respOut *DecisionResponse, errOut error) {
+	start := time.Now()
+	defer func() {
+		latencyMs := float64(time.Since(start).Microseconds()) / 1000.0
+		if errOut != nil {
+			RecordGateway(false, latencyMs, errOut.Error())
+		} else {
+			RecordGateway(true, latencyMs, "")
+		}
+	}()
 	if c.cfg.BaseURL == "" || c.cfg.APIKey == "" {
 		return nil, WrapDecision("llm", req.Symbol, ErrLLMClassify, "AI client unconfigured (missing BaseURL or APIKey)")
 	}

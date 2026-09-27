@@ -35,6 +35,13 @@ func NewJevClient(baseURL, apiKey string, timeout time.Duration) *JevClient {
 	}
 }
 
+func (j *JevClient) Model() string {
+	if j == nil || j.model == "" {
+		return "jev-latest"
+	}
+	return j.model
+}
+
 // JevQuestion per official API: type + instructions + criteria.
 type JevQuestion struct {
 	Type         string      `json:"type"` // choice | noul | score
@@ -83,7 +90,16 @@ type JevUsage struct {
 
 // Evaluate sends one batched request — all independent questions in a single
 // parallel pass (research.md batch rule).
-func (j *JevClient) Evaluate(ctx context.Context, cycleID string, state interface{}, questions map[string]JevQuestion) (map[string]JevAnswer, JevUsage, error) {
+func (j *JevClient) Evaluate(ctx context.Context, cycleID string, state interface{}, questions map[string]JevQuestion) (ansOut map[string]JevAnswer, usageOut JevUsage, errOut error) {
+	start := time.Now()
+	defer func() {
+		latencyMs := float64(time.Since(start).Microseconds()) / 1000.0
+		if errOut != nil {
+			RecordJev(false, latencyMs, errOut.Error())
+		} else {
+			RecordJev(true, latencyMs, "")
+		}
+	}()
 	if j.apiKey == "" {
 		return nil, JevUsage{}, WrapDecision("jev", cycleID, ErrJevAuth, "TYPESAFE_API_KEY missing")
 	}
@@ -91,7 +107,7 @@ func (j *JevClient) Evaluate(ctx context.Context, cycleID string, state interfac
 	if err != nil {
 		return nil, JevUsage{}, WrapDecision("jev", cycleID, ErrJevSchema, "marshal request failed")
 	}
-	start := time.Now()
+	start = time.Now()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, j.baseURL+"/v1/systemone", bytes.NewReader(body))
 	if err != nil {
 		return nil, JevUsage{}, WrapDecision("jev", cycleID, ErrJevUnavailable, "request creation failed")

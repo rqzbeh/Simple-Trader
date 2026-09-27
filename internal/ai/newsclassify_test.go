@@ -37,3 +37,35 @@ func TestNewsClassifyContract(t *testing.T) {
 		t.Fatal("empty cluster must error (FR-007)")
 	}
 }
+
+func TestNewsClassifyEvidenceShapes(t *testing.T) {
+	// Shape 1: evidence as array of strings
+	rawArray := []byte(`{"evidence":["ETF inflows record","Fed cut"],"reasoning":"macro tailwinds","label":"BULLISH","confidence":0.85}`)
+	var resArr ClassifyNewsResult
+	if err := json.Unmarshal(rawArray, &resArr); err != nil {
+		t.Fatalf("unmarshal array evidence failed: %v", err)
+	}
+	if len(resArr.Evidence) != 2 || resArr.Evidence[0] != "ETF inflows record" || resArr.Evidence[1] != "Fed cut" {
+		t.Fatalf("unexpected array evidence: %+v", resArr.Evidence)
+	}
+
+	// Shape 2: evidence as plain string
+	rawStr := []byte(`{"evidence":"ETF inflows record single string","reasoning":"single headline","label":"BULLISH","confidence":0.75}`)
+	var resStr ClassifyNewsResult
+	if err := json.Unmarshal(rawStr, &resStr); err != nil {
+		t.Fatalf("unmarshal string evidence failed: %v", err)
+	}
+	if len(resStr.Evidence) != 1 || resStr.Evidence[0] != "ETF inflows record single string" {
+		t.Fatalf("unexpected string evidence: %+v", resStr.Evidence)
+	}
+
+	// Shape 3: evidence as null or empty string
+	rawNull := []byte(`{"evidence":null,"reasoning":"no evidence","label":"NEUTRAL","confidence":0.5}`)
+	var resNull ClassifyNewsResult
+	if err := json.Unmarshal(rawNull, &resNull); err != nil {
+		t.Fatalf("unmarshal null evidence failed: %v", err)
+	}
+	if len(resNull.Evidence) != 0 {
+		t.Fatalf("expected empty evidence, got: %+v", resNull.Evidence)
+	}
+}

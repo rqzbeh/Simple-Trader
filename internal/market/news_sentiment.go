@@ -62,6 +62,11 @@ func HeadlinesForSymbol(headlines []string, symbol string) []string {
 		line := lower(raw)
 		keep := containsTerm(line, sym) || containsTerm(line, base) || containsTerm(line, quote)
 		if !keep {
+			if alias, ok := commodityAlias[base]; ok {
+				keep = containsTerm(line, alias)
+			}
+		}
+		if !keep {
 			for _, t := range marketWideTerms {
 				if containsTerm(line, t) {
 					keep = true
@@ -105,6 +110,14 @@ func indexSub(s, sub string) int {
 		}
 	}
 	return -1
+}
+
+// commodityAlias maps pair base tokens to commodity words headlines use
+// (spec-013 convergence: "gold" headlines must match XAU).
+var commodityAlias = map[string]string{
+	"xau": "gold", "xag": "silver", "xpt": "platinum", "xpd": "palladium",
+	"oil": "crude", "brent": "crude", "ng": "natural gas", "copper": "copper",
+	"alu": "aluminum",
 }
 
 func splitPair(sym string) (string, string) {

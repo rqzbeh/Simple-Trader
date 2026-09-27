@@ -1462,7 +1462,7 @@ func (s *Server) SignalSummaryHandler(w http.ResponseWriter, r *http.Request) {
 		FROM futures_trade_signals
 		WHERE status = 'CLOSED'
 		  AND ($1 = '' OR profile = $1)
-		  AND ($2 = '' OR created_at >= $2::timestamptz)
+		  AND ($2 = '' OR created_at >= nullif($2, '')::timestamptz)
 	`, profile, since).Scan(
 		&closed, &wins, &losses, &flat,
 		&sumWin, &sumLoss, &sumPnl,

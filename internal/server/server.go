@@ -53,6 +53,7 @@ type Server struct {
 	newsClassifier    market.NewsClassifier // spec-013: core headline classifier (explicit-error)
 	decisionRouter    *trader.DecisionRouter
 	shadow            *trader.ShadowOrchestrator
+	startTime         time.Time
 }
 
 // NewServer configures routes and dependency injection.
@@ -155,6 +156,7 @@ func NewServer(
 	}()
 
 	s := &Server{
+		startTime:         time.Now(),
 		cfg:               cfg,
 		dbStore:           dbStore,
 		redisClient:       redisClient,
@@ -381,6 +383,7 @@ func (s *Server) setupRoutes() {
 			"telegram_chat_id":        s.cfg.TelegramChatID,
 		})
 	})
+	r.Get("/api/v1/system/stats", s.handleSystemStats)
 
 	// Real-Time Server-Sent Events (SSE)
 	r.Get("/api/v1/events", s.broadcaster.ServeHTTP)
