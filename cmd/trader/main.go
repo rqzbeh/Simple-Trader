@@ -128,7 +128,6 @@ func main() {
 		MinRiskRewardRatio: cfg.MinRiskRewardRatio,
 	}
 	aiClient := ai.NewClient(aiCfg)
-	_ = ai.NewWeightEngine()
 
 	// 5. Initialize Trading & Risk Allocator & Execution Engine
 	initialCap := cfg.InitialCapital
