@@ -277,6 +277,44 @@ func (s *Store) CloseFuturesSignal(ctx context.Context, id int64, exitPrice floa
 	return nil
 }
 
+// UpdateSignalDecay persists a decay-state transition (spec 012 US2, FR-005):
+// NONE -> BREAKEVEN after the breakeven checkpoint; CLOSED when the flat
+// checkpoint or hard horizon exits the trade. Unknown states never persist
+// (CHECK constraint NONE/BREAKEVEN/CLOSED).
+func (s *Store) UpdateSignalDecay(ctx context.Context, id int64, state string) error {
+	if s.Pool == nil {
+		return errors.New("database pool not initialized")
+	}
+	switch state {
+	case "BREAKEVEN", "CLOSED":
+	default:
+		return nil // NONE: nothing to persist
+	}
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE futures_trade_signals SET decay_state = $1 WHERE id = $2`, state, id)
+	if err != nil {
+		return fmt.Errorf("failed to update signal decay state: %w", err)
+	}
+	return nil
+}
+
+// UpdateSignalStop moves a protected stop to break-even after the TP1 partial
+// fill or the breakeven checkpoint (spec 012 US2, FR-004/005).
+func (s *Store) UpdateSignalStop(ctx context.Context, id int64, newStop float64) error {
+	if s.Pool == nil {
+		return errors.New("database pool not initialized")
+	}
+	if newStop <= 0 {
+		return errors.New("new stop price must be positive")
+	}
+	_, err := s.Pool.Exec(ctx,
+		`UPDATE futures_trade_signals SET stop_loss = $1 WHERE id = $2`, newStop, id)
+	if err != nil {
+		return fmt.Errorf("failed to update signal stop: %w", err)
+	}
+	return nil
+}
+
 // MarkSignalDispatched marks a signal as dispatched to Telegram.
 func (s *Store) MarkSignalDispatched(ctx context.Context, id int64) error {
 	if s.Pool == nil {

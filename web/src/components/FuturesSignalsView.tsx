@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FuturesTradeSignal, AssetInfo } from '../types';
+import { FuturesTradeSignal, AssetInfo, formatSignalPrice } from '../types';
 import { INITIAL_ASSETS } from '../hooks/useSSE';
 import { Zap, TrendingUp, TrendingDown, ShieldAlert, Target, DollarSign, Clock, RefreshCw, XCircle } from 'lucide-react';
 
@@ -260,25 +260,46 @@ export const FuturesSignalsView: React.FC<FuturesSignalsViewProps> = ({ apiBaseU
                   </div>
                 </div>
 
-                {/* Pricing & Protective Bounds */}
-                <div className="grid grid-cols-3 gap-2 py-2 border-y border-slate-100 dark:border-slate-800/80 text-xs font-mono">
+                {/* Pricing & Protective Bounds (spec 012 US2: staged targets + audit chips) */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 py-2 border-y border-slate-100 dark:border-slate-800/80 text-xs font-mono">
                   <div>
                     <span className="text-[10px] text-slate-400 block">Entry</span>
-                    <span className="font-semibold">${sig.entry_price.toLocaleString()}</span>
+                    <span className="font-semibold">{formatSignalPrice(sig.entry_price)}</span>
                   </div>
                   <div>
                     <span className="text-[10px] text-rose-400 flex items-center gap-0.5">
-                      <ShieldAlert className="w-2.5 h-2.5" /> SL
+                      <ShieldAlert className="w-2.5 h-2.5" /> SL{sig.decay_state === 'BREAKEVEN' ? ' (BE)' : ''}
                     </span>
-                    <span className="font-semibold text-rose-500">${sig.stop_loss.toLocaleString()}</span>
+                    <span className="font-semibold text-rose-500">{formatSignalPrice(sig.stop_loss)}</span>
                   </div>
                   <div>
                     <span className="text-[10px] text-emerald-400 flex items-center gap-0.5">
-                      <Target className="w-2.5 h-2.5" /> TP
+                      <Target className="w-2.5 h-2.5" /> TP1{sig.tp1_close_fraction ? ` (${Math.round(sig.tp1_close_fraction * 100)}%)` : ''}
                     </span>
-                    <span className="font-semibold text-emerald-500">${sig.take_profit_1.toLocaleString()}</span>
+                    <span className="font-semibold text-emerald-500">{formatSignalPrice(sig.take_profit_1)}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-emerald-300 flex items-center gap-0.5">
+                      <Target className="w-2.5 h-2.5" /> TP2
+                    </span>
+                    <span className="font-semibold text-emerald-400">{sig.take_profit_2 ? formatSignalPrice(sig.take_profit_2) : '--'}</span>
                   </div>
                 </div>
+                {(sig.atr_at_entry || sig.profile) && (
+                  <div className="flex flex-wrap gap-1.5 text-[10px] font-mono text-slate-500 dark:text-slate-400">
+                    {sig.atr_at_entry ? (
+                      <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80">ATR@entry {formatSignalPrice(sig.atr_at_entry)}</span>
+                    ) : null}
+                    {sig.profile ? (
+                      <span className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800/80">{sig.profile}</span>
+                    ) : null}
+                    {sig.decay_state && sig.decay_state !== 'NONE' ? (
+                      <span className={`px-1.5 py-0.5 rounded ${sig.decay_state === 'BREAKEVEN' ? 'bg-amber-500/10 text-amber-500' : 'bg-slate-500/10'}`}>
+                        {sig.decay_state}
+                      </span>
+                    ) : null}
+                  </div>
+                )}
 
                 {/* Capital Allocation & Risk-Reward */}
                 <div className="space-y-1.5 text-xs font-mono">

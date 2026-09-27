@@ -24,6 +24,8 @@ type SignalStoreInterface interface {
 	MarkSignalDispatched(ctx context.Context, id int64) error
 	MarkSignalResolved(ctx context.Context, id int64) error
 	InsertEntryFilterLog(ctx context.Context, symbol, direction string, catalystEventID *int64, rule string, detail json.RawMessage) error
+	UpdateSignalDecay(ctx context.Context, id int64, state string) error
+	UpdateSignalStop(ctx context.Context, id int64, newStop float64) error
 }
 
 // AIAnalyzer defines the interface to obtain trading intelligence and catalyst evaluations.
@@ -61,6 +63,16 @@ func DefaultSignalConfig() SignalConfig {
 // ErrConcurrentCap is returned when MAX_CONCURRENT_SIGNALS would be exceeded.
 // Callers map it to a HOLD, not an error: the scan succeeded, the slot was full.
 var ErrConcurrentCap = errors.New("max concurrent signals reached")
+
+// profileNameForBucket maps an asset bucket to its risk profile name
+// (spec 012 US2: CRYPTO intraday, COMMODITY multi-hour). Exported: the
+// decay reconciler resolves the profile from the signal's own class.
+func ProfileNameForBucket(bucket string) string {
+	if bucket == "CORE" {
+		return "COMMODITY"
+	}
+	return "CRYPTO"
+}
 
 // SignalService coordinates news-first catalyst signal generation and lifecycle monitoring.
 type SignalService struct {
@@ -213,80 +225,104 @@ func (s *SignalService) EvaluateMarketSignal(
 		return nil, aiResp, nil
 	}
 
-	// 4. Calculate protective price bounds (Stop Loss & Take Profit) dynamically
-	// Priority: ATR-based from indicator snapshot > AI-suggested percentages > config defaults
+	// 4. Calculate protective price bounds from measured volatility (spec 012
+	// US2, FR-002/003): ATR stop behind the 15m swing, staged targets from
+	// the profile. Priority: profile ATR model > AI-suggested percentages >
+	// config defaults. ATR at entry is persisted for the audit (FR-002).
 	entryPrice := quote.Price
 	slPct := aiResp.SuggestedStopLossPct
 	tpPct := aiResp.SuggestedTakeProfitPct
-
-	// Use NATR (Normalized ATR %) from indicator snapshot for more accurate volatility-based SL/TP
+	var atrPrice float64
 	if snap.NATR > 0 {
-		atrBasedSL := snap.NATR * 1.5 // 1.5x ATR for stop loss
-		if atrBasedSL >= s.config.MinStopLossPct && atrBasedSL <= s.config.MaxStopLossPct {
-			slPct = atrBasedSL
-		}
+		atrPrice = snap.NATR * entryPrice / 100.0 // NATR% -> absolute ATR
 	}
 
-	if slPct < s.config.MinStopLossPct || slPct > s.config.MaxStopLossPct {
-		slPct = s.config.MinStopLossPct
-	}
-	if tpPct < s.config.MinTakeProfitPct || tpPct > s.config.MaxTakeProfitPct {
-		tpPct = slPct * s.config.MinRiskRewardRatio
-		if tpPct > s.config.MaxTakeProfitPct {
-			// Keep the R:R gate satisfiable within the TP ceiling by
-			// tightening SL instead of emitting an under-R:R signal.
-			slPct = s.config.MaxTakeProfitPct / s.config.MinRiskRewardRatio
-			if slPct < s.config.MinStopLossPct {
-				slPct = s.config.MinStopLossPct
-			}
-			tpPct = slPct * s.config.MinRiskRewardRatio
-		}
+	profile, profErr := EffectiveProfile(ProfileNameForBucket(bucket))
+	if profErr != nil {
+		return nil, aiResp, fmt.Errorf("risk profile for %s: %w", bucket, profErr)
 	}
 
-	// Safety net: TP never exceeds the configured ceiling here. If SL cannot
-	// shrink enough to hold R:R within bounds, section 5 stretches TP past
-	// the ceiling and the R:R floor wins as the hard gate.
-	if tpPct > s.config.MaxTakeProfitPct {
-		tpPct = s.config.MaxTakeProfitPct
-	}
-
-	var stopLoss, takeProfit float64
-	if dir == DirectionLong {
-		stopLoss = entryPrice * (1.0 - (slPct / 100.0))
-		takeProfit = entryPrice * (1.0 + (tpPct / 100.0))
-	} else {
-		stopLoss = entryPrice * (1.0 + (slPct / 100.0))
-		takeProfit = entryPrice * (1.0 - (tpPct / 100.0))
-	}
-
-	// 5. Validate & Enforce Risk-Reward Ratio dynamically sourced from config
-	rr, err := CalculateRiskRewardRatio(entryPrice, stopLoss, takeProfit, dir)
-	if err != nil || rr < s.config.MinRiskRewardRatio {
-		targetRR := s.config.MinRiskRewardRatio
+	stopLoss, slPctFromATR := CalculateATRStop(entryPrice, 0, 0, atrPrice, dir, profile)
+	slPct = slPctFromATR
+	tp1Price, tp2Price, closeFrac := CalculateStagedTargets(entryPrice, atrPrice, dir, profile)
+	// No measured ATR: stretch TP1 to at least the configured minimum R:R
+	// against the effective stop so the fallback target stays reachable and
+	// the R:R contract holds for legacy snapshots.
+	if atrPrice <= 0 {
 		riskDist := math.Abs(entryPrice - stopLoss)
-		if dir == DirectionLong {
-			takeProfit = entryPrice + (targetRR * riskDist)
-		} else {
-			takeProfit = entryPrice - (targetRR * riskDist)
+		minReward := s.config.MinRiskRewardRatio * riskDist
+		if math.Abs(tp1Price-entryPrice) < minReward {
+			if dir == DirectionLong {
+				tp1Price = entryPrice + minReward
+			} else {
+				tp1Price = entryPrice - minReward
+			}
 		}
-		rr = targetRR
+		if math.Abs(tp2Price-entryPrice) < minReward*1.5 {
+			if dir == DirectionLong {
+				tp2Price = entryPrice + minReward*1.5
+			} else {
+				tp2Price = entryPrice - minReward*1.5
+			}
+		}
 	}
+	tpPct = math.Abs(tp1Price-entryPrice) / entryPrice * 100.0
 
-	// 6. Leverage and Capital Sizing dynamically sourced from config
+	// AI-suggested stop respected only when it widens inside the profile clamp
+	// and beats the structural stop distance (defense in depth, never a floor
+	// override of the ATR model).
+	if aiSl := aiResp.SuggestedStopLossPct; aiSl > slPct && aiSl <= profile.SLMaxPct {
+		slPct = aiSl
+		if dir == DirectionLong {
+			stopLoss = entryPrice * (1.0 - slPct/100.0)
+		} else {
+			stopLoss = entryPrice * (1.0 + slPct/100.0)
+		}
+	}
+	_ = tpPct // TP1 distance implied by the ATR model; kept for audit logging.
+
+	// 5. Leverage: vol-target formula from the profile (FR-006) when a
+	// volatility measurement exists; AI suggestion respected only when it
+	// lowers leverage inside the cap. No measurement -> AI/config leverage.
 	leverage := aiResp.Leverage
-	if leverage < 1 || leverage > s.config.DefaultLeverage {
+	if leverage < 1 {
+		leverage = s.config.DefaultLeverage
+	}
+	if snap.NATR > 0 {
+		volTargetLev := CalculateVolTargetLeverage(snap.NATR*100.0, s.config.DefaultLeverage, profile)
+		if leverage > volTargetLev {
+			leverage = volTargetLev
+		}
+	} else if leverage > s.config.DefaultLeverage {
 		leverage = s.config.DefaultLeverage
 	}
 
-	// Dynamic equity risk per trade sourced from config
-	maxRiskPct := s.config.MaxRiskPerTradePct
+	// Liquidation-buffer invariant (FR-006): stop must sit far enough from the
+	// liquidation price at the chosen leverage, else widen leverage down.
+	if !LiquidationBufferOK(entryPrice, slPct, leverage, dir, profile) {
+		for leverage > 1 {
+			leverage--
+			if LiquidationBufferOK(entryPrice, slPct, leverage, dir, profile) {
+				break
+			}
+		}
+	}
+
+	// 6. Capital sizing: fixed-fractional risk with slippage buffer (FR-007).
+	// Quantity is intentionally discarded: the execution engine derives
+	// position size from the final clamped margin (see OpenPositionFromSignal),
+	// so the persisted allocation and the live position stay consistent.
+	maxRiskPct := profile.RiskPerTradePct
+	if maxRiskPct <= 0 {
+		maxRiskPct = s.config.MaxRiskPerTradePct
+	}
 	if maxRiskPct <= 0 {
 		maxRiskPct = 0.015
 	}
 	// Quantity is intentionally discarded: the execution engine derives
 	// position size from the final clamped margin (see OpenPositionFromSignal),
 	// so the persisted allocation and the live position stay consistent.
-	_, marginRequired, _, err := CalculatePositionSizing(
+	_, marginRequired, _, err := CalculatePositionSizingWithSlippage(
 		totalEquity,
 		maxRiskPct,
 		availableAlphaCapital,
@@ -350,6 +386,22 @@ func (s *SignalService) EvaluateMarketSignal(
 		OBI:           snap.OBI,
 		Divergence:    snap.Divergence,
 	})
+	// Risk/reward from the staged structure. The ATR-derived TP1 keeps its
+	// measured reachability, but the configured minimum R:R still wins as the
+	// hard gate when the final stop distance makes the measured target too
+	// tight (e.g. no measured ATR + a wide AI stop): TP1 stretches, RR floor
+	// holds (FR-003 contract, plan G2).
+	rr, rrErr := CalculateRiskRewardRatio(entryPrice, stopLoss, tp1Price, dir)
+	if rrErr != nil || rr < s.config.MinRiskRewardRatio {
+		riskDist := math.Abs(entryPrice - stopLoss)
+		if dir == DirectionLong {
+			tp1Price = entryPrice + s.config.MinRiskRewardRatio*riskDist
+		} else {
+			tp1Price = entryPrice - s.config.MinRiskRewardRatio*riskDist
+		}
+		rr = s.config.MinRiskRewardRatio
+	}
+
 	sig := &db.FuturesTradeSignal{
 		Symbol:              symbol,
 		Direction:           string(dir),
@@ -359,7 +411,8 @@ func (s *SignalService) EvaluateMarketSignal(
 		CatalystSentiment:   sentiment,
 		EntryPrice:          entryPrice,
 		StopLoss:            stopLoss,
-		TakeProfit1:         takeProfit,
+		TakeProfit1:         tp1Price,
+		TakeProfit2:         &tp2Price,
 		Leverage:            leverage,
 		RiskRewardRatio:     rr,
 		AllocatedCapitalUSD: allocatedCapitalUSD,
@@ -367,6 +420,10 @@ func (s *SignalService) EvaluateMarketSignal(
 		TelegramDispatched:  false,
 		TelegramResolved:    false,
 		IndicatorSnapshot:   snapRecord,
+		// Spec 012 US2 audit columns (FR-002/004): volatility measurement and
+		// staged-exit fraction at entry, for the UI and post-trade review.
+		ATRAtEntry:       &atrPrice,
+		TP1CloseFraction: &closeFrac,
 	}
 
 	// Entry gate (spec 012 US1 / research R1): veto candidates that fail

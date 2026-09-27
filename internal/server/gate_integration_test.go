@@ -57,6 +57,10 @@ func (r *recordingStore) MarkSignalDispatched(context.Context, int64) error { re
 
 func (r *recordingStore) MarkSignalResolved(context.Context, int64) error { return nil }
 
+func (r *recordingStore) UpdateSignalDecay(context.Context, int64, string) error { return nil }
+
+func (r *recordingStore) UpdateSignalStop(context.Context, int64, float64) error { return nil }
+
 func (r *recordingStore) InsertEntryFilterLog(_ context.Context, symbol, _ string, _ *int64, rule string, detail json.RawMessage) error {
 	r.filterLogs = append(r.filterLogs, struct {
 		symbol string
