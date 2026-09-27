@@ -49,6 +49,7 @@ type Server struct {
 	marketData        *trader.LiveMarketData
 	candleDownloader  market.HistoricalKlineProvider
 	calendar          *market.EconomicCalendar
+	newsClassifier    market.NewsClassifier // spec-013: core headline classifier (explicit-error)
 }
 
 // NewServer configures routes and dependency injection.
@@ -117,6 +118,7 @@ func NewServer(
 		allocator:         allocator,
 		execEngine:        execEngine,
 		newsCrawler:       crawler,
+		newsClassifier:    coreNewsClassifier(aiClient),
 		catalystClusterer: market.NewClusterer(15 * time.Minute),
 		screener:          screener,
 		telegramBot:       tgBot,
@@ -336,6 +338,7 @@ func (s *Server) setupRoutes() {
 
 	// Real-Time Server-Sent Events (SSE)
 	r.Get("/api/v1/events", s.broadcaster.ServeHTTP)
+	r.Get("/api/admin/shadow/report", s.handleShadowReport)
 
 	// Market Assets (Enriched with latest live cached ticker prices)
 	r.Get("/api/v1/assets", func(w http.ResponseWriter, r *http.Request) {
@@ -693,7 +696,12 @@ func (s *Server) setupRoutes() {
 
 		var sentiment market.NewsSentimentReport
 		if s.newsCrawler != nil {
-			sentiment = s.newsCrawler.GetAggregateSentiment()
+			rep, err := s.newsCrawler.GetAggregateSentiment()
+			if err != nil {
+				http.Error(w, "component=news-classifier: "+err.Error(), http.StatusBadGateway)
+				return
+			}
+			sentiment = rep
 		}
 
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -812,5 +820,31 @@ func (s *Server) setupRoutes() {
 			})
 			break
 		}
+	}
+}
+
+// coreNewsClassifier binds headline classification to the decision core
+// (9Router structured output paired with Jev shadow). Explicit errors only.
+func coreNewsClassifier(c *ai.Client) market.NewsClassifier {
+	return func(headlines []string) (market.NewsSentimentReport, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		res, err := c.ClassifyNews(ctx, "", headlines)
+		if err != nil {
+			return market.NewsSentimentReport{}, err
+		}
+		score := 0.0
+		switch res.Label {
+		case "BULLISH":
+			score = res.Confidence
+		case "BEARISH":
+			score = -res.Confidence
+		}
+		return market.NewsSentimentReport{
+			Score:         score,
+			Polarity:      market.SentimentPolarity(res.Label),
+			HeadlineCount: len(headlines),
+			KeyPhrases:    res.Evidence,
+		}, nil
 	}
 }

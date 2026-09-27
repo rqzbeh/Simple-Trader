@@ -212,8 +212,7 @@ Analyze catalyst priority first. If no high-conviction news catalyst exists, out
 // Analyze requests trade analysis from the OpenAI-compatible engine with heuristic fallback.
 func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (*DecisionResponse, error) {
 	if c.cfg.BaseURL == "" || c.cfg.APIKey == "" {
-		log.Printf("[INFO] AI client unconfigured (missing BaseURL or APIKey). Using quantitative fallback heuristic.")
-		return c.fallbackHeuristic(req), nil
+		return nil, WrapDecision("llm", req.Symbol, ErrLLMClassify, "AI client unconfigured (missing BaseURL or APIKey)")
 	}
 
 	url := fmt.Sprintf("%s/chat/completions", strings.TrimRight(c.cfg.BaseURL, "/"))
@@ -236,34 +235,29 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (*DecisionRes
 
 	data, err := json.Marshal(body)
 	if err != nil {
-		log.Printf("[WARN] AI request marshal error: %v. Using fallback heuristic.", err)
-		return c.fallbackHeuristic(req), nil
+		return nil, WrapDecision("llm", req.Symbol, fmt.Errorf("%w: marshal request: %v", ErrLLMClassify, err), "request marshal failed")
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
 	if err != nil {
-		log.Printf("[WARN] AI HTTP request creation error: %v. Using fallback heuristic.", err)
-		return c.fallbackHeuristic(req), nil
+		return nil, WrapDecision("llm", req.Symbol, fmt.Errorf("%w: create request: %v", ErrLLMClassify, err), "http request creation failed")
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.cfg.APIKey))
 
 	resp, err := c.httpClient.Do(httpReq)
 	if err != nil {
-		log.Printf("[WARN] AI gateway network failure (%s): %v. Using fallback heuristic.", url, err)
-		return c.fallbackHeuristic(req), nil
+		return nil, WrapDecision("llm", req.Symbol, fmt.Errorf("%w: gateway network failure %s: %v", ErrLLMClassify, url, err), "network error")
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("[WARN] AI response read failure: %v. Using fallback heuristic.", err)
-		return c.fallbackHeuristic(req), nil
+		return nil, WrapDecision("llm", req.Symbol, fmt.Errorf("%w: read response: %v", ErrLLMClassify, err), "response read failed")
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("[WARN] AI gateway HTTP %d from %s: %s. Using fallback heuristic.", resp.StatusCode, url, string(respBody))
-		return c.fallbackHeuristic(req), nil
+		return nil, WrapDecision("llm", req.Symbol, ErrLLMClassify, fmt.Sprintf("http status %d from %s", resp.StatusCode, url))
 	}
 
 	var content string
@@ -297,12 +291,10 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (*DecisionRes
 	} else {
 		var chatResp openAIChatResponse
 		if err := json.Unmarshal(respBody, &chatResp); err != nil {
-			log.Printf("[WARN] AI response JSON unmarshal error: %v. Body: %s. Using fallback.", err, string(respBody))
-			return c.fallbackHeuristic(req), nil
+			return nil, WrapDecision("llm", req.Symbol, fmt.Errorf("%w: unmarshal response: %v", ErrLLMClassify, err), "malformed JSON")
 		}
 		if len(chatResp.Choices) == 0 {
-			log.Printf("[WARN] AI response returned 0 choices. Using fallback.")
-			return c.fallbackHeuristic(req), nil
+			return nil, WrapDecision("llm", req.Symbol, ErrLLMClassify, "response has 0 choices")
 		}
 		content = chatResp.Choices[0].Message.Content
 	}
@@ -323,8 +315,7 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (*DecisionRes
 
 	var decision DecisionResponse
 	if err := json.Unmarshal([]byte(content), &decision); err != nil {
-		log.Printf("[WARN] Failed to parse AI decision JSON: %v. Content: %s. Using fallback.", err, content)
-		return c.fallbackHeuristic(req), nil
+		return nil, WrapDecision("llm", req.Symbol, fmt.Errorf("%w: parse decision: %v", ErrLLMClassify, err), "decision JSON invalid")
 	}
 
 	// Validate decision output bounds
@@ -363,82 +354,3 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (*DecisionRes
 	return &decision, nil
 }
 
-// fallbackHeuristic provides deterministic fallback logic when LLM is unavailable.
-// Enforces news catalyst first: if no headlines exist, outputs HOLD.
-func (c *Client) fallbackHeuristic(req DecisionRequest) *DecisionResponse {
-	snap := req.IndicatorSnap
-	decision := "HOLD"
-	confidence := 0.5
-	catalyst := ""
-	reasoning := "No high-impact breaking news catalyst detected. Preserving capital in HOLD state."
-	lev := 8
-	alloc := 0.0
-
-	// Require at least one non-empty news headline as a catalyst
-	hasCatalyst := len(req.NewsHeadlines) > 0 && strings.TrimSpace(req.NewsHeadlines[0]) != ""
-	if hasCatalyst {
-		catalyst = req.NewsHeadlines[0]
-		lowerHeadline := strings.ToLower(catalyst)
-
-		isBullish := strings.Contains(lowerHeadline, "surge") ||
-			strings.Contains(lowerHeadline, "inflow") ||
-			strings.Contains(lowerHeadline, "rally") ||
-			strings.Contains(lowerHeadline, "accumulat") ||
-			strings.Contains(lowerHeadline, "bull") ||
-			strings.Contains(lowerHeadline, "approved") ||
-			strings.Contains(lowerHeadline, "record") ||
-			strings.Contains(lowerHeadline, "breakout")
-
-		isBearish := strings.Contains(lowerHeadline, "dump") ||
-			strings.Contains(lowerHeadline, "ban") ||
-			strings.Contains(lowerHeadline, "crash") ||
-			strings.Contains(lowerHeadline, "lawsuit") ||
-			strings.Contains(lowerHeadline, "hack") ||
-			strings.Contains(lowerHeadline, "bear") ||
-			strings.Contains(lowerHeadline, "liquidation") ||
-			strings.Contains(lowerHeadline, "investigation")
-
-		if isBullish {
-			decision = "BUY"
-			confidence = 0.80
-			reasoning = fmt.Sprintf("Bullish catalyst (%s) confirmed by technical momentum.", catalyst)
-			lev = 8
-			alloc = 1.5
-		} else if isBearish {
-			decision = "SELL"
-			confidence = 0.80
-			reasoning = fmt.Sprintf("Bearish catalyst (%s) confirmed by downward technical momentum.", catalyst)
-			lev = 8
-			alloc = 1.5
-		} else {
-			decision = "HOLD"
-			confidence = 0.50
-			reasoning = fmt.Sprintf("Neutral news headline detected (%s). Edge ambiguous, holding.", catalyst)
-		}
-	}
-
-	slPct := 1.0
-	if c.cfg.MinStopLossPct > 0 {
-		slPct = c.cfg.MinStopLossPct
-	}
-
-	tpPct := 3.0
-	if c.cfg.MinRiskRewardRatio > 0 {
-		tpPct = slPct * c.cfg.MinRiskRewardRatio
-	} else if c.cfg.MinTakeProfitPct > 0 {
-		tpPct = c.cfg.MinTakeProfitPct
-	}
-
-	return &DecisionResponse{
-		Decision:                decision,
-		Confidence:              confidence,
-		Reasoning:               reasoning,
-		Catalyst:                catalyst,
-		Leverage:                lev,
-		AllocationPct:           alloc,
-		SuggestedStopLossPct:    slPct,
-		SuggestedTakeProfitPct:  tpPct,
-		Regime:                  snap.SuperTrend,
-		EstimatedWinProbability: confidence * 0.9,
-	}
-}

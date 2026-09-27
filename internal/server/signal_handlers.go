@@ -287,8 +287,15 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 				srcOf[a.Title] = a.Source
 			}
 		}
+		classify := s.newsClassifier
+		if classify == nil {
+			classify = market.DefaultClassifier
+		}
 		for _, h := range headlines {
-			rep := market.AnalyzeNewsSentiment([]string{h})
+			rep, err := classify([]string{h})
+			if err != nil {
+				return nil, "", fmt.Errorf("component=news-classifier cycle=%s: %w", h, err)
+			}
 			s.catalystClusterer.Ingest(srcOf[h], h, rep.Score, time.Now())
 		}
 

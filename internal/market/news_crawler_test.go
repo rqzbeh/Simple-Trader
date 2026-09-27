@@ -1,6 +1,7 @@
 package market
 
 import (
+	"strings"
 	"context"
 	"testing"
 	"time"
@@ -8,10 +9,34 @@ import (
 
 func TestNewsCrawlerDeduplicationAndSentiment(t *testing.T) {
 	crawler := NewNewsCrawler(NewsFeedConfig{}, nil, nil)
+	crawler.classifier = func(hs []string) (NewsSentimentReport, error) {
+		pol, score := PolarityNeutral, 0.0
+		if len(hs) > 0 {
+			low := strings.ToLower(hs[0])
+			for _, b := range []string{"crash", "selloff", "dump", "lawsuit", "sell"} {
+				if strings.Contains(low, b) {
+					pol, score = PolarityBearish, -0.6
+					break
+				}
+			}
+			if pol == PolarityNeutral {
+				for _, b := range []string{"buy", "inflow", "accumul", "legislation", "backing", "rate cut"} {
+					if strings.Contains(low, b) {
+						pol, score = PolarityBullish, 0.6
+						break
+					}
+				}
+			}
+		}
+		return NewsSentimentReport{Score: score, Polarity: pol, HeadlineCount: len(hs)}, nil
+	}
 	ctx := context.Background()
 
 	// Ingest first headline
-	art1, ok := crawler.IngestHeadline(ctx, "YahooFinance", "Federal Reserve announces unexpected interest rate cut", "https://example.com/1", time.Now())
+	art1, ok, err := crawler.IngestHeadline(ctx, "YahooFinance", "Federal Reserve announces unexpected interest rate cut", "https://example.com/1", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok || art1 == nil {
 		t.Fatalf("expected first headline to be successfully ingested")
 	}
@@ -21,13 +46,19 @@ func TestNewsCrawlerDeduplicationAndSentiment(t *testing.T) {
 	}
 
 	// Attempt to ingest duplicate headline (with minor capitalization/spacing difference)
-	_, ok = crawler.IngestHeadline(ctx, "YahooFinance", "   Federal Reserve Announces Unexpected Interest Rate Cut!  ", "https://example.com/1-dup", time.Now())
+	_, ok, err = crawler.IngestHeadline(ctx, "YahooFinance", "   Federal Reserve Announces Unexpected Interest Rate Cut!  ", "https://example.com/1-dup", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if ok {
 		t.Fatalf("expected duplicate headline to be rejected by SHA-256 deduplication")
 	}
 
 	// Ingest bearish headline
-	art2, ok := crawler.IngestHeadline(ctx, "CryptoPanic", "SEC files lawsuit against exchange causing crypto crash and selloff", "https://example.com/2", time.Now())
+	art2, ok, err := crawler.IngestHeadline(ctx, "CryptoPanic", "SEC files lawsuit against exchange causing crypto crash and selloff", "https://example.com/2", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok || art2 == nil {
 		t.Fatalf("expected second headline to be ingested")
 	}
@@ -37,7 +68,10 @@ func TestNewsCrawlerDeduplicationAndSentiment(t *testing.T) {
 	}
 
 	// Ingest Whale Alert accumulation headline
-	art3, ok := crawler.IngestHeadline(ctx, "WhaleAlerts", "Whale alert: massive transfer to cold wallet spotted on chain with billionaire buy", "https://example.com/3", time.Now())
+	art3, ok, err := crawler.IngestHeadline(ctx, "WhaleAlerts", "Whale alert: massive transfer to cold wallet spotted on chain with billionaire buy", "https://example.com/3", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok || art3 == nil {
 		t.Fatalf("expected whale headline to be ingested")
 	}
@@ -46,7 +80,10 @@ func TestNewsCrawlerDeduplicationAndSentiment(t *testing.T) {
 	}
 
 	// Ingest Politician insider trade headline
-	art4, ok := crawler.IngestHeadline(ctx, "PoliticianTrades", "Congressional disclosure dump reveals politician sell and insider dump before regulatory review", "https://example.com/4", time.Now())
+	art4, ok, err := crawler.IngestHeadline(ctx, "PoliticianTrades", "Congressional disclosure dump reveals politician sell and insider dump before regulatory review", "https://example.com/4", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok || art4 == nil {
 		t.Fatalf("expected politician trade headline to be ingested")
 	}
@@ -55,7 +92,10 @@ func TestNewsCrawlerDeduplicationAndSentiment(t *testing.T) {
 	}
 
 	// Ingest Trump Crypto Ventures headline
-	art5, ok := crawler.IngestHeadline(ctx, "TrumpCryptoVentures", "Trump crypto venture World Liberty Financial announces pro-crypto legislation backing", "https://example.com/5", time.Now())
+	art5, ok, err := crawler.IngestHeadline(ctx, "TrumpCryptoVentures", "Trump crypto venture World Liberty Financial announces pro-crypto legislation backing", "https://example.com/5", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !ok || art5 == nil {
 		t.Fatalf("expected trump crypto headline to be ingested")
 	}
@@ -70,7 +110,10 @@ func TestNewsCrawlerDeduplicationAndSentiment(t *testing.T) {
 	}
 
 	// Sentiment report
-	report := crawler.GetAggregateSentiment()
+	report, err := crawler.GetAggregateSentiment()
+	if err != nil {
+		t.Fatal(err)
+	}
 	if report.HeadlineCount != 5 {
 		t.Fatalf("expected 5 headlines in aggregate report, got %d", report.HeadlineCount)
 	}

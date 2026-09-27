@@ -1,12 +1,15 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 )
 
 // Config holds all environment settings for the Simple-Trader platform.
 type Config struct {
+	TypesafeAPIKey           string
+	RoutingConfidenceThreshold string // must parse >0 — startup error if missing (FR-016)
 	Port                string
 	DatabaseURL         string
 	RedisURL            string
@@ -116,4 +119,17 @@ func Load() (*Config, error) {
 		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:      getEnv("TELEGRAM_CHAT_ID", ""),
 	}, nil
+}
+
+// RoutingThreshold parses ROUTING_CONFIDENCE_THRESHOLD. Missing/invalid is a
+// startup error — no silent default (spec-013 FR-016).
+func (c *Config) RoutingThreshold() (float64, error) {
+	if c.RoutingConfidenceThreshold == "" {
+		return 0, fmt.Errorf("config: ROUTING_CONFIDENCE_THRESHOLD missing (no default allowed)")
+	}
+	v, err := strconv.ParseFloat(c.RoutingConfidenceThreshold, 64)
+	if err != nil || v <= 0 || v > 1 {
+		return 0, fmt.Errorf("config: ROUTING_CONFIDENCE_THRESHOLD invalid: %q", c.RoutingConfidenceThreshold)
+	}
+	return v, nil
 }
