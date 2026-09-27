@@ -215,7 +215,6 @@ web/.cache/
 .specify/
 .codebase-memory/
 docs/superpowers/
-specs/
 
 .env.*
 .venv/
