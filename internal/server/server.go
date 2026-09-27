@@ -307,7 +307,7 @@ func (s *Server) setupRoutes() {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"status":   "healthy",
-			"version":  "2.0.0-pure-go",
+			"version":  "3.0.0-decision-core",
 			"model_id": s.cfg.AIModelID,
 		})
 	})
