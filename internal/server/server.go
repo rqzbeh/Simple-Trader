@@ -29,25 +29,26 @@ import (
 
 // Server encapsulates HTTP routes, middlewares, and services.
 type Server struct {
-	cfg              *config.Config
-	dbStore          *db.Store
-	redisClient      *cache.Client
-	aiClient         *ai.Client
-	allocator        *trader.Allocator
-	execEngine       *trader.ExecutionEngine
-	newsCrawler      *market.NewsCrawler
-	screener         *market.DynamicCryptoScreener
-	telegramBot      *telegram.BotClient
-	authenticator    *auth.Authenticator
-	broadcaster      *SSEBroadcaster
-	sampler          *ai.ThompsonSampler
-	signalSlotMu     sync.Mutex // serialises the MAX_CONCURRENT_SIGNALS check
-	gpuTrainer       *ai.GPUTrainer
-	realDataPipeline *ai.RealDataPipeline
-	router           *chi.Mux
-	marketData       *trader.LiveMarketData
-	candleDownloader market.HistoricalKlineProvider
-	calendar         *market.EconomicCalendar
+	cfg               *config.Config
+	dbStore           *db.Store
+	redisClient       *cache.Client
+	aiClient          *ai.Client
+	allocator         *trader.Allocator
+	execEngine        *trader.ExecutionEngine
+	newsCrawler       *market.NewsCrawler
+	catalystClusterer *market.Clusterer // spec 012 US3: syndicated-headline clustering (FR-008)
+	screener          *market.DynamicCryptoScreener
+	telegramBot       *telegram.BotClient
+	authenticator     *auth.Authenticator
+	broadcaster       *SSEBroadcaster
+	sampler           *ai.ThompsonSampler
+	signalSlotMu      sync.Mutex // serialises the MAX_CONCURRENT_SIGNALS check
+	gpuTrainer        *ai.GPUTrainer
+	realDataPipeline  *ai.RealDataPipeline
+	router            *chi.Mux
+	marketData        *trader.LiveMarketData
+	candleDownloader  market.HistoricalKlineProvider
+	calendar          *market.EconomicCalendar
 }
 
 // NewServer configures routes and dependency injection.
@@ -109,24 +110,25 @@ func NewServer(
 	}()
 
 	s := &Server{
-		cfg:              cfg,
-		dbStore:          dbStore,
-		redisClient:      redisClient,
-		aiClient:         aiClient,
-		allocator:        allocator,
-		execEngine:       execEngine,
-		newsCrawler:      crawler,
-		screener:         screener,
-		telegramBot:      tgBot,
-		authenticator:    authenticator,
-		sampler:          sampler,
-		gpuTrainer:       gpuTrainer,
-		realDataPipeline: realDataPipeline,
-		broadcaster:      NewSSEBroadcaster(),
-		router:           chi.NewRouter(),
-		marketData:       marketData,
-		candleDownloader: candleDownloader,
-		calendar:         calendar,
+		cfg:               cfg,
+		dbStore:           dbStore,
+		redisClient:       redisClient,
+		aiClient:          aiClient,
+		allocator:         allocator,
+		execEngine:        execEngine,
+		newsCrawler:       crawler,
+		catalystClusterer: market.NewClusterer(15 * time.Minute),
+		screener:          screener,
+		telegramBot:       tgBot,
+		authenticator:     authenticator,
+		sampler:           sampler,
+		gpuTrainer:        gpuTrainer,
+		realDataPipeline:  realDataPipeline,
+		broadcaster:       NewSSEBroadcaster(),
+		router:            chi.NewRouter(),
+		marketData:        marketData,
+		candleDownloader:  candleDownloader,
+		calendar:          calendar,
 	}
 
 	// Register initial SSE hydration provider so newly connected dashboards receive all cached live asset prices instantly
@@ -767,6 +769,7 @@ func (s *Server) setupRoutes() {
 	r.Get("/api/v1/signals/summary", s.SignalSummaryHandler)
 	r.Get("/api/v1/signals/filters", s.ListEntryFilterLogsHandler)
 	r.Get("/api/v1/risk-profiles", s.ListRiskProfilesHandler)
+	r.Get("/api/v1/commodities/status", s.ListCommoditiesStatusHandler) // US4 T043
 
 	// Dynamic Macroeconomic Regime & 3-Tier Allocation (US2, FR-004)
 	r.Get("/api/v1/macro/regime", s.GetMacroRegimeHandler)

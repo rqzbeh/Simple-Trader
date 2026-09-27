@@ -268,6 +268,26 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
                     <p className="text-slate-700 dark:text-slate-200 italic font-medium leading-tight">
                       "{sig.catalyst_headline}"
                     </p>
+                    {/* US3 T037: syndicated-coverage + freshness badge */}
+                    {(sig.catalyst_event_story_count || sig.catalyst_event_at) && (
+                      <div className="flex flex-wrap items-center gap-1.5 font-mono text-[10px] text-amber-600 dark:text-amber-400">
+                        {sig.catalyst_event_story_count ? (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/20">
+                            story x{sig.catalyst_event_story_count}
+                          </span>
+                        ) : null}
+                        {sig.catalyst_event_at ? (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/10">
+                            {Math.max(0, Math.round((Date.now() - new Date(sig.catalyst_event_at).getTime()) / 60000))}m ago
+                          </span>
+                        ) : null}
+                        {Array.isArray(sig.catalyst_event_sources) && sig.catalyst_event_sources.length > 1 ? (
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/10">
+                            {sig.catalyst_event_sources.length} sources
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
                 )}
 
