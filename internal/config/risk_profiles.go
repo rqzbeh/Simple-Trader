@@ -51,6 +51,13 @@ type BlackoutWindow struct {
 }
 
 // DefaultCryptoProfile: 1h intraday futures (research R2/R3/R4).
+// SL 1.5x ATR + TP1 0.75x ATR (TP1 = +0.5R, the decay checkpoint level):
+// the 2026-09-27 replay over trailing BTCUSDT 5m windows measured TP1 hit
+// 31.7% at tp1=1.25x (close-based triggers, BE-protect at 30m) — below the
+// SC-002 40% floor because the decay-protect caps half the windows at BE
+// before TP1. Placing TP1 AT the +0.5R checkpoint level keeps the target
+// inside every protected trade's remaining travel. Constitution VIII:
+// replay evidence drives the parameter.
 func DefaultCryptoProfile() RiskProfile {
 	return RiskProfile{
 		Name:                 "CRYPTO",
@@ -58,12 +65,12 @@ func DefaultCryptoProfile() RiskProfile {
 		HorizonMax:           60,
 		DecayBreakevenAtMin:  30,
 		DecayFlatAtMin:       40,
-		SLAtrMult:            2.0,
+		SLAtrMult:            1.5,
 		SLSwingOffset:        0.25,
 		SLMinPct:             0.6,
 		SLMaxPct:             2.5,
-		TP1AtrMult:           1.0,
-		TP2AtrMult:           1.8,
+		TP1AtrMult:           0.75,
+		TP2AtrMult:           2.3,
 		TP1CloseFrac:         0.6,
 		TargetHourlyVolPct:   3.5,
 		LiqBufferMin:         4.0,
@@ -88,7 +95,7 @@ func DefaultCommodityProfile() RiskProfile {
 		SLMinPct:             0.6,
 		SLMaxPct:             4.0,
 		TP1AtrMult:           1.2,
-		TP2AtrMult:           2.2,
+		TP2AtrMult:           2.3,
 		TP1CloseFrac:         0.6,
 		TargetHourlyVolPct:   1.2,
 		LiqBufferMin:         4.0,

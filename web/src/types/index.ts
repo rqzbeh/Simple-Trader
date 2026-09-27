@@ -251,6 +251,30 @@ export interface FuturesTradeSignal {
   realized_roi_pct?: number;
   created_at: string;
   closed_at?: string;
+  // Spec 012 US2 audit fields (staged exits + decay)
+  atr_at_entry?: number;
+  tp1_close_fraction?: number;
+  decay_state?: 'NONE' | 'BREAKEVEN' | 'CLOSED';
+  profile?: string;
+  recomputed?: boolean;
+  indicator_snapshot?: Record<string, unknown>;
+}
+
+// Adaptive price precision mirroring the backend FormatPrice (spec 012 US6):
+// micro-cap prices like 0.000002334544 must stay distinct in the UI.
+export function formatSignalPrice(v: number | undefined | null): string {
+  if (v == null || !isFinite(v)) return '--';
+  if (v === 0) return '0.00';
+  if (v >= 100) return v.toFixed(2);
+  if (v >= 1) return v.toFixed(4);
+  const prec = Math.min(18, Math.ceil(-Math.log10(v)) + 6);
+  let s = v.toFixed(prec);
+  const dot = s.indexOf('.');
+  if (dot >= 0 && s.length > dot + 3) {
+    const trimmed = s.replace(/0+$/, '');
+    if (trimmed.length > dot + 3) s = trimmed;
+  }
+  return s;
 }
 
 // Dynamic Macroeconomic Regime (US2)

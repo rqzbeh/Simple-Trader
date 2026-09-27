@@ -12,6 +12,13 @@ body {
   overflow-x: hidden;
 }
 
+/* Mobile guard: no element may push the document wider than the viewport.
+   Blocks the 19px header/modal overflows measured on 375px phones. */
+html {
+  overflow-x: hidden;
+  max-width: 100vw;
+}
+
 /* Entry animations (tailwindcss-animate is not installed; these keyframes
    back the animate-in / slide-in-from-* / fade-in utility classes) */
 @keyframes enter-fade-in {
