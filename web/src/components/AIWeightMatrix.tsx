@@ -200,10 +200,10 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
               <Cpu className="w-5 h-5 text-sky-500" />
               <div>
                 <h3 className="font-bold text-sm tracking-tight text-slate-800 dark:text-slate-200">
-                  Autonomous Indicator Weight Heatmap
+                  Indicator Historical Success Stats (Context Only)
                 </h3>
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                  Calibrated via Post-Trade Regret Minimization ([0.20 - 3.00x])
+                  Feeds Decision Core — no voting, no veto · Thompson posteriors as data
                 </span>
               </div>
             </div>
@@ -311,7 +311,7 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
                 <span>AI Gateway & Fine-Tuning</span>
               </h3>
               <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">
-                Unified /v1/chat/completions Endpoint
+                Jev + 9Router Decision Core · stats are context, not decisions
               </span>
             </div>
             {envConfigLoaded && (
