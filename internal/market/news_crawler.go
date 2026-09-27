@@ -71,6 +71,13 @@ type NewsCrawler struct {
 	classifier   NewsClassifier
 }
 
+// SetClassifier injects the core-backed classifier (spec-013, explicit-error).
+func (c *NewsCrawler) SetClassifier(fn NewsClassifier) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.classifier = fn
+}
+
 // NewNewsCrawler creates a news crawler instance.
 func NewNewsCrawler(cfg NewsFeedConfig, redisClient *cache.Client, dbStore *db.Store) *NewsCrawler {
 	if cfg.PollInterval <= 0 {

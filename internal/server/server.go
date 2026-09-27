@@ -62,6 +62,8 @@ func NewServer(
 	execEngine *trader.ExecutionEngine,
 ) *Server {
 	crawler := market.NewNewsCrawler(market.DefaultNewsFeedConfig(), redisClient, dbStore)
+	coreClassify := coreNewsClassifier(aiClient)
+	crawler.SetClassifier(coreClassify)
 	binanceFetcher := market.NewBinanceFetcher()
 	screener := market.NewDynamicCryptoScreener(market.DefaultScreenerConfig(), binanceFetcher, redisClient, dbStore)
 
@@ -118,7 +120,7 @@ func NewServer(
 		allocator:         allocator,
 		execEngine:        execEngine,
 		newsCrawler:       crawler,
-		newsClassifier:    coreNewsClassifier(aiClient),
+		newsClassifier:    coreClassify,
 		catalystClusterer: market.NewClusterer(15 * time.Minute),
 		screener:          screener,
 		telegramBot:       tgBot,
