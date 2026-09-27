@@ -53,6 +53,8 @@ services:
       DATABASE_URL: "postgres://${POSTGRES_USER:-trader}:${POSTGRES_PASSWORD:-REDACTED_DB_PASSWORD}@postgres:5432/${POSTGRES_DB:-simple_trader}?sslmode=disable"
       REDIS_URL: "redis://redis:6379/0"
       AI_BASE_URL: ${AI_BASE_URL:-https://api.openai.com/v1}
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      ROUTING_CONFIDENCE_THRESHOLD: ${ROUTING_CONFIDENCE_THRESHOLD:-}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_MODEL_ID: ${AI_MODEL_ID:-}
       AI_TEMPERATURE: ${AI_TEMPERATURE:-0.2}
