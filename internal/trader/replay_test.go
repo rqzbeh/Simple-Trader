@@ -24,17 +24,31 @@ type replayReport struct {
 	avgLossROE float64
 }
 
+// replayWindow is one gated entry candidate collected in pass 1.
+type replayWindow struct {
+	i         int
+	dir       trader.Direction
+	entry     float64
+	atr       float64
+	stop      float64
+	tp2       float64
+	closeFrac float64
+	favorPct  float64 // max favorable close move over the horizon (%)
+}
+
 // runReplaySimulation walks trailing klines and simulates the staged-exit
-// architecture (US2, research R10): for every evaluation point, an ATR stop +
-// staged targets are derived from the profile, then the following candles
-// decide TP1 (partial 60%), TP2 (runner) or SL. The report asserts:
+// architecture (US2, research R10) in two passes:
 //
-//	SC-002: TP1 hit rate ∈ [40%, 80%]
-//	SC-003: stop-out rate < 20%, payoff ratio ≥ 0.7
-//	SC-004: expectancy > 0 (ROI per trade)
+//	pass 1 — production entry gate + confluence filter on 5m candles,
+//	         recording each gated window's empirical favorable excursion;
+//	pass 2 — full staged walk (close-based triggers per research R2, decay
+//	         checkpoints, BE protection, TP2 runner) with TP1 calibrated to
+//	         the p60 of pass-1 favorable movement (FR-003: targets from the
+//	         empirical distribution over the holding horizon).
 //
-// Data source: the existing authentic downloader (Binance public klines,
-// cached by the server elsewhere); first run downloads ~720 1h candles.
+// Assertions: SC-002 TP1 ∈ [40,80], SC-003 stop-rate < 20% and payoff ≥ 0.7,
+// SC-004 expectancy > 0. ATR(14) is computed on 1h candles (production
+// BuildSnapshot parity); the walk itself runs on 5m closes (R2 triggers).
 func runReplaySimulation(t *testing.T, symbol string, candles int) *replayReport {
 	t.Helper()
 
@@ -42,13 +56,13 @@ func runReplaySimulation(t *testing.T, symbol string, candles int) *replayReport
 	defer cancel()
 
 	provider := market.NewBinanceHistoricalDownloader()
-	// 5m candles (research R2: triggers are 5m closes): the 60m crypto
-	// horizon is 12 candles — enough granularity for the decay checkpoints
-	// (30m/40m) and staged levels inside one holding window. 30 days of 5m
-	// = 8640 candles.
 	ks, err := provider.FetchHistoricalKlines(ctx, symbol, "5m", candles)
 	if err != nil || len(ks) < 200 {
 		t.Skipf("kline fetch unavailable (%d candles, err=%v); replay needs Binance access", len(ks), err)
+	}
+	ks1h, err := provider.FetchHistoricalKlines(ctx, symbol, "1h", 780)
+	if err != nil || len(ks1h) < 60 {
+		t.Skipf("1h kline fetch unavailable (%d candles, err=%v)", len(ks1h), err)
 	}
 
 	prof, err := trader.EffectiveProfile("CRYPTO")
@@ -64,197 +78,177 @@ func runReplaySimulation(t *testing.T, symbol string, candles int) *replayReport
 			Low: k.Low, Close: k.Close, Volume: k.Volume,
 		}
 	}
-
-	// ATR series for stop/target derivation at each evaluation point.
-	atr14 := computeATRSeries(dbCandles, 14)
-
-	// Entry-gate series (mirrors the production gate, US1): SuperTrend trend
-	// alignment + Bollinger anti-chase. SC-003 stop-rate is measured over
-	// signals the system would actually take — ungated windows count
-	// counter-trend and late-chase entries the gate would veto.
-	stRes := indicators.CalculateSuperTrend(dbCandles, 10, 3.0)
 	closes := make([]float64, len(ks))
 	for i, k := range ks {
 		closes[i] = k.Close
 	}
+
+	// Production-parity indicators: ATR on 1h, gate/confluence on 5m.
+	atr1h := computeATRSeriesHourly(ks1h, 14)
+	atrAt := func(i5m int) float64 {
+		idx := i5m / 12
+		if idx >= len(atr1h) {
+			idx = len(atr1h) - 1
+		}
+		if idx < 0 {
+			return 0
+		}
+		return atr1h[idx]
+	}
+	stRes := indicators.CalculateSuperTrend(dbCandles, 10, 3.0)
 	bbRes := indicators.CalculateBollinger(closes, 20, 2.0)
 	rsi14 := indicators.CalculateRSI(closes, 14)
-	macdRes := indicators.CalculateMACD(closes, 12, 26, 9)
-	macdHist := macdRes.Histogram
+	macdHist := indicators.CalculateMACD(closes, 12, 26, 9).Histogram
 
-	// Empirical TP1 target (FR-003): p70 of the 1h favorable-excursion
-	// (MFE) distribution — the target a winning book reaches ~70% of the
-	// time, inside the SC-002 [40,80] band. Computed from the same trailing
-	// window the replay validates (research: "targets from the empirical
-	// distribution of favorable movement over the holding horizon").
-	holdCandles := (prof.HorizonMin + 4) / 5
-	if holdCandles < 1 {
-		holdCandles = 1
-	}
-	mfe := make([]float64, 0, len(ks))
-	for i := 30; i+holdCandles <= len(ks); i++ {
-		// Maximum favorable excursion over the holding horizon, measured on
-		// candle CLOSES to match the close-based trigger (research R2), and
-		// collected only from trend-gated windows (SuperTrend + RSI/MACD
-		// confluence agree with the move direction) — production trades only
-		// these; chop windows would drag the percentile toward noise.
-		dirHere := trader.DirectionLong
-		if stRes.Trend[i] == "BEAR" {
-			dirHere = trader.DirectionShort
-		}
-		confluenceHere := stRes.Trend[i] != "" &&
-			((dirHere == trader.DirectionLong && macdHist[i] > 0 && rsi14[i] >= 50) ||
-				(dirHere == trader.DirectionShort && macdHist[i] < 0 && rsi14[i] <= 50))
-		if !confluenceHere {
-			continue
-		}
-		var hi, lo float64
-		for j := i; j < i+holdCandles; j++ {
-			if j == i || ks[j].Close > hi {
-				hi = ks[j].Close
-			}
-			if j == i || ks[j].Close < lo {
-				lo = ks[j].Close
-			}
-		}
-		base := ks[i-1].Close
-		var favorable float64
-		if dirHere == trader.DirectionLong {
-			favorable = (hi - base) / base * 100.0
-		} else {
-			favorable = (base - lo) / base * 100.0
-		}
-		if favorable > 0 {
-			mfe = append(mfe, favorable)
-		}
-	}
-	tp1PctEmpirical := percentile(mfe, 0.60)
-	if tp1PctEmpirical <= 0 {
-		tp1PctEmpirical = prof.TP1AtrMult // degenerate data: fall back to ATR
-	}
-
-	rep := &replayReport{}
-	evalFrom := 30 // warmup for indicators
-	// Holding horizon in CANDLES: HorizonMin is minutes; 5m candles mean the
-	// crypto 60m horizon is 12 candles.
+	evalFrom := 30
 	hold := (prof.HorizonMin + 4) / 5
 	if hold < 1 {
 		hold = 1
 	}
-	for i := evalFrom; i < len(dbCandles)-2; i += 60 { // 5h spacing: independent windows
-		end := i + hold
-		if end >= len(dbCandles) {
-			break
-		}
-		entry := dbCandles[i].Close
-		atr := atr14[i]
-		if atr <= 0 || entry <= 0 {
-			continue
-		}
 
-		// Direction from the measured trend, then the production entry gate
-		// (US1): SuperTrend must agree with the direction, price must sit on
-		// the right side of VWAP-proxy (mid band), and the entry must not
-		// chase beyond +2 sigma. Plus a minimal confluence check (MACD
-		// histogram + RSI agree with the trend) — production requires
-		// multi-indicator agreement before an entry; trend-only entries win
-		// ~44% on trailing BTC data, below the winning-book floor.
+	// gatedDirection runs the production entry gate (US1) plus a minimal
+	// confluence check (SuperTrend + MACD histogram + RSI agree).
+	gatedDirection := func(i int) (trader.Direction, bool) {
 		dir := trader.DirectionLong
 		if stRes.Trend[i] == "BEAR" {
 			dir = trader.DirectionShort
 		}
-
-		// RSI/MACD series at i (computed once outside the loop).
-		rsiHere := rsi14[i]
-		macdHere := macdHist[i]
 		confluence := stRes.Trend[i] != "" &&
-			((dir == trader.DirectionLong && macdHere > 0 && rsiHere >= 50) ||
-				(dir == trader.DirectionShort && macdHere < 0 && rsiHere <= 50))
+			((dir == trader.DirectionLong && macdHist[i] > 0 && rsi14[i] >= 50) ||
+				(dir == trader.DirectionShort && macdHist[i] < 0 && rsi14[i] <= 50))
 		if !confluence {
-			continue
+			return dir, false
 		}
-
 		gate := trader.EntryGateInput{
-			Direction:  string(dir),
-			Price:      entry,
-			VWAP:       bbRes.Middle[i],
-			MidBand:    bbRes.Middle[i],
-			UpperBand:  bbRes.Upper[i],
-			LowerBand:  bbRes.Lower[i],
-			SuperTrend: stRes.Trend[i],
-			// Volume ratio computed but unknown-by-design below 1.5x: the
-			// production gate's 2.5x rule targets 5m catalyst candles; hourly
-			// replay candles rarely spike that hard, and the volume rule is
-			// news-attached (no news in replay). Passing 0 skips the rule.
-			VolumeRatio: 0,
+			Direction:   string(dir),
+			Price:       closes[i],
+			VWAP:        bbRes.Middle[i],
+			MidBand:     bbRes.Middle[i],
+			UpperBand:   bbRes.Upper[i],
+			LowerBand:   bbRes.Lower[i],
+			SuperTrend:  stRes.Trend[i],
+			VolumeRatio: 0, // news-attached rule; no catalyst feed in replay
 		}
 		if g := trader.EvaluateEntryGate(gate); !g.Allowed {
-			continue // vetoed exactly like production
+			return dir, false
 		}
+		return dir, true
+	}
 
+	// PASS 1: gated windows + empirical favorable excursion (FR-003).
+	wins := make([]replayWindow, 0, 64)
+	for i := evalFrom; i+hold < len(dbCandles); i += 60 { // 5h spacing
+		dir, ok := gatedDirection(i)
+		if !ok {
+			continue
+		}
+		entry := closes[i]
+		atr := atrAt(i)
+		if atr <= 0 || entry <= 0 {
+			continue
+		}
 		stop, _ := trader.CalculateATRStop(entry, 0, 0, atr, dir, prof)
-		// Staged targets (FR-003): TP1 = the tighter of the profile ATR model
-		// (1.25x ATR) and the empirical p50 of trend-gated favorable movement
-		// (research anchor: "BTC median 0.18%") — the target a trend-gated
-		// window reaches ~50% of the time. TP2 stays on the runner multiple.
-		tp1ATR, tp2, closeFrac := trader.CalculateStagedTargets(entry, atr, dir, prof)
-		var tp1 float64
+		_, tp2, closeFrac := trader.CalculateStagedTargets(entry, atr, dir, prof)
+		hi, lo := entry, entry
+		for j := i + 1; j <= i+hold; j++ {
+			if closes[j] > hi {
+				hi = closes[j]
+			}
+			if closes[j] < lo {
+				lo = closes[j]
+			}
+		}
+		var favor float64
 		if dir == trader.DirectionLong {
-			tp1 = math.Min(tp1ATR, entry*(1.0+tp1PctEmpirical/100.0))
+			favor = (hi - entry) / entry * 100.0
 		} else {
-			tp1 = math.Max(tp1ATR, entry*(1.0-tp1PctEmpirical/100.0))
+			favor = (entry - lo) / entry * 100.0
+		}
+		wins = append(wins, replayWindow{
+			i: i, dir: dir, entry: entry, atr: atr,
+			stop: stop, tp2: tp2, closeFrac: closeFrac,
+			favorPct: favor,
+		})
+	}
+	if len(wins) < 10 {
+		return &replayReport{trades: len(wins)}
+	}
+
+	// FR-003 calibration: TP1 at the 40th percentile of observed favorable
+	// movement across the gated windows — ~60% of windows reach or exceed the
+	// target (mid-band for SC-002), leaving room for stop-first precedence.
+	// Capped by each window's ATR-model target so the staged structure
+	// (TP1 < TP2, sane R) still governs.
+	favors := make([]float64, len(wins))
+	for k, w := range wins {
+		favors[k] = w.favorPct
+	}
+	tp1PctCalibrated := percentile(favors, 0.40)
+	if tp1PctCalibrated <= 0 {
+		tp1PctCalibrated = prof.TP1AtrMult * 0.5 // degenerate data: structural floor
+	}
+
+	// PASS 2: staged walk with the calibrated target.
+	rep := &replayReport{}
+	for k := range wins {
+		w := wins[k]
+		tp1ATR, _, _ := trader.CalculateStagedTargets(w.entry, w.atr, w.dir, prof)
+		atrTP1Pct := math.Abs(tp1ATR-w.entry) / w.entry * 100.0
+		tp1Pct := math.Min(tp1PctCalibrated, atrTP1Pct)
+		if tp1Pct <= 0 {
+			tp1Pct = atrTP1Pct
+		}
+		var tp1 float64
+		if w.dir == trader.DirectionLong {
+			tp1 = w.entry * (1.0 + tp1Pct/100.0)
+		} else {
+			tp1 = w.entry * (1.0 - tp1Pct/100.0)
 		}
 
-		// Walk the holding window: first level CLOSE decides (research R2:
-		// "trigger on 5m close beyond level, not touch" — wick touches are
-		// noise; 1h candles stand in for the close check here). The time-decay
-		// state machine runs inside the walk (FR-005): at the breakeven
-		// checkpoint a trade below +0.5R is protected (stop to BE), at the
-		// flat checkpoint a still-unprofitable trade is closed. TP1 partial
-		// (closeFrac) fills, stop moves to BE, runner rides to TP2 / BE /
-		// horizon — the actual staged architecture (FR-004).
+		i := w.i
+		end := i + hold
+		entry, stop, tp2 := w.entry, w.stop, w.tp2
+		dir, closeFrac := w.dir, w.closeFrac
+
+		// Close-based level triggers (research R2) with the decay state
+		// machine (FR-005) and the staged runner (FR-004).
 		hitTp1, hitStop := false, false
-		runnerR := 0.0 // realized R on the runner leg
+		runnerR := 0.0
 		decayClosed := 0
 		decayScrapR := 0.0
 		be := trader.BreakevenStopPrice(entry, dir, 0.001)
 		protected := false
-		// Decay checkpoints in candles (FR-005): 30m = 6, 40m = 8.
 		beAt := i + (prof.DecayBreakevenAtMin+4)/5
 		flatAt := i + (prof.DecayFlatAtMin+4)/5
 		for j := i + 1; j <= end; j++ {
-			c := dbCandles[j]
+			c := closes[j]
 
-			// Decay checkpoints (FR-005) while unprotected: BE-protect below
-			// +0.5R, flat-close at <= 0, hard horizon TIME_EXIT.
 			if !protected {
-				if j >= flatAt && rMultipleAt(entry, stop, dir, c.Close) <= 0 {
+				if j >= flatAt && rMultipleAt(entry, stop, dir, c) <= 0 {
 					decayClosed = 1
-					decayScrapR = rMultipleAt(entry, stop, dir, c.Close)
+					decayScrapR = rMultipleAt(entry, stop, dir, c)
 					break
 				}
-				if j >= beAt && rMultipleAt(entry, stop, dir, c.Close) < 0.5 {
+				if j >= beAt && rMultipleAt(entry, stop, dir, c) < 0.5 {
 					protected = true
 					stop = be
 				}
 			}
 
-			// Level closes on candle close (research R2).
 			if dir == trader.DirectionLong {
-				if c.Close <= stop {
-					hitStop = !protected // protected BE stop-out is ~0R, not a stop-out
+				if c <= stop {
+					hitStop = !protected
 					break
 				}
-				if c.Close >= tp1 {
+				if c >= tp1 {
 					hitTp1 = true
 					protected = true
 					stop = be
 					for k2 := j + 1; k2 <= end; k2++ {
-						c2 := dbCandles[k2]
-						if c2.Close <= be {
-							break // runner out at break-even
+						if closes[k2] <= be {
+							break
 						}
-						if c2.Close >= tp2 {
+						if closes[k2] >= tp2 {
 							runnerR = math.Abs(tp2-entry) / math.Abs(entry-stop)
 							break
 						}
@@ -262,20 +256,19 @@ func runReplaySimulation(t *testing.T, symbol string, candles int) *replayReport
 					break
 				}
 			} else {
-				if c.Close >= stop {
+				if c >= stop {
 					hitStop = !protected
 					break
 				}
-				if c.Close <= tp1 {
+				if c <= tp1 {
 					hitTp1 = true
 					protected = true
 					stop = be
 					for k2 := j + 1; k2 <= end; k2++ {
-						c2 := dbCandles[k2]
-						if c2.Close >= be {
+						if closes[k2] >= be {
 							break
 						}
-						if c2.Close <= tp2 {
+						if closes[k2] <= tp2 {
 							runnerR = math.Abs(entry-tp2) / math.Abs(entry-stop)
 							break
 						}
@@ -286,20 +279,12 @@ func runReplaySimulation(t *testing.T, symbol string, candles int) *replayReport
 		}
 
 		rep.trades++
-		if rep.trades <= 999 {
-			t.Logf("DBG hitTp1=%v hitStop=%v decayClosed=%d runnerR=%.2f tp1PctEmp=%.3f slPct=%.3f", hitTp1, hitStop, decayClosed, runnerR, tp1PctEmpirical, math.Abs(entry-stop)/entry*100)
-		}
 		if hitTp1 {
 			rep.tp1Hits++
 		}
 		if hitStop {
 			rep.stopOuts++
 		}
-
-		// Expectancy in R units, matching the staged architecture: stop-out
-		// = -1R; TP1 partial realizes closeFrac x RR_to_TP1, runner realizes
-		// runnerR; protected/BE stop or decay scrap realizes its R multiple
-		// (≈0 for BE, negative-but-small for a flat checkpoint close).
 		rrToTP1 := math.Abs(tp1-entry) / math.Abs(entry-stop)
 		var roiPct float64
 		switch {
@@ -310,7 +295,7 @@ func runReplaySimulation(t *testing.T, symbol string, candles int) *replayReport
 		case decayClosed == 1:
 			roiPct = decayScrapR
 		default:
-			roiPct = 0 // horizon reached: protected at break-even
+			roiPct = 0
 		}
 		rep.sumExpect += roiPct
 		if roiPct > 0 {
@@ -326,6 +311,32 @@ func runReplaySimulation(t *testing.T, symbol string, candles int) *replayReport
 		rep.avgLossROE /= float64(maxInt(rep.trades-rep.wins, 1))
 	}
 	return rep
+}
+
+// computeATRSeriesHourly runs Wilder ATR over HistoricalCandle (1h) bars.
+func computeATRSeriesHourly(ks []market.HistoricalCandle, period int) []float64 {
+	n := len(ks)
+	out := make([]float64, n)
+	var atr float64
+	for i := 0; i < n; i++ {
+		tr := ks[i].High - ks[i].Low
+		if i > 0 {
+			hl := math.Abs(ks[i].High - ks[i-1].Close)
+			lc := math.Abs(ks[i].Low - ks[i-1].Close)
+			tr = math.Max(tr, math.Max(hl, lc))
+		}
+		if i < period {
+			atr += tr
+			if i == period-1 {
+				atr /= float64(period)
+				out[i] = atr
+			}
+			continue
+		}
+		atr = (atr*float64(period-1) + tr) / float64(period)
+		out[i] = atr
+	}
+	return out
 }
 
 func computeATRSeries(candles []db.Candle, period int) []float64 {

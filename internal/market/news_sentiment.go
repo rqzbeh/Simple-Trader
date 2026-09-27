@@ -34,6 +34,11 @@ var bullishTerms = []string{
 	"trump crypto", "trump backing", "trump endorsement", "world liberty financial",
 	"trump son", "barron trump", "eric trump", "pelosi buy", "congressional buy",
 	"senator buy", "pro-crypto legislation", "insider accumulation",
+	// Commodities directional (spec 012 US4/T040: clears the ±0.25
+	// directional threshold for genuine commodity catalysts)
+	"gold surges", "gold jumps", "gold rally", "silver surges",
+	"oil jumps", "oil rallies", "crude rallies", "opec+ cuts",
+	"copper surges", "supply disruption",
 }
 
 var bearishTerms = []string{
@@ -47,6 +52,10 @@ var bearishTerms = []string{
 	"insider dump", "insider selling", "politician sell", "pelosi sell",
 	"congressional disclosure dump", "sec subpoena", "sec investigation",
 	"fraud charges", "crypto crackdown", "subpoena", "anti-crypto",
+	// Commodities bearish (spec 012 US4/T040: supply build, demand destruction)
+	"inventory build", "crude stockpiles", "oil slumps", "gold falls",
+	"gold slides", "silver drops", "copper slides", "opec+ raises output",
+	"demand destruction",
 }
 
 // AnalyzeNewsSentiment evaluates financial headlines using a quantitative financial lexicon.

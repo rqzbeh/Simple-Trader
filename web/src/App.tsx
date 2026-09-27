@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useTheme } from './context/ThemeContext';
 import { useAuth } from './context/AuthContext';
-import { Sun, Moon, Activity, TrendingUp, Layers, SlidersHorizontal, Users, Newspaper, Filter, MessageSquare, LogOut, ShieldCheck, Menu, X, Brain, Wallet, Globe } from 'lucide-react';
+import { Sun, Moon, Activity, TrendingUp, Layers, SlidersHorizontal, Users, Newspaper, Filter, MessageSquare, LogOut, ShieldCheck, Menu, X, Brain, Wallet, Globe, Fuel } from 'lucide-react';
 import { useSSE } from './hooks/useSSE';
 import { AssetTickerGrid } from './components/AssetTickerGrid';
 import { TradingViewChart } from './components/TradingViewChart';
@@ -15,6 +15,7 @@ import { MLTrainingView } from './components/MLTrainingView';
 import { InvestorLedgerView } from './components/InvestorLedgerView';
 import { NewsStreamView } from './components/NewsStreamView';
 import { ScreenerView } from './components/ScreenerView';
+import { CommoditiesView } from './components/CommoditiesView';
 import { TelegramConfigModal } from './components/TelegramConfigModal';
 import { LoginModal } from './components/LoginModal';
 import { PWAInstallBanner } from './components/PWAInstallBanner';
@@ -23,7 +24,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { TIMEZONES, setTimezone, timezoneLabel, useTimezone } from './utils/time';
 import { AssetInfo, CandleData, TradePosition, IndicatorWeights } from './types';
 
-type AppTab = 'terminal' | 'investors' | 'screener' | 'news' | 'ai_weights' | 'ml';
+type AppTab = 'terminal' | 'investors' | 'screener' | 'commodities' | 'news' | 'ai_weights' | 'ml';
 
 export const App: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
@@ -38,7 +39,7 @@ export const App: React.FC = () => {
   });
   const [activeTab, setActiveTabState] = useState<AppTab>(() => {
     const saved = localStorage.getItem('simple_trader_tab');
-    const valid: AppTab[] = ['terminal', 'investors', 'screener', 'news', 'ai_weights', 'ml'];
+    const valid: AppTab[] = ['terminal', 'investors', 'screener', 'commodities', 'news', 'ai_weights', 'ml'];
     return valid.includes(saved as AppTab) ? (saved as AppTab) : 'terminal';
   });
   const setSelectedSymbol = (s: string) => {
@@ -171,6 +172,18 @@ export const App: React.FC = () => {
               <Filter className="w-3.5 h-3.5 text-amber-500" />
               <span>Screener</span>
             </button>
+            <button
+              onClick={() => setActiveTab('commodities')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
+                activeTab === 'commodities'
+                  ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+              }`}
+            >
+              <Fuel className="w-3.5 h-3.5 text-orange-500" />
+              <span>Commodities</span>
+            </button>
+
             <button
               onClick={() => setActiveTab('news')}
               className={`px-3 py-1.5 rounded-lg text-xs font-semibold font-mono transition-all duration-150 flex items-center space-x-1.5 ${
@@ -347,6 +360,21 @@ export const App: React.FC = () => {
               >
                 <Filter className="w-4 h-4 text-amber-500" />
                 <span>Screener</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setActiveTab('commodities');
+                  setIsMobileMenuOpen(false);
+                }}
+                className={`p-2.5 rounded-xl text-xs font-semibold font-mono flex items-center space-x-2 transition-colors min-h-[44px] ${
+                  activeTab === 'commodities'
+                    ? 'bg-sky-500/15 text-sky-500 border border-sky-500/30'
+                    : 'bg-slate-50 dark:bg-slate-800/60 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <Fuel className="w-4 h-4 text-orange-500" />
+                <span>Commodities</span>
               </button>
 
               <button
@@ -565,6 +593,18 @@ export const App: React.FC = () => {
               </span>
             </div>
             <ScreenerView />
+          </div>
+        ) : activeTab === 'commodities' ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-sm font-bold uppercase tracking-wider font-mono text-slate-800 dark:text-slate-200">
+                Commodities Desk
+              </h2>
+              <span className="text-xs text-slate-400 font-mono">
+                Longer Horizon • Event Blackouts • Weekend Flat
+              </span>
+            </div>
+            <CommoditiesView />
           </div>
         ) : activeTab === 'news' ? (
           <div className="space-y-4">

@@ -769,6 +769,7 @@ func (s *Server) setupRoutes() {
 	r.Get("/api/v1/signals/summary", s.SignalSummaryHandler)
 	r.Get("/api/v1/signals/filters", s.ListEntryFilterLogsHandler)
 	r.Get("/api/v1/risk-profiles", s.ListRiskProfilesHandler)
+	r.Get("/api/v1/commodities/status", s.ListCommoditiesStatusHandler) // US4 T043
 
 	// Dynamic Macroeconomic Regime & 3-Tier Allocation (US2, FR-004)
 	r.Get("/api/v1/macro/regime", s.GetMacroRegimeHandler)

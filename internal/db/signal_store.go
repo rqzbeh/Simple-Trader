@@ -241,6 +241,39 @@ func (s *Store) ListFuturesSignals(ctx context.Context, status string, limit int
 	return signals, nil
 }
 
+// ListFuturesSignalsByProfile filters the list by asset-class profile
+// (spec 012 US4, T043): the Commodities view fetches profile=COMMODITY,
+// the terminal fetches everything through the plain list.
+func (s *Store) ListFuturesSignalsByProfile(ctx context.Context, status string, limit int, profile string) ([]FuturesTradeSignal, error) {
+	if s.Pool == nil {
+		return nil, errors.New("database pool not initialized")
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.Pool.Query(ctx, `
+		SELECT `+futuresSignalFrom+`
+		WHERE s.profile = $1
+		  AND ($2 = '' OR $2 = 'ALL' OR s.status = $2)
+		ORDER BY s.created_at DESC
+		LIMIT $3
+	`, profile, status, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query profiled futures signals: %w", err)
+	}
+	defer rows.Close()
+
+	signals := make([]FuturesTradeSignal, 0)
+	for rows.Next() {
+		sig, err := scanFuturesSignal(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan futures signal row: %w", err)
+		}
+		signals = append(signals, sig)
+	}
+	return signals, rows.Err()
+}
+
 // GetActiveFuturesSignalBySymbol gets the currently active futures signal for an asset if any.
 func (s *Store) GetActiveFuturesSignalBySymbol(ctx context.Context, symbol string) (*FuturesTradeSignal, error) {
 	if s.Pool == nil {
