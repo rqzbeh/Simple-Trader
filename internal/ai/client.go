@@ -143,6 +143,24 @@ func (c *Client) BuildUserPrompt(req DecisionRequest) string {
 		newsSection = "- " + strings.Join(req.NewsHeadlines, "\n- ")
 	}
 
+	// Clustered catalyst events (spec 012 US3, T036): the deduplicated
+	// story with its coverage count, fused score and freshness replaces the
+	// old flat list of syndicated duplicates.
+	catalystSection := ""
+	if len(req.CatalystEvents) > 0 {
+		var b strings.Builder
+		for _, e := range req.CatalystEvents {
+			sources := "unknown"
+			if len(e.Sources) > 0 {
+				sources = strings.Join(e.Sources, ", ")
+			}
+			fmt.Fprintf(&b,
+				"- CATALYST EVENT: \"%s\" | story_count=%d (syndicated coverage) | fused_sentiment=%+.3f | freshness=%.2f | sources: %s\n",
+				e.Headline, e.StoryCount, e.FusedScore, e.Freshness, sources)
+		}
+		catalystSection = b.String()
+	}
+
 	sentimentSection := "PRE-COMPUTED NLP SENTIMENT: unavailable (treat headlines as unscored; do not invent scores)."
 	if req.NewsSentiment != nil {
 		phrases := "none detected"
@@ -165,6 +183,7 @@ REAL-TIME BREAKING NEWS & CATALYST HEADLINES (Primary Entry Prerequisite):
 %s
 
 %s
+%s
 Use the pre-computed sentiment as the starting point, then apply the EQUITY-RESEARCH DISCIPLINE from the system prompt: triage each headline (Near-term / Medium-term / Noise), keep only Near-term catalysts, and HOLD when none qualify.
 
 TECHNICAL INDICATOR SNAPSHOT (For Entry Optimization, SL/TP Levels, and Leverage Factor Only):
@@ -181,7 +200,7 @@ TECHNICAL INDICATOR SNAPSHOT (For Entry Optimization, SL/TP Levels, and Leverage
 
 Analyze catalyst priority first. If no high-conviction news catalyst exists, output "HOLD". If a catalyst exists, evaluate direction (BUY for Long, SELL for Short), calibrate isolated leverage (5x-10x), and tight SL/TP with 2-hour swing R:R between 2.5:1 and 3:1. Output strict JSON.`,
 		req.Symbol, req.Bucket, req.Quote.Price, req.Quote.Change24h,
-		newsSection, sentimentSection,
+		newsSection, catalystSection, sentimentSection,
 		req.IndicatorSnap.RSI, req.IndicatorSnap.SuperTrend, req.IndicatorSnap.Histogram,
 		req.IndicatorSnap.ConfluenceScore,
 		req.IndicatorSnap.Regime, req.IndicatorSnap.VolRatio,

@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/rqzbeh/simple-trader/internal/ai"
 	"github.com/rqzbeh/simple-trader/internal/cache"
+	"github.com/rqzbeh/simple-trader/internal/config"
 	"github.com/rqzbeh/simple-trader/internal/db"
 	"github.com/rqzbeh/simple-trader/internal/market"
 	"github.com/rqzbeh/simple-trader/internal/trader"
@@ -160,6 +161,15 @@ func (s *Server) ensureSignalPosition(sig *db.FuturesTradeSignal) {
 		sig.Direction, sig.Symbol, sig.EntryPrice, sig.AllocatedCapitalUSD, sig.Leverage)
 }
 
+// metaSlice adapts an optional catalyst meta to the variadic EvaluateMarketSignal
+// argument (nil -> no argument).
+func metaSlice(m *trader.CatalystMeta) []trader.CatalystMeta {
+	if m == nil {
+		return nil
+	}
+	return []trader.CatalystMeta{*m}
+}
+
 // EvaluateSymbolSignal evaluates a single symbol against breaking news catalysts and technical confluence.
 // If high conviction is detected, it persists the signal, broadcasts via SSE and Telegram, and returns the signal.
 func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string, headlines []string) (*db.FuturesTradeSignal, string, error) {
@@ -187,6 +197,112 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 	headlines = market.HeadlinesForSymbol(headlines, symbol)
 	if len(headlines) == 0 {
 		return nil, "No asset-relevant news headline for " + symbol, nil
+	}
+
+	// --- Spec 012 US3: catalyst clustering + polarization veto (FR-008/011) ---
+	// Near-identical syndicated headlines merge into ONE Catalyst Event; a
+	// polarized (contradictorily balanced) story is vetoed BEFORE the AI
+	// round-trip, with the veto recorded in entry_filter_log (T033/T034).
+	var catalystMeta *trader.CatalystMeta
+	prof, profErr := trader.EffectiveProfile(trader.ProfileNameForBucket(bucket))
+	if profErr != nil {
+		prof = config.GetRiskProfile(trader.ProfileNameForBucket(bucket))
+	}
+	if s.catalystClusterer != nil {
+		// Source lookup: title -> feed source from the crawler's in-memory
+		// retention (100 newest); unknown titles fall back to tier 0.2.
+		srcOf := make(map[string]string)
+		if s.newsCrawler != nil {
+			for _, a := range s.newsCrawler.GetLatestArticles() {
+				srcOf[a.Title] = a.Source
+			}
+		}
+		for _, h := range headlines {
+			rep := market.AnalyzeNewsSentiment([]string{h})
+			s.catalystClusterer.Ingest(srcOf[h], h, rep.Score, time.Now())
+		}
+
+		// Clusters covering at least one supplied headline.
+		var covering []*market.NewsCluster
+		for _, cl := range s.catalystClusterer.Clusters(time.Now()) {
+			for _, h := range headlines {
+				if market.TrigramJaccard(h, cl.Headline) >= market.ClusterJaccardThreshold {
+					covering = append(covering, cl)
+					break
+				}
+			}
+		}
+
+		// Dominant = most-covered story (the one the AI will cite).
+		var dominant *market.NewsCluster
+		for _, cl := range covering {
+			if dominant == nil || cl.StoryCount >= dominant.StoryCount {
+				dominant = cl
+			}
+		}
+
+		// Persist each covering event; keep the dominant event id (T034).
+		var dominantID int64
+		if s.dbStore != nil {
+			for _, cl := range covering {
+				fresh := market.FreshnessWeight(time.Since(cl.LastSeen), prof.FreshnessHalfLifeMin)
+				id, err := s.dbStore.InsertCatalystEvent(
+					ctx, cl.Fingerprint, cl.Headline, cl.Sources, []string{symbol},
+					cl.StoryCount, cl.FusedSentiment, cl.Polarization, fresh,
+					int(prof.FreshnessHalfLifeMin),
+				)
+				if err != nil {
+					log.Printf("[US3] insert catalyst event for %s: %v", symbol, err)
+					continue
+				}
+				if cl == dominant {
+					dominantID = id
+				}
+			}
+		}
+
+		if dominant != nil {
+			// FR-011: contradictory balanced coverage -> no trade, audited.
+			if market.PolarizationVetoed(dominant.Polarization) {
+				detail, _ := json.Marshal(map[string]interface{}{
+					"polarization": dominant.Polarization,
+					"threshold":    0.40,
+					"story_count":  dominant.StoryCount,
+					"sources":      dominant.Sources,
+					"headline":     dominant.Headline,
+				})
+				if s.dbStore != nil {
+					var evtID *int64
+					if dominantID > 0 {
+						evtID = &dominantID
+					}
+					_ = s.dbStore.InsertEntryFilterLog(ctx, symbol, "", evtID, "POLARIZED", detail)
+				}
+				log.Printf("[US3] POLARIZED veto for %s: P=%.2f on '%s'", symbol, dominant.Polarization, dominant.Headline)
+				return nil, fmt.Sprintf("POLARIZED: contradictory coverage (P=%.2f > 0.40) on '%s'", dominant.Polarization, dominant.Headline), nil
+			}
+
+			// Collapse the dominant cluster's members to its representative
+			// headline; distinct stories pass through untouched (T036).
+			kept := make([]string, 0, len(headlines))
+			for _, h := range headlines {
+				if market.TrigramJaccard(h, dominant.Headline) >= market.ClusterJaccardThreshold {
+					continue
+				}
+				kept = append(kept, h)
+			}
+			kept = append(kept, dominant.Headline)
+			headlines = kept
+
+			catalystMeta = &trader.CatalystMeta{
+				EventID:        dominantID,
+				Headline:       dominant.Headline,
+				StoryCount:     dominant.StoryCount,
+				FusedSentiment: dominant.FusedSentiment,
+				Freshness:      market.FreshnessWeight(time.Since(dominant.LastSeen), prof.FreshnessHalfLifeMin),
+				Sources:        dominant.Sources,
+			}
+		}
 	}
 
 	// Macroeconomic Calendar Halt Guard (FR-005)
@@ -370,6 +486,7 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		headlines,
 		totalEquity,
 		unreservedAlphaCapital,
+		metaSlice(catalystMeta)...,
 	)
 	if err != nil {
 		if errors.Is(err, trader.ErrConcurrentCap) {

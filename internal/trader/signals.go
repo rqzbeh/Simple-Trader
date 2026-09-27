@@ -33,6 +33,19 @@ type AIAnalyzer interface {
 	Analyze(ctx context.Context, req ai.DecisionRequest) (*ai.DecisionResponse, error)
 }
 
+// CatalystMeta carries the clustered Catalyst Event for one evaluation
+// (spec 012 US3, T034/T035): the dominant story after syndicated
+// deduplication, with its fused (tier-weighted) sentiment, story count and
+// freshness. Optional — evaluations without news pass nothing.
+type CatalystMeta struct {
+	EventID        int64    // catalyst_events row (0 = not persisted)
+	Headline       string   // representative headline
+	StoryCount     int      // syndicated coverage count
+	FusedSentiment float64  // source-tier-weighted fused sentiment (-1..1)
+	Freshness      float64  // half-life weight (0..1)
+	Sources        []string // contributing feeds (authority tiers)
+}
+
 // SignalConfig encapsulates dynamically configured trading parameters loaded from .env.
 type SignalConfig struct {
 	MinRiskRewardRatio float64
@@ -146,6 +159,7 @@ func (s *SignalService) EvaluateMarketSignal(
 	headlines []string,
 	totalEquity float64,
 	availableAlphaCapital float64,
+	catalysts ...CatalystMeta,
 ) (*db.FuturesTradeSignal, *ai.DecisionResponse, error) {
 	if quote.Price <= 0 {
 		return nil, nil, errors.New("invalid quote price: must be positive")
@@ -198,6 +212,21 @@ func (s *SignalService) EvaluateMarketSignal(
 			BearishCount:  bearish,
 			KeyPhrases:    report.KeyPhrases,
 		}
+	}
+
+	// Clustered catalyst event (US3 T035/T036): fused sentiment and story
+	// count feed the prompt AND the persisted signal — sentiment and model
+	// confidence are stored as separate values (FR-012).
+	var catMeta *CatalystMeta
+	if len(catalysts) > 0 {
+		catMeta = &catalysts[0]
+		decReq.CatalystEvents = []ai.CatalystEventInput{{
+			Headline:   catMeta.Headline,
+			StoryCount: catMeta.StoryCount,
+			FusedScore: catMeta.FusedSentiment,
+			Freshness:  catMeta.Freshness,
+			Sources:    catMeta.Sources,
+		}}
 	}
 
 	// The AI call and the insert each get their own time budget. Sharing one
@@ -373,6 +402,14 @@ func (s *SignalService) EvaluateMarketSignal(
 		sentiment = -sentiment
 	}
 
+	// US3 T035 (FR-012): fused cluster sentiment replaces the raw confidence
+	// heuristic when a Catalyst Event exists; model confidence is stored as
+	// its own column.
+	modelConfidence := aiResp.Confidence
+	if catMeta != nil {
+		sentiment = catMeta.FusedSentiment
+	}
+
 	// 7. Assemble and persist the signal
 	// Decision-time indicator snapshot (spec 012 US7, FR-022): recorded once
 	// here so closed-trade outcomes attribute to the indicators that were
@@ -420,10 +457,18 @@ func (s *SignalService) EvaluateMarketSignal(
 		TelegramDispatched:  false,
 		TelegramResolved:    false,
 		IndicatorSnapshot:   snapRecord,
+		// FR-012: confidence is NOT sentiment — model confidence always
+		// recorded separately; catalyst_sentiment carries the fused cluster
+		// score when a Catalyst Event exists, else the heuristic above.
+		ModelConfidence: &modelConfidence,
 		// Spec 012 US2 audit columns (FR-002/004): volatility measurement and
 		// staged-exit fraction at entry, for the UI and post-trade review.
 		ATRAtEntry:       &atrPrice,
 		TP1CloseFraction: &closeFrac,
+	}
+
+	if catMeta != nil && catMeta.EventID > 0 {
+		sig.CatalystEventID = &catMeta.EventID // links signal -> catalyst_events (T034)
 	}
 
 	// Entry gate (spec 012 US1 / research R1): veto candidates that fail
