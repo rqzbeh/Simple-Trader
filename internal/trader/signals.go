@@ -180,13 +180,22 @@ func (s *SignalService) EvaluateMarketSignal(
 	}
 
 	// 2. Request AI analysis (mandating news catalyst priority)
+	// Profile horizon rides into the prompt (US4 T040): the model judges
+	// catalysts against the ACTUAL holding frame (4h CORE vs 1h ALPHA)
+	// instead of the historical hardcoded 2-hour swing language.
+	decProf, decProfErr := EffectiveProfile(ProfileNameForBucket(bucket))
+	horizonMin := 60
+	if decProfErr == nil && decProf.HorizonMin > 0 {
+		horizonMin = decProf.HorizonMin
+	}
 	decReq := ai.DecisionRequest{
-		Symbol:        symbol,
-		Bucket:        bucket,
-		Quote:         quote,
-		IndicatorSnap: snap,
-		Weights:       weights,
-		NewsHeadlines: headlines,
+		Symbol:         symbol,
+		Bucket:         bucket,
+		Quote:          quote,
+		IndicatorSnap:  snap,
+		Weights:        weights,
+		NewsHeadlines:  headlines,
+		HorizonMinutes: horizonMin,
 	}
 
 	// Pre-compute the NLP sentiment packet so every prompt carries scored

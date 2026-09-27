@@ -40,6 +40,7 @@ type DecisionRequest struct {
 	NewsHeadlines  []string
 	NewsSentiment  *NewsSentimentInput
 	CatalystEvents []CatalystEventInput // clustered events (US3 T036)
+	HorizonMinutes int                 // profile holding horizon for the bucket (US4 T040)
 }
 
 // CatalystEventInput is the clustered Catalyst Event payload sent to the
