@@ -46,12 +46,12 @@ export function useSSE(endpoint: string = '/api/v1/events') {
           const data = await assetsRes.json();
           if (isMounted && data.assets && Array.isArray(data.assets)) {
             setAssets((prev) =>
-              data.assets.map((item: any) => {
+              data.assets.map((item: Partial<AssetInfo> & Record<string, unknown>) => {
                 const existing = prev.find((p) => p.symbol === item.symbol);
                 return {
-                  symbol: item.symbol,
-                  name: item.name,
-                  bucket: item.bucket,
+                  symbol: String(item.symbol || ''),
+                  name: String(item.name || ''),
+                  bucket: item.bucket as 'CORE' | 'ALPHA',
                   type: 'Crypto',
                   price: typeof item.price === 'number' && item.price > 0 ? item.price : (existing?.price || 0),
                   change24h: typeof item.change24h === 'number' ? item.change24h : (typeof item.change_24h === 'number' ? item.change_24h : (existing?.change24h || 0)),
@@ -67,19 +67,19 @@ export function useSSE(endpoint: string = '/api/v1/events') {
         if (positionsRes && positionsRes.ok) {
           const data = await positionsRes.json();
           if (isMounted && Array.isArray(data)) {
-            const normalized: TradePosition[] = data.map((item: any) => {
-              const entry = Number(item.entryPrice ?? item.entry_price ?? 0);
-              const curr = Number(item.currentPrice ?? item.current_price ?? entry);
-              const sz = Number(item.size ?? item.position_size ?? 0);
-              const side = (item.side === 'SELL' || item.side === 'SHORT') ? 'SELL' : 'BUY';
+            const normalized: TradePosition[] = data.map((item: Record<string, unknown>) => {
+              const entry = Number(item['entryPrice'] ?? item['entry_price'] ?? 0);
+              const curr = Number(item['currentPrice'] ?? item['current_price'] ?? entry);
+              const sz = Number(item['size'] ?? item['position_size'] ?? 0);
+              const side = (item['side'] === 'SELL' || item['side'] === 'SHORT') ? 'SELL' : 'BUY';
               const diff = side === 'BUY' ? curr - entry : entry - curr;
-              const uPnL = item.unrealizedPnL !== undefined ? Number(item.unrealizedPnL) : (item.realized_pnl !== undefined && item.status === 'CLOSED' ? Number(item.realized_pnl) : Number((diff * sz).toFixed(2)));
+              const uPnL = item['unrealizedPnL'] !== undefined ? Number(item['unrealizedPnL']) : (item['realized_pnl'] !== undefined && item['status'] === 'CLOSED' ? Number(item['realized_pnl']) : Number((diff * sz).toFixed(2)));
               const pnlPct = entry > 0 ? Number(((diff / entry) * 100).toFixed(2)) : 0;
 
               return {
-                id: String(item.id),
-                symbol: item.symbol,
-                bucket: item.bucket,
+                id: String(item['id']),
+                symbol: String(item['symbol'] || ''),
+                bucket: item['bucket'] as 'CORE' | 'ALPHA',
                 side,
                 entryPrice: entry,
                 currentPrice: curr,

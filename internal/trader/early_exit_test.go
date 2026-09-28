@@ -27,10 +27,12 @@ func (m *mockTelegramSender) SendMessageWithRetry(ctx context.Context, text stri
 
 // mockEarlyExitStore records judgments for verification.
 type mockEarlyExitStore struct {
-	judgments   []*db.EarlyExitJudgment
-	terminalMap map[string]bool
-	todayCounts map[string]int
-	lastExits   map[string]time.Time
+	judgments      []*db.EarlyExitJudgment
+	terminalMap    map[string]bool
+	todayCounts    map[string]int
+	lastExits      map[string]time.Time
+	recordCloseErr error
+	closedSignalID *int64
 }
 
 func newMockEarlyExitStore() *mockEarlyExitStore {
@@ -48,6 +50,14 @@ func (m *mockEarlyExitStore) InsertEarlyExitJudgment(ctx context.Context, j *db.
 		m.terminalMap[key] = true
 	}
 	return nil
+}
+
+func (m *mockEarlyExitStore) RecordEarlyExitClose(ctx context.Context, j *db.EarlyExitJudgment, signalID *int64, exitPrice float64, exitReason string, pnl, roi float64) error {
+	m.closedSignalID = signalID
+	if m.recordCloseErr != nil {
+		return m.recordCloseErr
+	}
+	return m.InsertEarlyExitJudgment(ctx, j)
 }
 
 func (m *mockEarlyExitStore) HasTerminalEarlyExitJudgment(ctx context.Context, positionID int64, clusterID int64) (bool, error) {
@@ -116,7 +126,7 @@ func TestBuildEarlyExitQuestions(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected criteria map[string]string, got %T", q1.Criteria)
 	}
-	if criteriaMap["true"] != "News invalidates the thesis — close now" {
+	if criteriaMap["true"] != "News invalidates the thesis via high-severity opposing catalyst — close now" {
 		t.Errorf("criteria true must mean close now, got %q", criteriaMap["true"])
 	}
 	if criteriaMap["false"] != "Thesis intact — hold" {
@@ -317,6 +327,59 @@ func TestEarlyExitVerdictMapping(t *testing.T) {
 		}
 		if j.Error == "" {
 			t.Errorf("expected non-empty error on error row")
+		}
+	})
+
+	// Case 4: Store transaction failure -> records action=error with close_error and returns error
+	t.Run("store tx failure records close_error row and returns explicit error", func(t *testing.T) {
+		engine := NewExecutionEngine(10000.0)
+		sigID := int64(999)
+		pos := &db.Trade{
+			ID:           204,
+			SignalID:     &sigID,
+			Symbol:       "AVAX/USDT",
+			Side:         "BUY",
+			EntryPrice:   25.0,
+			EntryTime:    now.Add(-45 * time.Minute),
+			PositionSize: 10.0,
+			Status:       "OPEN",
+		}
+		engine.positions["AVAX/USDT"] = pos
+
+		store := newMockEarlyExitStore()
+		store.recordCloseErr = fmt.Errorf("simulated db connection drop")
+		tg := &mockTelegramSender{}
+
+		noulVal := 0.90
+		ans := ai.JevAnswer{
+			Type:       "noul",
+			Noul:       &noulVal,
+			Confidence: 0.90,
+		}
+		cluster := &market.NewsCluster{
+			ID:        "c4",
+			Headline:  "Major network outage confirmed",
+			FirstSeen: now.Add(-5 * time.Minute),
+		}
+
+		err := ProcessEarlyExitVerdict(ctx, "cycle-test-4", cfg, pos, cluster, ans, "jev_direct", engine, store, tg, now)
+		if err == nil {
+			t.Fatal("expected explicit error when store tx fails, got nil")
+		}
+
+		// In-memory position was closed, but divergence was recorded
+		if len(engine.GetOpenTrades()) != 0 {
+			t.Errorf("expected position closed in engine")
+		}
+		if len(store.judgments) != 1 {
+			t.Fatalf("expected 1 judgment recorded, got %d", len(store.judgments))
+		}
+		j := store.judgments[0]
+		if j.Action != "error" {
+			t.Errorf("expected action=error, got %q", j.Action)
+		}
+		if j.CloseError == "" {
+			t.Errorf("expected non-empty CloseError")
 		}
 	})
 }

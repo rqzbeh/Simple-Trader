@@ -19,7 +19,7 @@ func AuthMiddleware(auth *Authenticator) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token := ExtractToken(r)
 
-			if token == "" || !auth.ValidateToken(token) {
+			if token == "" || !auth.ValidateTokenContext(r.Context(), token) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusUnauthorized)
 				w.Write([]byte(`{"error":"unauthorized: valid session token required"}`))

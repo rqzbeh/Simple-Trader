@@ -83,7 +83,42 @@ func (c *Client) GetIndicatorSnapshot(ctx context.Context, symbol string) (*Indi
 
 // Publish broadcasts an event payload onto a pub/sub channel.
 func (c *Client) Publish(ctx context.Context, channel string, message interface{}) error {
+	if c.rdb == nil {
+		return nil
+	}
 	return c.rdb.Publish(ctx, channel, message).Err()
+}
+
+// Get retrieves raw bytes from Redis by key.
+func (c *Client) Get(ctx context.Context, key string) ([]byte, error) {
+	if c.rdb == nil {
+		return nil, redis.Nil
+	}
+	return c.rdb.Get(ctx, key).Bytes()
+}
+
+// Set stores a value into Redis with a TTL.
+func (c *Client) Set(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+	if c.rdb == nil {
+		return nil
+	}
+	return c.rdb.Set(ctx, key, value, ttl).Err()
+}
+
+// Del deletes keys from Redis.
+func (c *Client) Del(ctx context.Context, keys ...string) error {
+	if c.rdb == nil {
+		return nil
+	}
+	return c.rdb.Del(ctx, keys...).Err()
+}
+
+// Subscribe subscribes to Redis pub/sub channels.
+func (c *Client) Subscribe(ctx context.Context, channels ...string) *redis.PubSub {
+	if c.rdb == nil {
+		return nil
+	}
+	return c.rdb.Subscribe(ctx, channels...)
 }
 
 // Close closes the Redis connection.

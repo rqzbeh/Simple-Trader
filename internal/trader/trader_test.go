@@ -330,3 +330,76 @@ func TestForceClosePositionIgnoresLevels(t *testing.T) {
 		t.Errorf("expected margin released back to cash, got %f", engine.GetCash())
 	}
 }
+
+type blockingPriceProvider struct {
+	started chan struct{}
+	release chan struct{}
+	price   float64
+}
+
+func (b *blockingPriceProvider) GetLatestPrice(symbol string) (float64, error) {
+	close(b.started)
+	<-b.release
+	return b.price, nil
+}
+
+// TestGetTotalEquity_PriceFetchOutsideLock verifies that GetLatestPrice network I/O
+// is executed OUTSIDE e.mu, allowing concurrent mutations like SetFrictionModel or ExecuteOrder.
+func TestGetTotalEquity_PriceFetchOutsideLock(t *testing.T) {
+	engine := trader.NewExecutionEngine(100000.0)
+	ctx := context.Background()
+
+	// Seed one position so GetTotalEquity needs to resolve a price
+	if _, err := engine.ExecuteOrder(ctx, trader.OrderRequest{
+		Symbol:            "BTC/USDT",
+		Bucket:            "CORE",
+		Side:              "BUY",
+		Price:             50000.0,
+		PositionSize:      1.0,
+		StopLoss:          48000.0,
+		TakeProfit:        55000.0,
+		Leverage:          1,
+		SymbolSpreadPct:   0.0001,
+		AvailableDepthQty: 10.0,
+		IsTaker:           true,
+	}); err != nil {
+		t.Fatalf("failed to seed position: %v", err)
+	}
+
+	provider := &blockingPriceProvider{
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+		price:   52000.0,
+	}
+	engine.SetPriceProvider(provider)
+
+	equityDone := make(chan float64, 1)
+	go func() {
+		equityDone <- engine.GetTotalEquity()
+	}()
+
+	// Wait until GetLatestPrice is entered
+	<-provider.started
+
+	// Now attempt an operation that requires e.mu.Lock()
+	// If e.mu is held during GetLatestPrice, SetFrictionModel will block!
+	lockAcquired := make(chan struct{})
+	go func() {
+		engine.SetFrictionModel(trader.DefaultFrictionModel())
+		close(lockAcquired)
+	}()
+
+	select {
+	case <-lockAcquired:
+		// Succeeded: e.mu is not held during GetLatestPrice!
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("e.mu was held during GetLatestPrice; deadlock/contention detected")
+	}
+
+	// Release provider and wait for equity calculation
+	close(provider.release)
+	equity := <-equityDone
+	if equity <= 0 {
+		t.Errorf("expected positive equity, got %f", equity)
+	}
+}

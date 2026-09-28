@@ -10,14 +10,14 @@ import (
 
 // standardCriteria embeds horizon minutes and catalyst-decay guidance (FR-208, contracts §1).
 var standardCriteria = map[string]string{
-	"15m": "Scalp: catalyst <1h old or volatile breakout; horizon 45m",
-	"30m": "Momentum scalp: fresh catalyst <2h; horizon 90m",
-	"1h":  "Standard: fresh news 1-3h; horizon 120m; news dies ≤6h",
-	"2h":  "Intermediate: catalyst persists 2-4h; horizon 180m",
-	"4h":  "Macro/structural: catalyst persists; horizon 360m",
-	"6h":  "Extended trend: multi-session catalyst; horizon 540m",
-	"12h": "Session-scale commodity catalyst; horizon 720m",
-	"1d":  "Multi-day structural trend: macro catalyst; horizon 1440m",
+	"15m": "Fast scalp: catalyst <30m old or volatile breakout; horizon 45m",
+	"30m": "Momentum scalp: fresh catalyst 30m-1h old; horizon 90m",
+	"1h":  "Standard: catalyst 1h-4h old; horizon 120m; news decay ≤6h",
+	"2h":  "Intermediate: catalyst 4h-8h old; horizon 180m",
+	"4h":  "Macro/structural: catalyst 8h-24h old; horizon 360m",
+	"6h":  "Extended trend: multi-session catalyst >24h; horizon 540m",
+	"12h": "Session-scale commodity catalyst >24h; horizon 720m",
+	"1d":  "Multi-day structural trend: major macro regime shift; horizon 1440m",
 }
 
 // TimeframeQuestion generates the dynamic timeframe Choice question for a given bucket.

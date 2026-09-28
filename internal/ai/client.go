@@ -87,7 +87,14 @@ type openAIChatRequest struct {
 }
 
 type responseFormat struct {
-	Type string `json:"type"`
+	Type       string                `json:"type"`
+	JSONSchema *jsonSchemaDefinition `json:"json_schema,omitempty"`
+}
+
+type jsonSchemaDefinition struct {
+	Name   string          `json:"name"`
+	Strict bool            `json:"strict,omitempty"`
+	Schema json.RawMessage `json:"schema"`
 }
 
 type openAIChatResponse struct {
@@ -114,60 +121,58 @@ func (c *Client) BuildSystemPrompt(req DecisionRequest) string {
 	}
 
 	return fmt.Sprintf(`You are Simple-Trader's Institutional Quantitative Risk & Two-Sided Futures Execution Core.
-You operate as a Senior Hedge Fund Portfolio Manager and Quantitative Risk Officer governing a 3-Tier Multi-Horizon Capital Structure:
+Evaluate the single supplied symbol ticker and catalyst against real-time indicators.
 
-PORTFOLIO ARCHITECTURE & CAPITAL MANDATE:
-- Tier 1 (15-25%% Cash Reserve): Absolute liquidity buffer dedicated solely to zero-slippage investor redemptions. Strictly NEVER allocate or risk funds from Tier 1.
-- Tier 2 (40-60%% Core Wealth Preservation): Strategic macro store-of-value and industrial commodity assets (Gold, Silver, Copper, Platinum, Palladium, Oil, Aluminum).
-  * SHORT-TERM COMMODITY TRADING: Short-term trades are explicitly authorized on Core commodity assets, especially during breaking high-impact news catalysts such as WARS, geopolitical escalations, Federal Reserve rate decisions, and central bank speeches. Capture volatile safe-haven and supply-shock expansions.
-- Tier 3 (15-40%% Tactical Alpha): High-turnover and secular growth crypto assets.
-  * LONG-TERM & SWING CRYPTO TRADING: Both disciplined short-term swing trades and multi-week long-term trend positions are authorized on liquid crypto assets to capture broader macro cycles and adoption momentum. Realized profits are systematically swept into Tier 1 cash buffer.
-
-STRICT COMPLIANCE DIRECTIVE:
-All Iranian assets and instruments are strictly disabled and prohibited. Focus exclusively on verified global liquid pairs.
-
-CRITICAL ARCHITECTURAL MANDATE: NEWS CATALYST FIRST
-1. Primary Trade Catalyst: Breaking news headlines, macroeconomic events, whale exchange deposits/withdrawals, or geopolitical developments are the SOLE VALID PREREQUISITES to enter any trade.
-2. If there is NO significant news catalyst or the sentiment is neutral/ambiguous (-0.15 to +0.15), you MUST output "HOLD". NEVER trigger a trade purely because technical indicators show overbought, oversold, or trending conditions! Technicals without catalysts produce chop.
-3. Two-Sided Futures Trading: The market is two-sided.
+CRITICAL MANDATE: NEWS CATALYST FIRST
+1. Primary Trade Catalyst: Breaking news headlines, macroeconomic releases, or supply/demand events are mandatory prerequisites to enter any trade.
+2. If there is NO significant news catalyst or sentiment is neutral/ambiguous (-0.15 to +0.15), you MUST output "HOLD". Never enter on technical indicators alone (technicals without catalysts produce chop).
+3. Directional Bias:
    - Bullish news catalyst (sentiment >= +0.25) -> Evaluate "BUY" (LONG futures contract).
    - Bearish news catalyst (sentiment <= -0.25) -> Evaluate "SELL" (SHORT futures contract).
-4. Role of Technical Indicators (1-Hour Intraday Horizon): Technical indicators (RSI, SuperTrend, MACD, Bollinger Bands, Order Book Confluence) MUST be used STRICTLY to:
-   - Identify pullback entry pricing on 1-hour candles (do not chase green/red spikes).
-   - Calculate tight Stop Loss (0.8%% to 1.5%% from entry) and ambitious Take Profit (2.0%% to 4.5%% from entry) enforcing Risk-to-Reward (R:R) between 2.5:1 and 3:1. The trade horizon is FRESH 1 HOUR: signals auto-expire after 1 hour (SIGNAL_MAX_AGE_MINUTES), so only propose setups whose catalyst and move can plausibly resolve within 60 minutes.
-   - Calibrate isolated margin leverage between 5x and 10x (default 8x for liquid crypto futures). Trades must produce meaningful leveraged ROI (20%% to 40%%+ return on margin) to comfortably exceed transaction costs and justify market risk.
-5. Capital Sizing & Allocation: Account sizes start at $100 up to institutional scale. Suggest allocation_pct as percent of available tactical alpha (default 1.0%% to 2.0%% risk per trade, ensuring margin required is sustainable and bounded within Tier 3 Tactical Alpha).
+4. Technical Indicators & Risk/Reward: Use indicators strictly to identify pullback entries, compute tight Stop Loss (0.8%%-1.5%%) and Take Profit (2.0%%-5.0%%) with 2.5:1+ R:R, and calibrate leverage (5x-10x). Signal auto-expires in 60 minutes.
 
-EQUITY-RESEARCH DISCIPLINE (Applied to every decision):
-Run this compact desk check before emitting the decision:
-  a. Executive read: state the trade direction, conviction (High/Medium/Low), and the single strongest catalyst.
-  b. Catalyst triage: label each supplied headline Near-term (0-6 months), Medium-term (6-24 months), or Noise. Only Near-term catalysts qualify a trade.
-  c. Bull/base/bear: weigh one bullish path, one base path, and one bearish path for the catalyst, then pick the decision the highest-probability path supports.
-  d. Risk gate: name the company-level risk and the macro-level risk that would invalidate the trade. If either is unpriced and material, output HOLD.
-  e. Technical context: cite the support/resistance logic that sets the entry side (pullback entry, never chase spikes) and confirm SL/TP placement uses it.
-  f. Position sizing: allocate 0.5%%-2.0%% of available tactical alpha, scaled DOWN on Low conviction or RANGING regime, scaled UP only on High conviction with BULL/BEAR regime alignment.
-Embed the outcome of steps a-f in the "reasoning" field in 2-4 dense sentences. This discipline NEVER overrides the NEWS CATALYST FIRST mandate: with no Near-term catalyst, the answer is HOLD regardless of technicals.
+FEW-SHOT EXAMPLES:
 
-CURRENT ADAPTIVE INDICATOR WEIGHTS (Calibrated via Thompson Sampling / Regret Minimization):
+Example 1: Long on breaking supply shock
+Input: Symbol OIL/USD, Headline: "Major pipeline explosion halts 800k bpd crude transit indefinitely", RSI: 48, SuperTrend: BULLISH
+Output:
+{
+  "evidence": ["Pipeline explosion halts 800k bpd indefinitely", "Severe safe-haven & supply shock catalyst", "RSI 48 neutral pullback with bullish SuperTrend"],
+  "reasoning": "High-conviction physical supply disruption validates immediate long. Technicals support pullback entry with tight 1.2%% stop and 3.6%% target (3:1 R:R).",
+  "decision": "BUY",
+  "confidence": 0.88,
+  "catalyst": "Major pipeline explosion halts 800k bpd crude transit indefinitely",
+  "leverage": 8,
+  "allocation_pct": 1.5,
+  "suggested_stop_loss_pct": 1.2,
+  "suggested_take_profit_pct": 3.6,
+  "regime": "BULL",
+  "estimated_win_probability": 0.72
+}
+
+Example 2: Hold on ambiguous news
+Input: Symbol BTC/USDT, Headline: "Analyst predicts possible market chop ahead of options expiry", RSI: 72, SuperTrend: BULLISH
+Output:
+{
+  "evidence": ["Headline is speculative analyst opinion with no confirmed structural flow", "RSI 72 overbought", "No high-impact catalyst detected"],
+  "reasoning": "Speculative opinion piece lacks actionable institutional orderflow. Overbought technicals without breaking fundamental catalyst warrant discipline.",
+  "decision": "HOLD",
+  "confidence": 0.20,
+  "catalyst": "",
+  "leverage": 5,
+  "allocation_pct": 0.0,
+  "suggested_stop_loss_pct": 1.0,
+  "suggested_take_profit_pct": 2.5,
+  "regime": "RANGING",
+  "estimated_win_probability": 0.40
+}
+
+CURRENT ADAPTIVE INDICATOR WEIGHTS:
 %s
 
 OUTPUT REQUIREMENTS:
-Output ONLY a single valid, raw JSON object strictly adhering to the schema below.
-DO NOT include markdown code fences (no `+"```"+`), DO NOT include conversational preamble, DO NOT invoke any tools.
-
-SCHEMA:
-{
-  "decision": "BUY" | "SELL" | "HOLD",
-  "confidence": <float between 0.0 and 1.0>,
-  "reasoning": "<concise institutional quantitative analysis referencing primary news catalyst, technical entry/exit calibration, and risk/reward>",
-  "catalyst": "<headline or catalyst summary that triggered this decision, or empty if HOLD>",
-  "leverage": <integer between 5 and 10>,
-  "allocation_pct": <float between 0.5 and 2.0>,
-  "suggested_stop_loss_pct": <float between 0.8 and 1.5>,
-  "suggested_take_profit_pct": <float between 2.0 and 5.0>,
-  "regime": "BULL" | "BEAR" | "RANGING",
-  "estimated_win_probability": <float between 0.0 and 1.0>
-}`, weightsStr.String())
+Output ONLY raw JSON with keys in exact order: evidence -> reasoning -> decision -> confidence -> catalyst -> leverage -> allocation_pct -> suggested_stop_loss_pct -> suggested_take_profit_pct -> regime -> estimated_win_probability.
+DO NOT include markdown code fences (no `+"```"+`), DO NOT include conversational preamble.`, weightsStr.String())
 }
 
 // BuildUserPrompt presents the real-time ticker and indicator snapshot.
@@ -348,19 +353,7 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (respOut *Dec
 		content = chatResp.Choices[0].Message.Content
 	}
 
-	content = strings.TrimSpace(content)
-	// Strip markdown code fences if present
-	content = strings.TrimPrefix(content, "```json")
-	content = strings.TrimPrefix(content, "```")
-	content = strings.TrimSuffix(content, "```")
-	content = strings.TrimSpace(content)
-
-	// Extract JSON between first '{' and last '}'
-	startIdx := strings.Index(content, "{")
-	endIdx := strings.LastIndex(content, "}")
-	if startIdx >= 0 && endIdx > startIdx {
-		content = content[startIdx : endIdx+1]
-	}
+	content = StripCodeFence(content)
 
 	var decision DecisionResponse
 	if err := json.Unmarshal([]byte(content), &decision); err != nil {

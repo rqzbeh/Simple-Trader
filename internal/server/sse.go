@@ -1,17 +1,23 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/rqzbeh/simple-trader/internal/cache"
 )
 
 // SSEBroadcaster manages active HTTP connections for real-time Server-Sent Events.
+// It streams events across multi-instance nodes via Redis Pub/Sub (Constitution Principle II).
 type SSEBroadcaster struct {
 	mu           sync.RWMutex
 	clients      map[chan string]bool
 	initPayloads func() []string
+	redisClient  *cache.Client
+	channel      string
 }
 
 // NewSSEBroadcaster creates a broadcaster.
@@ -19,6 +25,27 @@ func NewSSEBroadcaster() *SSEBroadcaster {
 	return &SSEBroadcaster{
 		clients: make(map[chan string]bool),
 	}
+}
+
+// AttachRedis attaches a Redis client for distributed pub/sub SSE broadcasting.
+func (b *SSEBroadcaster) AttachRedis(ctx context.Context, client *cache.Client, channel string) {
+	b.mu.Lock()
+	b.redisClient = client
+	b.channel = channel
+	b.mu.Unlock()
+
+	if client == nil || client.Underlying() == nil {
+		return
+	}
+
+	pubsub := client.Subscribe(ctx, channel)
+	go func() {
+		defer pubsub.Close()
+		ch := pubsub.Channel()
+		for msg := range ch {
+			b.broadcastLocal(msg.Payload)
+		}
+	}()
 }
 
 // SetInitialPayloadProvider registers a callback returning initial SSE messages to send when a client connects.
@@ -90,15 +117,32 @@ func (b *SSEBroadcaster) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Broadcast dispatches an event to all connected SSE clients.
+// Broadcast dispatches an event to all connected SSE clients across nodes via Redis Pub/Sub.
 func (b *SSEBroadcaster) Broadcast(event string, data string) {
+	msg := fmt.Sprintf("event: %s\ndata: %s\n\n", event, data)
+
+	b.mu.RLock()
+	client := b.redisClient
+	channel := b.channel
+	b.mu.RUnlock()
+
+	if client != nil && client.Underlying() != nil && channel != "" {
+		if err := client.Publish(context.Background(), channel, msg); err == nil {
+			return
+		}
+	}
+
+	// Deliver locally if Redis unavailable or detached
+	b.broadcastLocal(msg)
+}
+
+func (b *SSEBroadcaster) broadcastLocal(rawMsg string) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
-	msg := fmt.Sprintf("event: %s\ndata: %s\n\n", event, data)
 	for client := range b.clients {
 		select {
-		case client <- msg:
+		case client <- rawMsg:
 		default:
 			// Client channel full or slow, skip non-blocking
 		}

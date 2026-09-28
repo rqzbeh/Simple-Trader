@@ -22,7 +22,11 @@ import (
 )
 
 // ListFuturesSignalsHandler handles GET /api/v1/signals/futures
-func (s *Server) newSignalService() *trader.SignalService {
+func (s *Server) newSignalService(optCtx ...context.Context) *trader.SignalService {
+	ctx := context.Background()
+	if len(optCtx) > 0 && optCtx[0] != nil {
+		ctx = optCtx[0]
+	}
 	var sigCfg trader.SignalConfig
 	if s.cfg != nil {
 		sigCfg = trader.SignalConfig{
@@ -66,7 +70,7 @@ func (s *Server) newSignalService() *trader.SignalService {
 		// Duplicate guard first: the background scanner and decide-all both
 		// evaluate the same symbol concurrently and both read "none active"
 		// before either inserted, producing two OPEN signals for one symbol.
-		if existing, err := s.dbStore.GetActiveFuturesSignalBySymbol(context.Background(), symbol); err == nil && existing != nil {
+		if existing, err := s.dbStore.GetActiveFuturesSignalBySymbol(ctx, symbol); err == nil && existing != nil {
 			return existing, nil
 		}
 
@@ -74,7 +78,7 @@ func (s *Server) newSignalService() *trader.SignalService {
 		if s.cfg != nil && s.cfg.MaxConcurrentSignals > 0 {
 			maxActive = s.cfg.MaxConcurrentSignals
 		}
-		active, err := s.dbStore.ListFuturesSignals(context.Background(), "ACTIVE", 100)
+		active, err := s.dbStore.ListFuturesSignals(ctx, "ACTIVE", 100)
 		if err != nil {
 			return nil, nil
 		}
@@ -101,6 +105,15 @@ func (s *Server) ListFuturesSignalsHandler(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	profile := r.URL.Query().Get("profile")
+	cacheKey := fmt.Sprintf("cache:signals:futures:%s:%s:%d", profile, status, limit)
+	if s.redisClient != nil {
+		if cached, err := s.redisClient.Get(r.Context(), cacheKey); err == nil && len(cached) > 0 {
+			w.Write(cached)
+			return
+		}
+	}
+
 	if s.dbStore == nil {
 		json.NewEncoder(w).Encode([]db.FuturesTradeSignal{})
 		return
@@ -109,7 +122,7 @@ func (s *Server) ListFuturesSignalsHandler(w http.ResponseWriter, r *http.Reques
 	// US4 T043: ?profile=COMMODITY scopes the Commodities view.
 	var signals []db.FuturesTradeSignal
 	var err error
-	if profile := r.URL.Query().Get("profile"); profile != "" {
+	if profile != "" {
 		signals, err = s.dbStore.ListFuturesSignalsByProfile(r.Context(), status, limit, profile)
 	} else {
 		signals, err = s.dbStore.ListFuturesSignals(r.Context(), status, limit)
@@ -123,7 +136,15 @@ func (s *Server) ListFuturesSignalsHandler(w http.ResponseWriter, r *http.Reques
 		signals = []db.FuturesTradeSignal{}
 	}
 
-	json.NewEncoder(w).Encode(signals)
+	data, err := json.Marshal(signals)
+	if err != nil {
+		http.Error(w, `{"error":"failed to marshal futures signals"}`, http.StatusInternalServerError)
+		return
+	}
+	if s.redisClient != nil {
+		_ = s.redisClient.Set(r.Context(), cacheKey, data, 10*time.Second)
+	}
+	w.Write(data)
 }
 
 // GenerateFuturesSignalRequest defines the payload for POST /api/v1/signals/futures/decide
@@ -207,7 +228,7 @@ func metaSlice(m *trader.CatalystMeta) []trader.CatalystMeta {
 
 // EvaluateSymbolSignal evaluates a single symbol against breaking news catalysts and technical confluence.
 // If high conviction is detected, it persists the signal, broadcasts via SSE and Telegram, and returns the signal.
-func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string, headlines []string) (*db.FuturesTradeSignal, string, error) {
+func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol string, headlines []string) (*db.FuturesTradeSignal, string, error) {
 	if s.aiClient == nil {
 		return nil, "AI client not configured", errors.New("ai client not configured")
 	}
@@ -215,7 +236,7 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 	if symbol == "" || symbol == "BTC/USD" {
 		symbol = "BTC/USDT"
 	}
-	bucket = market.GetBucket(symbol)
+	bucket := market.GetBucket(symbol)
 
 	// Ingest latest breaking news headlines from crawler if not provided
 	if len(headlines) == 0 && s.newsCrawler != nil {
@@ -559,7 +580,7 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol, bucket string
 		}
 	}
 
-	signalSvc := s.newSignalService()
+	signalSvc := s.newSignalService(ctx)
 	sig, decision, err := signalSvc.EvaluateMarketSignal(
 		ctx,
 		symbol,
@@ -652,7 +673,7 @@ func (s *Server) GenerateFuturesSignalHandler(w http.ResponseWriter, r *http.Req
 		req.Bucket = "ALPHA"
 	}
 
-	sig, holdReason, err := s.EvaluateSymbolSignal(r.Context(), req.Symbol, req.Bucket, req.NewsHeadlines)
+	sig, holdReason, err := s.EvaluateSymbolSignal(r.Context(), req.Symbol, req.NewsHeadlines)
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
 		return
@@ -788,12 +809,10 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 				return
 			}
 
-			b := market.GetBucket(symbol)
-
 			evalCtx, evalCancel := context.WithTimeout(batchCtx, 20*time.Second)
 			defer evalCancel()
 
-			sig, holdReason, err := s.EvaluateSymbolSignal(evalCtx, symbol, b, newsHeadlines)
+			sig, holdReason, err := s.EvaluateSymbolSignal(evalCtx, symbol, newsHeadlines)
 			if err != nil {
 				results[idx] = AssetScanResult{
 					Symbol: symbol,
@@ -897,7 +916,7 @@ func (s *Server) CloseFuturesSignalHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	signalSvc := s.newSignalService()
+	signalSvc := s.newSignalService(r.Context())
 	// Close unconditionally: CheckSignalResolution only settles when price has
 	// crossed SL/TP, and discarding its resolved flag returned {"status":"CLOSED"}
 	// while the database row stayed ACTIVE — the engine position disappeared but
@@ -994,7 +1013,7 @@ func (s *Server) ReconcileActiveSignals(ctx context.Context) {
 			if price > 0 {
 				// Settle PnL/ROI at the live price like every other exit path.
 				// This used to hardcode 0, 0 which erased all timed-exit results.
-				signalSvc := s.newSignalService()
+				signalSvc := s.newSignalService(ctx)
 				if _, _, err := signalSvc.CloseSignalNow(ctx, sig, price, exitReason); err != nil {
 					log.Printf("[Reconcile] Failed to settle time-exit for signal #%d: %v", sig.ID, err)
 					continue
@@ -1018,7 +1037,7 @@ func (s *Server) ReconcileActiveSignals(ctx context.Context) {
 		if price <= 0 {
 			continue
 		}
-		signalSvc := s.newSignalService()
+		signalSvc := s.newSignalService(ctx)
 		resolved, exitReason, pnl, roi, err := signalSvc.CheckSignalResolution(ctx, sig, price)
 		if err != nil || !resolved {
 			// Not closed by TP/SL: run the time-decay state machine (spec 012
@@ -1178,7 +1197,7 @@ func (s *Server) applyDecayState(ctx context.Context, sig *db.FuturesTradeSignal
 	case "CLOSE", "TIME_EXIT":
 		// Close the dead trade at the live price (never persist zero: the
 		// close path settles PnL/ROI like every other exit).
-		signalSvc := s.newSignalService()
+		signalSvc := s.newSignalService(ctx)
 		pnlUSD, roiPct, err := signalSvc.CloseSignalNow(ctx, sig, price, "TIME_EXIT")
 		if err != nil {
 			log.Printf("[Decay] failed to close signal #%d: %v", sig.ID, err)
@@ -1191,12 +1210,8 @@ func (s *Server) applyDecayState(ctx context.Context, sig *db.FuturesTradeSignal
 		}
 		_ = s.dbStore.UpdateSignalDecay(context.WithoutCancel(ctx), sig.ID, "CLOSED")
 		log.Printf("[Decay] signal #%d %s closed by decay: pnl=%.2f roi=%.2f (age %.0fm, %.2fR)", sig.ID, sig.Symbol, pnlUSD, roiPct, ageMin, rMultiple)
-		reconciledDecay++
 	}
 }
-
-// reconciledDecay counts decay-driven closures for the reconcile summary log.
-var reconciledDecay int
 
 // livePriceFor returns the freshest cached price for a symbol.
 func (s *Server) livePriceFor(ctx context.Context, symbol string) float64 {
@@ -1247,7 +1262,7 @@ func (s *Server) CheckSignalExitForTick(tick cache.TickerQuote) {
 		return
 	}
 
-	signalSvc := s.newSignalService()
+	signalSvc := s.newSignalService(ctx)
 	resolved, exitReason, pnl, roi, err := signalSvc.CheckSignalResolution(ctx, sig, tick.Price)
 	if err != nil || !resolved {
 		return
@@ -1420,9 +1435,7 @@ func (s *Server) runBackgroundScan(ctx context.Context) {
 			}
 		}
 
-		bucket := market.GetBucket(sym)
-
-		_, holdReason, scanErr := s.EvaluateSymbolSignal(ctx, sym, bucket, newsHeadlines)
+		_, holdReason, scanErr := s.EvaluateSymbolSignal(ctx, sym, newsHeadlines)
 		if scanErr != nil {
 			log.Printf("[BackgroundScan] %s error: %v", sym, scanErr)
 		} else if holdReason != "" {
@@ -1465,6 +1478,14 @@ func (s *Server) SignalSummaryHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	profile := r.URL.Query().Get("profile")
 	since := r.URL.Query().Get("since")
+
+	cacheKey := fmt.Sprintf("cache:signals:summary:%s:%s", profile, since)
+	if s.redisClient != nil {
+		if cached, err := s.redisClient.Get(r.Context(), cacheKey); err == nil && len(cached) > 0 {
+			w.Write(cached)
+			return
+		}
+	}
 
 	summary := SignalSummary{Profile: profile}
 	if s.dbStore == nil || s.dbStore.Pool == nil {
@@ -1526,7 +1547,15 @@ func (s *Server) SignalSummaryHandler(w http.ResponseWriter, r *http.Request) {
 				float64(losses)*summary.AvgLossPct) / float64(closed)
 		}
 	}
-	json.NewEncoder(w).Encode(summary)
+	data, err := json.Marshal(summary)
+	if err != nil {
+		http.Error(w, `{"error":"failed to marshal summary"}`, http.StatusInternalServerError)
+		return
+	}
+	if s.redisClient != nil {
+		_ = s.redisClient.Set(r.Context(), cacheKey, data, 30*time.Second)
+	}
+	w.Write(data)
 }
 
 // absFloat returns the absolute value of v.

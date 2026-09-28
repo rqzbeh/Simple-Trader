@@ -126,6 +126,10 @@ func (s *Store) ListInvestors(ctx context.Context, masterPortfolioEquity float64
 		list = append(list, inv)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("investor row iteration: %w", err)
+	}
+
 	nav := CalculateNAV(masterPortfolioEquity, totalPoolUnits)
 
 	for i := range list {
@@ -192,9 +196,13 @@ func (s *Store) GetInvestor(ctx context.Context, id string, masterPortfolioEquit
 	var txs []CapitalTransaction
 	for txRows.Next() {
 		var t CapitalTransaction
-		if err := txRows.Scan(&t.ID, &t.InvestorID, &t.TxType, &t.Amount, &t.PoolUnits, &t.NAVAtExecution, &t.Notes, &t.CreatedAt); err == nil {
-			txs = append(txs, t)
+		if err := txRows.Scan(&t.ID, &t.InvestorID, &t.TxType, &t.Amount, &t.PoolUnits, &t.NAVAtExecution, &t.Notes, &t.CreatedAt); err != nil {
+			return nil, nil, fmt.Errorf("failed to scan transaction row: %w", err)
 		}
+		txs = append(txs, t)
+	}
+	if err := txRows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("transaction row iteration: %w", err)
 	}
 
 	return &inv, txs, nil

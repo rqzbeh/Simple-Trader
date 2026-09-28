@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { IndicatorWeights } from '../types';
 import { Cpu, Sliders, Download, RefreshCw, CheckCircle2, ArrowRight, AlertCircle } from 'lucide-react';
 import { formatTime, useTimezone } from '../utils/time';
-import { getAuthToken } from '../context/AuthContext';
+import { apiFetch } from '../utils/apiClient';
 
 interface AIWeightMatrixProps {
   weights: IndicatorWeights;
@@ -191,35 +191,21 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
     setModelSaving(true);
     setModelSaveError(null);
     try {
-      const payload: Record<string, any> = {};
+      const payload: Record<string, unknown> = {};
       if (modelId) payload['AI_MODEL_ID'] = modelId;
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      const token = getAuthToken();
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch('/api/v1/system/config', {
+      await apiFetch('/api/v1/system/config', {
         method: 'PUT',
-        headers,
-        credentials: 'include',
         body: JSON.stringify(payload),
       });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `HTTP ${res.status}: Failed to save model settings`);
-      }
 
       localStorage.setItem('st_ai_model', modelId);
       localStorage.setItem('st_ai_endpoint', endpointUrl);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
-    } catch (err: any) {
-      setModelSaveError(err.message || 'Failed to save configuration');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setModelSaveError(msg || 'Failed to save configuration');
     } finally {
       setModelSaving(false);
     }

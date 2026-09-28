@@ -40,8 +40,9 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
       if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to load signals`);
       const data = await res.json();
       setSignals(Array.isArray(data) ? data : []);
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Error loading signals');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(msg || 'Error loading signals');
     } finally {
       setLoading(false);
     }
@@ -73,8 +74,9 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
       } else if (data.id) {
         fetchSignals();
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to trigger evaluation');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(msg || 'Failed to trigger evaluation');
     } finally {
       setEvaluating(false);
     }
@@ -96,8 +98,9 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
       const data = await res.json();
       fetchSignals();
       setScanSummary(`Scanned ${data.scanned_count} assets. ${data.signals_count} actionable signal(s).`);
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Failed to trigger batch evaluation');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(msg || 'Failed to trigger batch evaluation');
     } finally {
       setEvaluatingAll(false);
     }
@@ -118,8 +121,9 @@ export const AISignalFeed: React.FC<AISignalFeedProps> = ({
       });
       if (!res.ok) throw new Error('Close failed');
       fetchSignals();
-    } catch (err: any) {
-      setErrorMsg(`Close failed: ${err.message}`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(`Close failed: ${msg}`);
     }
   };
 

@@ -20,9 +20,10 @@ export const NewsStreamView: React.FC = () => {
       const data = await res.json();
       setArticles(data.articles || []);
       setSentiment(data.sentiment || null);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed fetching news stream:', err);
-      setErrorMsg(err.message || 'Error fetching news headlines');
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(msg || 'Error fetching news headlines');
     } finally {
       setLoading(false);
     }

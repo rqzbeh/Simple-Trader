@@ -85,7 +85,7 @@ func (s *Server) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 
 	token := auth.ExtractToken(r)
 	if token != "" && s.authenticator != nil {
-		s.authenticator.Logout(token)
+		s.authenticator.LogoutContext(r.Context(), token)
 	}
 
 	// Clear session cookie
@@ -110,7 +110,7 @@ func (s *Server) SessionHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	token := auth.ExtractToken(r)
-	if token == "" || s.authenticator == nil || !s.authenticator.ValidateToken(token) {
+	if token == "" || s.authenticator == nil || !s.authenticator.ValidateTokenContext(r.Context(), token) {
 		json.NewEncoder(w).Encode(SessionStatusResponse{
 			Authenticated: false,
 		})

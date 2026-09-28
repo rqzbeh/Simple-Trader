@@ -207,14 +207,24 @@ func (a *Authenticator) Login(ctx context.Context, password, clientIP string) (*
 	return a.sessions.CreateSession(ctx)
 }
 
+// ValidateTokenContext verifies if the given token is an active valid session within a context.
+func (a *Authenticator) ValidateTokenContext(ctx context.Context, token string) bool {
+	return a.sessions.ValidateSession(ctx, token)
+}
+
 // ValidateToken verifies if the given token is an active valid session.
 func (a *Authenticator) ValidateToken(token string) bool {
-	return a.sessions.ValidateSession(context.Background(), token)
+	return a.ValidateTokenContext(context.Background(), token)
+}
+
+// LogoutContext revokes the session token within a context.
+func (a *Authenticator) LogoutContext(ctx context.Context, token string) {
+	a.sessions.RevokeSession(ctx, token)
 }
 
 // Logout revokes the session token.
 func (a *Authenticator) Logout(token string) {
-	a.sessions.RevokeSession(context.Background(), token)
+	a.LogoutContext(context.Background(), token)
 }
 
 // Limiter returns the rate limiter.

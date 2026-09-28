@@ -21,6 +21,7 @@ type EarlyExitStore interface {
 	HasTerminalEarlyExitJudgment(ctx context.Context, positionID int64, clusterID int64) (bool, error)
 	CountEarlyExitsToday(ctx context.Context, symbol string, now time.Time) (int, error)
 	GetLastEarlyExitTime(ctx context.Context, symbol string) (time.Time, bool, error)
+	RecordEarlyExitClose(ctx context.Context, j *db.EarlyExitJudgment, signalID *int64, exitPrice float64, exitReason string, pnl, roi float64) error
 }
 
 // EarlyExitSender sends alerts (contracts §4).
@@ -101,7 +102,7 @@ func BuildEarlyExitQuestions(positions []*db.Trade, cluster *market.NewsCluster,
 				},
 			},
 			Criteria: map[string]string{
-				"true":  "News invalidates the thesis — close now",
+				"true":  "News invalidates the thesis via high-severity opposing catalyst — close now",
 				"false": "Thesis intact — hold",
 			},
 		}
@@ -342,7 +343,7 @@ func ProcessEarlyExitVerdict(
 		}
 	}
 
-	// 5. Persist closed judgment row
+	// 5. Persist closed judgment row and signal status atomically
 	outcome := float64(closedTrade.ReturnPct)
 	j := &db.EarlyExitJudgment{
 		CycleID:         cycleID,
@@ -362,7 +363,29 @@ func ProcessEarlyExitVerdict(
 		Outcome:         &outcome,
 	}
 	if store != nil {
-		_ = store.InsertEarlyExitJudgment(ctx, j)
+		pnlUSD := closedTrade.RealizedPnL
+		roiPct := float64(closedTrade.ReturnPct)
+		if err := store.RecordEarlyExitClose(ctx, j, pos.SignalID, closedTrade.ExitPrice, "NEWS_EARLY_EXIT", pnlUSD, roiPct); err != nil {
+			// Transaction failed -> record action=error with close_error and return explicit error (no silent divergence)
+			divergenceErr := fmt.Sprintf("component=early-exit cycle=%s: RecordEarlyExitClose failed for %s: %v", cycleID, pos.Symbol, err)
+			errJ := &db.EarlyExitJudgment{
+				CycleID:         cycleID,
+				PositionID:      pos.ID,
+				Symbol:          pos.Symbol,
+				ClusterID:       cID,
+				ClusterHeadline: headline,
+				Verdict:         "DO_NOT_HOLD",
+				Noul:            &noul,
+				Confidence:      &conf,
+				Route:           route,
+				GuardsPassed:    &fTrue,
+				Action:          "error",
+				CloseError:      divergenceErr,
+				Status:          "ok",
+			}
+			_ = store.InsertEarlyExitJudgment(ctx, errJ)
+			return fmt.Errorf("%s", divergenceErr)
+		}
 	}
 
 	return nil

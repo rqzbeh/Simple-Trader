@@ -55,7 +55,8 @@ type CatalystEventInput struct {
 
 // DecisionResponse represents the structured trading decision output by the LLM or heuristic fallback.
 type DecisionResponse struct {
-	Decision                string  `json:"decision"`                  // "BUY", "SELL", or "HOLD"
+	Evidence                []string `json:"evidence,omitempty"`
+	Decision                string   `json:"decision"`                  // "BUY", "SELL", or "HOLD"
 	Confidence              float64 `json:"confidence"`                // 0.0 - 1.0
 	Reasoning               string  `json:"reasoning"`                 // LLM analytical justification
 	Catalyst                string  `json:"catalyst,omitempty"`        // Primary news catalyst headline or source

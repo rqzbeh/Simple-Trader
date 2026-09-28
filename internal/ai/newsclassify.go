@@ -122,13 +122,20 @@ func (c *Client) ClassifyNews(ctx context.Context, symbol string, headlines []st
 			{Role: "system", Content: newsSystemPrompt},
 			{Role: "user", Content: fmt.Sprintf(newsUserPromptTemplate, symbol, sb.String())},
 		},
-		ResponseFormat: &responseFormat{Type: "json_object"},
+		ResponseFormat: &responseFormat{
+			Type: "json_schema",
+			JSONSchema: &jsonSchemaDefinition{
+				Name:   "news_classification",
+				Strict: true,
+				Schema: json.RawMessage(newsClassifySchema),
+			},
+		},
 	}
 	out, err := c.completeJSON(ctx, req)
 	if err != nil {
 		return ClassifyNewsResult{}, WrapDecision("news-classifier", symbol, err, "completion failed")
 	}
-	out = stripCodeFence(out)
+	out = StripCodeFence(out)
 	var res ClassifyNewsResult
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		return ClassifyNewsResult{}, WrapDecision("news-classifier", symbol, fmt.Errorf("%w: %v", ErrLLMClassify, err), "structured output invalid")
@@ -137,21 +144,6 @@ func (c *Client) ClassifyNews(ctx context.Context, symbol string, headlines []st
 		return ClassifyNewsResult{}, WrapDecision("news-classifier", symbol, ErrLLMClassify, "label outside vocabulary: "+res.Label)
 	}
 	return res, nil
-}
-
-// stripCodeFence removes markdown fences some gateway models wrap around JSON.
-func stripCodeFence(s string) string {
-	s = strings.TrimSpace(s)
-	s = strings.TrimPrefix(s, "```json")
-	s = strings.TrimPrefix(s, "```JSON")
-	s = strings.TrimPrefix(s, "```")
-	s = strings.TrimSuffix(s, "```")
-	if i := strings.Index(s, "{"); i > 0 {
-		if j := strings.LastIndex(s, "}"); j > i {
-			s = s[i : j+1]
-		}
-	}
-	return strings.TrimSpace(s)
 }
 
 // completeJSON posts a chat request and returns the assistant content.

@@ -802,8 +802,8 @@ func EntryQuestions(bucketOpt ...string) map[string]ai.JevQuestion {
 				"not_for":  "order sides; execution layer owns BUY/SELL conversion",
 			},
 			Criteria: map[string]string{
-				"LONG":     "Enter long: uptrend confirmed, catalyst aligns, risk gate passes",
-				"SHORT":    "Enter short: downtrend confirmed, catalyst aligns, risk gate passes",
+				"LONG":     "Enter long: uptrend confirmed (Price > EMA, RSI 40-70, SuperTrend green), catalyst aligns, risk gate passes",
+				"SHORT":    "Enter short: downtrend confirmed (Price < EMA, RSI 30-60, SuperTrend red), catalyst aligns, risk gate passes",
 				"NO_TRADE": "No edge, mixed signals, or gate failure",
 			},
 		},

@@ -15,10 +15,10 @@ type ShadowOrchestrator struct {
 	Router *DecisionRouter
 	Store  ShadowDecisionSink
 
-	mu     sync.Mutex
+	mu      sync.RWMutex
 	enabled map[string]bool // entry|exit|news toggles (FR-016)
-	queue  chan func()
-	once   sync.Once
+	queue   chan func()
+	once    sync.Once
 }
 
 // ShadowDecisionSink abstracts persistence for testability.
@@ -37,8 +37,8 @@ func (o *ShadowOrchestrator) SetEnabled(judgmentType string, on bool) {
 }
 
 func (o *ShadowOrchestrator) active(judgmentType string) bool {
-	o.mu.Lock()
-	defer o.mu.Unlock()
+	o.mu.RLock()
+	defer o.mu.RUnlock()
 	return o.enabled[judgmentType]
 }
 
@@ -104,6 +104,8 @@ func (o *ShadowOrchestrator) JudgeEntry(cycleID, symbol string, state interface{
 			d.LatencyMS = int(out.JevLatency / time.Millisecond)
 			d.InputTokens, d.OutputTokens = out.JevUsage.InputTokens, out.JevUsage.OutputTokens
 		}
-		_ = o.Record(ctx, d)
+		recCtx, recCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer recCancel()
+		_ = o.Record(recCtx, d)
 	})
 }

@@ -121,6 +121,9 @@ func NewNewsCrawler(cfg NewsFeedConfig, redisClient *cache.Client, dbStore *db.S
 					crawler.seenHashes[a.ContentHash] = a.IngestedAt
 				}
 			}
+			if err := rows.Err(); err != nil {
+				log.Printf("news crawler initial seed row error: %v", err)
+			}
 		}
 	}
 

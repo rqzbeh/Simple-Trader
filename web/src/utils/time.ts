@@ -144,11 +144,12 @@ export function timezoneLabel(): string {
  * same zone as everything else.
  */
 
-/** lightweight-charts passes UTCTimestamp in seconds, or a BusinessDay object. */
-type ChartTimeValue = number | { year: number; month: number; day: number };
+/** lightweight-charts passes UTCTimestamp in seconds, BusinessDay object, or string. */
+type ChartTimeValue = number | string | { year: number; month: number; day: number };
 
 function chartDate(time: ChartTimeValue): Date | null {
   if (typeof time === 'number') return new Date(time * 1000);
+  if (typeof time === 'string') return new Date(time);
   if (time && typeof time === 'object' && 'year' in time) {
     return new Date(Date.UTC(time.year, time.month - 1, time.day));
   }

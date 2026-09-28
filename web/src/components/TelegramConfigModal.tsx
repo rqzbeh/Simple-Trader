@@ -33,8 +33,9 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
       setConfig(data);
       setChatID(data.chat_id || '');
       setEnabled(data.enabled);
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: err.message || 'Error loading config' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFeedback({ type: 'error', message: msg || 'Error loading config' });
     } finally {
       setLoading(false);
     }
@@ -74,8 +75,9 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
       setConfig(updated);
       setBotToken('');
       setFeedback({ type: 'success', message: 'Telegram configuration saved successfully.' });
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: err.message || 'Save failed' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFeedback({ type: 'error', message: msg || 'Save failed' });
     } finally {
       setSaving(false);
     }
@@ -101,8 +103,9 @@ export const TelegramConfigModal: React.FC<TelegramConfigModalProps> = ({
       }
 
       setFeedback({ type: 'success', message: 'Test message transmitted to Telegram successfully!' });
-    } catch (err: any) {
-      setFeedback({ type: 'error', message: err.message || 'Test delivery failed' });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setFeedback({ type: 'error', message: msg || 'Test delivery failed' });
     } finally {
       setTesting(false);
     }

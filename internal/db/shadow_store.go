@@ -50,20 +50,14 @@ func (d *ShadowDecision) Validate() error {
 	if d.CycleID == "" {
 		return fmt.Errorf("shadow_decisions: empty cycle_id")
 	}
+	if err := ValidateStatusAndError(d.Status, d.Error, "shadow_decisions"); err != nil {
+		return err
+	}
 	if d.Status == "error" {
-		if d.Error == "" {
-			return fmt.Errorf("shadow_decisions: status=error requires non-empty error (FR-007)")
-		}
 		if d.Choice != "" || d.Noul != nil || d.Score != nil {
 			return fmt.Errorf("shadow_decisions: error rows carry no judgment values")
 		}
 		return nil
-	}
-	if d.Status != "ok" {
-		return fmt.Errorf("shadow_decisions: bad status %q", d.Status)
-	}
-	if d.Error != "" {
-		return fmt.Errorf("shadow_decisions: status=ok must not carry error")
 	}
 	switch d.JudgmentType {
 	case "entry":
@@ -192,6 +186,9 @@ func (s *Store) calibrationBuckets(ctx context.Context, judgmentType string, day
 		out = append(out, map[string]interface{}{
 			"bucket": b, "predicted": predicted, "realized": realized, "n": n,
 		})
+	}
+	if rows.Err() != nil {
+		return out
 	}
 	return out
 }

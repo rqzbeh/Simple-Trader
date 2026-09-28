@@ -22,7 +22,7 @@ import { PWAInstallBanner } from './components/PWAInstallBanner';
 import { IOSInstallModal } from './components/IOSInstallModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { TIMEZONES, setTimezone, timezoneLabel, useTimezone } from './utils/time';
-import { AssetInfo, CandleData, TradePosition, IndicatorWeights } from './types';
+import { AssetInfo, CandleData, TradePosition, IndicatorWeights, AISignal } from './types';
 
 type AppTab = 'terminal' | 'investors' | 'screener' | 'commodities' | 'news' | 'ai_weights' | 'system_stats';
 
@@ -97,7 +97,7 @@ export const App: React.FC = () => {
       if (signalsRes.ok) {
         const signals = await signalsRes.json();
         if (Array.isArray(signals)) {
-          const matchingSignal = signals.find((s: any) => s.symbol === pos?.symbol);
+          const matchingSignal = signals.find((s: AISignal) => s.symbol === pos?.symbol);
           if (matchingSignal?.id) {
             await fetch(`/api/v1/signals/futures/${matchingSignal.id}/close`, {
               method: 'POST',

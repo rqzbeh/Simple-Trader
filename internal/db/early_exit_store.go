@@ -57,16 +57,11 @@ func (j *EarlyExitJudgment) Validate() error {
 	if j.Symbol == "" {
 		return fmt.Errorf("early_exit_judgments: empty symbol")
 	}
-	switch j.Status {
-	case "ok", "error":
-	default:
-		return fmt.Errorf("early_exit_judgments: bad status %q", j.Status)
+	if err := ValidateStatusAndError(j.Status, j.Error, "early_exit_judgments"); err != nil {
+		return err
 	}
 
 	if j.Status == "error" {
-		if j.Error == "" {
-			return fmt.Errorf("early_exit_judgments: status=error requires non-empty error (FR-105)")
-		}
 		if j.Verdict != "" {
 			return fmt.Errorf("early_exit_judgments: error rows must carry no verdict")
 		}
@@ -74,9 +69,6 @@ func (j *EarlyExitJudgment) Validate() error {
 	}
 
 	// Status == "ok"
-	if j.Error != "" {
-		return fmt.Errorf("early_exit_judgments: status=ok must not carry error")
-	}
 	if j.Verdict != "" && !allowedEarlyExitVerdicts[j.Verdict] {
 		return fmt.Errorf("early_exit_judgments: verdict %q outside vocabulary HOLD/DO_NOT_HOLD (FR-107)", j.Verdict)
 	}
@@ -110,6 +102,59 @@ func (s *Store) InsertEarlyExitJudgment(ctx context.Context, j *EarlyExitJudgmen
 		j.TelegramSent, strPtr(j.TelegramError), strPtr(j.CloseError), j.Status, strPtr(j.Error), j.Outcome)
 
 	return row.Scan(&j.ID, &j.CreatedAt)
+}
+
+// RecordEarlyExitClose executes signal status update and early exit judgment insert atomically in one pgx transaction.
+func (s *Store) RecordEarlyExitClose(ctx context.Context, j *EarlyExitJudgment, signalID *int64, exitPrice float64, exitReason string, pnl, roi float64) error {
+	if s.Pool == nil {
+		return fmt.Errorf("early_exit_store: database pool is nil")
+	}
+	if err := j.Validate(); err != nil {
+		return err
+	}
+
+	tx, err := s.Pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if signalID != nil && *signalID > 0 {
+		_, err := tx.Exec(ctx, `
+			UPDATE futures_trade_signals
+			SET status = 'CLOSED',
+			    exit_price = $1,
+			    exit_time = NOW(),
+			    exit_reason = $2,
+			    realized_pnl_usd = $3,
+			    realized_roi_pct = $4
+			WHERE id = $5
+		`, exitPrice, exitReason, pnl, roi, *signalID)
+		if err != nil {
+			return fmt.Errorf("failed to close futures signal in tx: %w", err)
+		}
+	}
+
+	row := tx.QueryRow(ctx, `
+		INSERT INTO early_exit_judgments
+		(cycle_id, position_id, symbol, cluster_id, cluster_headline, verdict,
+		 noul, confidence, route, guards_passed, guard_reason, action,
+		 telegram_sent, telegram_error, close_error, status, error, outcome)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+		RETURNING id, created_at`,
+		j.CycleID, j.PositionID, j.Symbol, j.ClusterID, strPtr(j.ClusterHeadline), strPtr(j.Verdict),
+		j.Noul, j.Confidence, strPtr(j.Route), j.GuardsPassed, strPtr(j.GuardReason), strPtr(j.Action),
+		j.TelegramSent, strPtr(j.TelegramError), strPtr(j.CloseError), j.Status, strPtr(j.Error), j.Outcome)
+
+	if err := row.Scan(&j.ID, &j.CreatedAt); err != nil {
+		return fmt.Errorf("failed to insert early exit judgment in tx: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("failed to commit early exit tx: %w", err)
+	}
+
+	return nil
 }
 
 // HasTerminalEarlyExitJudgment checks if a terminal judgment (closed or guarded_skip)

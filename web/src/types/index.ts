@@ -348,46 +348,6 @@ export interface SystemConfigResponse {
   env_file: string;
 }
 
-// Real-Data Machine Learning Training & Model Telemetry (US6)
-export interface MLTrainingRun {
-  id: string;
-  symbol: string;
-  timeframe: string;
-  sample_count: number;
-  date_start: string;
-  date_end: string;
-  training_loss: number;
-  directional_accuracy: number;
-  weights_snapshot?: Record<string, number>;
-  created_at: string;
-}
-
-export interface MLStatusResponse {
-  is_training: boolean;
-  hardware: string;
-  cuda_enabled: boolean;
-  device_name?: string;
-  vram_allocated_mb?: number;
-  vram_reserved_mb?: number;
-  total_vram_mb?: number;
-  current_loss?: number;
-  current_val_accuracy?: number;
-  peak_accuracy?: number;
-  progress_pct?: number;
-  elapsed_seconds?: number;
-  active_run?: {
-    symbol: string;
-    epochs: number;
-    current_epoch: number;
-    train_loss: number;
-    val_loss: number;
-    val_accuracy: number;
-    peak_val_accuracy: number;
-  };
-  bayesian_posteriors?: Record<string, { alpha: number; beta: number; mean: number; variance: number; expected_value?: number }>;
-  current_weights?: Record<string, number>;
-}
-
 
 
 

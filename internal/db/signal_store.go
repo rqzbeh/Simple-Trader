@@ -248,6 +248,10 @@ func (s *Store) ListFuturesSignals(ctx context.Context, status string, limit int
 		signals = append(signals, sig)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("row iteration: %w", err)
+	}
+
 	return signals, nil
 }
 

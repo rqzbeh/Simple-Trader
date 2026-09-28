@@ -183,7 +183,7 @@ func runReplaySimulation(t *testing.T, symbol string, candles int) *replayReport
 	for k, w := range wins {
 		favors[k] = w.favorPct
 	}
-	tp1PctCalibrated := percentile(favors, 0.40)
+	tp1PctCalibrated := percentile(favors, 0.35)
 	if tp1PctCalibrated <= 0 {
 		tp1PctCalibrated = prof.TP1AtrMult * 0.5 // degenerate data: structural floor
 	}
@@ -323,31 +323,6 @@ func computeATRSeriesHourly(ks []market.HistoricalCandle, period int) []float64 
 		if i > 0 {
 			hl := math.Abs(ks[i].High - ks[i-1].Close)
 			lc := math.Abs(ks[i].Low - ks[i-1].Close)
-			tr = math.Max(tr, math.Max(hl, lc))
-		}
-		if i < period {
-			atr += tr
-			if i == period-1 {
-				atr /= float64(period)
-				out[i] = atr
-			}
-			continue
-		}
-		atr = (atr*float64(period-1) + tr) / float64(period)
-		out[i] = atr
-	}
-	return out
-}
-
-func computeATRSeries(candles []db.Candle, period int) []float64 {
-	n := len(candles)
-	out := make([]float64, n)
-	var atr float64
-	for i := 0; i < n; i++ {
-		tr := candles[i].High - candles[i].Low
-		if i > 0 {
-			hl := math.Abs(candles[i].High - candles[i-1].Close)
-			lc := math.Abs(candles[i].Low - candles[i-1].Close)
 			tr = math.Max(tr, math.Max(hl, lc))
 		}
 		if i < period {

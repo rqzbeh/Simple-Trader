@@ -304,12 +304,19 @@ func (f *LiveMarketFeed) FetchAllLiveTicks(ctx context.Context) ([]cache.TickerQ
 		}()
 	}
 
-	// 3. Fetch Yahoo Commodities Concurrently
+	// 3. Fetch Yahoo Commodities Concurrently with bounded concurrency (semaphore=4)
+	sem := make(chan struct{}, 4)
 	for _, a := range yahooAssets {
 		asset := a
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			case <-ctx.Done():
+				return
+			}
 			q, err := f.yahooFetcher.FetchQuote(ctx, asset.Symbol)
 			if err != nil {
 				log.Printf("[LiveMarketFeed] Yahoo fetch error for %s: %v", asset.Symbol, err)

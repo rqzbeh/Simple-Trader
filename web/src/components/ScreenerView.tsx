@@ -19,9 +19,10 @@ export const ScreenerView: React.FC = () => {
       const data = await res.json();
       setAssets(data.assets || []);
       setActiveUniverse(data.active_universe || []);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed fetching screener:', err);
-      setErrorMsg(err.message || 'Error fetching dynamic screener data');
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(msg || 'Error fetching dynamic screener data');
     } finally {
       setLoading(false);
     }

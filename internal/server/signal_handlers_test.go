@@ -2,13 +2,11 @@ package server_test
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/rqzbeh/simple-trader/internal/ai"
 	"github.com/rqzbeh/simple-trader/internal/config"
 	"github.com/rqzbeh/simple-trader/internal/db"
 	"github.com/rqzbeh/simple-trader/internal/server"
@@ -67,13 +65,4 @@ func TestFuturesSignalsEndpoints(t *testing.T) {
 	if recClose.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected status 503 for nil dbStore on close, got %d", recClose.Code)
 	}
-}
-
-type mockAIClient struct {
-	response *ai.DecisionResponse
-	err      error
-}
-
-func (m *mockAIClient) Analyze(ctx context.Context, req ai.DecisionRequest) (*ai.DecisionResponse, error) {
-	return m.response, m.err
 }

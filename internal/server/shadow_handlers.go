@@ -16,7 +16,7 @@ func (s *Server) handleShadowReport(w http.ResponseWriter, r *http.Request) {
 	if tok == "" {
 		tok = r.URL.Query().Get("token")
 	}
-	if s.authenticator == nil || !s.authenticator.ValidateToken(tok) {
+	if s.authenticator == nil || !s.authenticator.ValidateTokenContext(r.Context(), tok) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}

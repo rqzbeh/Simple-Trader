@@ -87,8 +87,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setTokenMasked(data.token.slice(0, 4) + '...' + data.token.slice(-4));
       }
       return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message || 'Network error during login' };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { success: false, error: msg || 'Network error during login' };
     }
   };
 

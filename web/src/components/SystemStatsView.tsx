@@ -12,7 +12,7 @@ import {
   Save,
   FileText,
 } from 'lucide-react';
-import { getAuthToken } from '../context/AuthContext';
+import { apiFetch } from '../utils/apiClient';
 import { SystemConfigResponse } from '../types';
 
 export interface GatewayStatsData {
@@ -117,9 +117,10 @@ export const SystemStatsView: React.FC = () => {
       const data: SystemStatsResponse = await res.json();
       setStats(data);
       setLastUpdated(new Date());
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to fetch system stats:', err);
-      setErrorMsg(err.message || 'Error fetching system stats');
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(msg || 'Error fetching system stats');
     } finally {
       setLoading(false);
     }
@@ -148,32 +149,17 @@ export const SystemStatsView: React.FC = () => {
     }
 
     try {
-      const payload: Record<string, any> = {
+      const payload: Record<string, unknown> = {
         ROUTING_CONFIDENCE_THRESHOLD: thresholdInput,
       };
       if (typesafeKeyInput.trim()) {
         payload['TYPESAFE_API_KEY'] = typesafeKeyInput.trim();
       }
 
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      const token = getAuthToken();
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
-
-      const res = await fetch('/api/v1/system/config', {
+      const data = await apiFetch<SystemConfigResponse>('/api/v1/system/config', {
         method: 'PUT',
-        headers,
-        credentials: 'include',
         body: JSON.stringify(payload),
       });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(data.error || `HTTP ${res.status}: Failed to update config`);
-      }
 
       setConfig(data);
       if (data.routing_confidence_threshold != null) {
@@ -185,10 +171,11 @@ export const SystemStatsView: React.FC = () => {
         message: `Decision Core settings persisted to ${data.env_file || '.env'} and applied live to DecisionRouter.`,
       });
       fetchStats();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
       setConfigFeedback({
         type: 'error',
-        message: err.message || 'Failed to update Decision Core settings',
+        message: msg || 'Failed to update Decision Core settings',
       });
     } finally {
       setSavingConfig(false);

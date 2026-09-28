@@ -85,8 +85,9 @@ export const InvestorLedgerView: React.FC = () => {
           total_capital: 100000,
         });
       }
-    } catch (e: any) {
-      setErrorMsg(e?.message || 'Failed fetching ledger data');
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setErrorMsg(msg || 'Failed fetching ledger data');
     } finally {
       setIsLoading(false);
     }
@@ -124,8 +125,9 @@ export const InvestorLedgerView: React.FC = () => {
       setFormNotes('');
       setFormInitialDeposit(10000);
       await fetchData();
-    } catch (err: any) {
-      setErrorMsg(err.message);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -155,8 +157,9 @@ export const InvestorLedgerView: React.FC = () => {
       setTxAmount(1000);
       setTxNotes('');
       await fetchData();
-    } catch (err: any) {
-      setErrorMsg(err.message);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -186,8 +189,9 @@ export const InvestorLedgerView: React.FC = () => {
       setTxAmount(1000);
       setTxNotes('');
       await fetchData();
-    } catch (err: any) {
-      setErrorMsg(err.message);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg(msg);
     } finally {
       setIsSubmitting(false);
     }

@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"strconv"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -45,8 +47,28 @@ func NewStore(ctx context.Context, dbURL string) (*Store, error) {
 		host = config.ConnConfig.Host
 	}
 
-	config.MaxConns = 25
-	config.MinConns = 5
+	maxConns := int32(25)
+	if val := os.Getenv("DB_MAX_CONNS"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			maxConns = int32(n)
+		}
+	} else if val := os.Getenv("DATABASE_MAX_CONNS"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			maxConns = int32(n)
+		}
+	}
+	minConns := int32(5)
+	if val := os.Getenv("DB_MIN_CONNS"); val != "" {
+		if n, err := strconv.Atoi(val); err == nil && n > 0 {
+			minConns = int32(n)
+		}
+	}
+	if minConns > maxConns {
+		minConns = maxConns
+	}
+
+	config.MaxConns = maxConns
+	config.MinConns = minConns
 	config.MaxConnLifetime = 1 * time.Hour
 	config.MaxConnIdleTime = 30 * time.Minute
 	config.HealthCheckPeriod = 30 * time.Second

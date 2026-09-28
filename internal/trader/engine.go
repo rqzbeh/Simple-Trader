@@ -252,23 +252,46 @@ func (e *ExecutionEngine) closePositionLocked(trade *db.Trade, symbol string, cu
 
 // GetTotalEquity returns cash plus unrealized marked-to-market position values.
 // Accepts optional currentPrices map for mark-to-market valuation.
+// Price fetching from PriceProvider is executed outside e.mu to eliminate lock contention.
 func (e *ExecutionEngine) GetTotalEquity(currentPrices ...map[string]float64) float64 {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
-
 	var prices map[string]float64
 	if len(currentPrices) > 0 {
 		prices = currentPrices[0]
 	}
 
+	// 1. Briefly acquire read lock to check required symbols and price provider.
+	e.mu.RLock()
+	provider := e.priceProvider
+	var needed []string
+	if provider != nil {
+		for sym := range e.positions {
+			if _, ok := prices[sym]; !ok {
+				needed = append(needed, sym)
+			}
+		}
+	}
+	e.mu.RUnlock()
+
+	// 2. Fetch missing prices outside e.mu to prevent network I/O from blocking concurrent mutations.
+	var fetched map[string]float64
+	if len(needed) > 0 && provider != nil {
+		fetched = make(map[string]float64, len(needed))
+		for _, sym := range needed {
+			if liveP, err := provider.GetLatestPrice(sym); err == nil && liveP > 0 {
+				fetched[sym] = liveP
+			}
+		}
+	}
+
+	// 3. Acquire read lock strictly for memory arithmetic.
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
 	equity := e.cash
 	for sym, pos := range e.positions {
 		currPrice, ok := prices[sym]
-		if !ok && e.priceProvider != nil {
-			if liveP, err := e.priceProvider.GetLatestPrice(sym); err == nil && liveP > 0 {
-				currPrice = liveP
-				ok = true
-			}
+		if !ok && fetched != nil {
+			currPrice, ok = fetched[sym]
 		}
 		if !ok {
 			currPrice = pos.EntryPrice

@@ -2,14 +2,13 @@ package indicators
 
 import (
 	"math"
+	"sync"
 
 	"github.com/rqzbeh/simple-trader/internal/db"
 )
 
 // BuildSnapshot processes authentic historical candles and computes a unified Snapshot
-// containing all institutional indicators (RSI, MACD, SuperTrend, Bollinger Bands, ATR,
-// Garman-Klass, Parkinson, Kaufman Efficiency Ratio, Chaikin Money Flow, Market Regime,
-// and Confluence Score).
+// containing all institutional indicators concurrently across pipeline stages.
 func BuildSnapshot(symbol string, candles []db.Candle, weights map[string]float64) Snapshot {
 	n := len(candles)
 	if n == 0 {
@@ -31,6 +30,48 @@ func BuildSnapshot(symbol string, candles []db.Candle, weights map[string]float6
 		Price:  latest.Close,
 	}
 
+	var atrs []float64
+	var wg sync.WaitGroup
+	wg.Add(3)
+
+	go func() {
+		defer wg.Done()
+		computeTrendOscillators(&snap, closes, candles)
+	}()
+
+	go func() {
+		defer wg.Done()
+		atrs = computeVolatilityEstimators(&snap, closes, candles)
+	}()
+
+	go func() {
+		defer wg.Done()
+		computeVolumeFlowAndMicrostructure(&snap, candles)
+	}()
+
+	wg.Wait()
+
+	// Volatility Regime Classification
+	rc := NewRegimeClassifier(14, 50)
+	snap.Regime, snap.VolRatio = rc.ClassifyRegime(snap.ATR, atrs)
+
+	// Volume expansion ratio
+	snap.VolumeRatio = computeVolumeRatio(candles)
+
+	// Dynamic Confluence Score & Suggested Direction
+	confScore, suggestedDir := CalculateConfluence(snap, weights)
+	snap.Price = math.Round(snap.Price*10000) / 10000
+	snap.RSI = math.Round(snap.RSI*100) / 100
+	snap.MACD = math.Round(snap.MACD*10000) / 10000
+	snap.MACDSignal = math.Round(snap.MACDSignal*10000) / 10000
+	snap.MACDHistogram = math.Round(snap.MACDHistogram*10000) / 10000
+	snap.ConfluenceScore = math.Round(confScore*10000) / 10000
+	snap.SuggestedDirection = suggestedDir
+
+	return snap
+}
+
+func computeTrendOscillators(snap *Snapshot, closes []float64, candles []db.Candle) {
 	// 1. RSI (14)
 	if rsis := CalculateRSI(closes, 14); len(rsis) > 0 {
 		snap.RSI = rsis[len(rsis)-1]
@@ -61,8 +102,10 @@ func BuildSnapshot(symbol string, candles []db.Candle, weights map[string]float6
 		snap.MiddleBand = bbRes.Middle[lastIdx]
 		snap.LowerBand = bbRes.Lower[lastIdx]
 	}
+}
 
-	// 5. ATR (14)
+func computeVolatilityEstimators(snap *Snapshot, closes []float64, candles []db.Candle) []float64 {
+	// ATR (14)
 	atrs := CalculateATR(candles, 14)
 	if len(atrs) > 0 {
 		snap.ATR = atrs[len(atrs)-1]
@@ -71,39 +114,43 @@ func BuildSnapshot(symbol string, candles []db.Candle, weights map[string]float6
 		}
 	}
 
-	// 6. Institutional Extreme-Value Volatility (Garman-Klass & Parkinson)
-	gks := CalculateGarmanKlass(candles, 14)
-	if len(gks) > 0 {
+	// Garman-Klass & Parkinson
+	if gks := CalculateGarmanKlass(candles, 14); len(gks) > 0 {
 		snap.GarmanKlass = gks[len(gks)-1]
 	}
-
-	parks := CalculateParkinson(candles, 14)
-	if len(parks) > 0 {
+	if parks := CalculateParkinson(candles, 14); len(parks) > 0 {
 		snap.Parkinson = parks[len(parks)-1]
 	}
 
-	// 7. Kaufman Efficiency Ratio (10)
-	kers := CalculateKaufmanER(closes, 10)
-	if len(kers) > 0 {
+	// Kaufman Efficiency Ratio (10)
+	if kers := CalculateKaufmanER(closes, 10); len(kers) > 0 {
 		snap.KaufmanER = kers[len(kers)-1]
 	}
 
-	// 8. Chaikin Money Flow (20)
-	cmfs := CalculateCMF(candles, 20)
-	if len(cmfs) > 0 {
+	return atrs
+}
+
+func computeVolumeFlowAndMicrostructure(snap *Snapshot, candles []db.Candle) {
+	n := len(candles)
+	// Chaikin Money Flow (20)
+	if cmfs := CalculateCMF(candles, 20); len(cmfs) > 0 {
 		snap.CMF = cmfs[len(cmfs)-1]
 	}
 
-	// 9. VWAP
-	vwaps := CalculateVWAP(candles)
-	if len(vwaps) > 0 {
+	// VWAP
+	if vwaps := CalculateVWAP(candles); len(vwaps) > 0 {
 		snap.VWAP = vwaps[len(vwaps)-1]
 	}
 
-	// 10. Microstructure & CVD Divergence from candle flow
+	// Microstructure & CVD Divergence from candle flow
 	var buyerVol, sellerVol float64
-	prices := make([]float64, n)
-	cvdSeries := make([]float64, n)
+	prices := getFloatSlice(n)
+	cvdSeries := getFloatSlice(n)
+	defer func() {
+		putFloatSlice(prices)
+		putFloatSlice(cvdSeries)
+	}()
+
 	var runningCVD float64
 	for i, c := range candles {
 		prices[i] = c.Close
@@ -130,34 +177,19 @@ func BuildSnapshot(symbol string, candles []db.Candle, weights map[string]float6
 		snap.CVD = runningCVD
 		snap.Divergence = DetectDivergence(prices, cvdSeries)
 	}
+}
 
-	// 11. Volatility Regime Classification
-	rc := NewRegimeClassifier(14, 50)
-	regime, volRatio := rc.ClassifyRegime(snap.ATR, atrs)
-	snap.Regime = regime
-	snap.VolRatio = volRatio
-
-	// 11b. Volume expansion ratio for the entry gate: last candle volume
-	// vs the mean of the previous 20 candles (0 when history too short).
-	if n >= 21 {
-		var sum float64
-		for _, c := range candles[n-21 : n-1] {
-			sum += c.Volume
-		}
-		if avg := sum / 20.0; avg > 0 {
-			snap.VolumeRatio = candles[n-1].Volume / avg
-		}
+func computeVolumeRatio(candles []db.Candle) float64 {
+	n := len(candles)
+	if n < 21 {
+		return 0
 	}
-
-	// 12. Dynamic Confluence Score & Suggested Direction
-	confScore, suggestedDir := CalculateConfluence(snap, weights)
-	snap.Price = math.Round(snap.Price*10000) / 10000
-	snap.RSI = math.Round(snap.RSI*100) / 100
-	snap.MACD = math.Round(snap.MACD*10000) / 10000
-	snap.MACDSignal = math.Round(snap.MACDSignal*10000) / 10000
-	snap.MACDHistogram = math.Round(snap.MACDHistogram*10000) / 10000
-	snap.ConfluenceScore = math.Round(confScore*10000) / 10000
-	snap.SuggestedDirection = suggestedDir
-
-	return snap
+	var sum float64
+	for _, c := range candles[n-21 : n-1] {
+		sum += c.Volume
+	}
+	if avg := sum / 20.0; avg > 0 {
+		return candles[n-1].Volume / avg
+	}
+	return 0
 }

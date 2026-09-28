@@ -432,7 +432,7 @@ func (s *Server) handlePutSystemConfig(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	token := auth.ExtractToken(r)
-	if token == "" || s.authenticator == nil || !s.authenticator.ValidateToken(token) {
+	if token == "" || s.authenticator == nil || !s.authenticator.ValidateTokenContext(r.Context(), token) {
 		w.WriteHeader(http.StatusUnauthorized)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized: valid session token required"})
 		return
@@ -457,244 +457,11 @@ func (s *Server) handlePutSystemConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 2. Validate values and ranges
-	envUpdates := make(map[string]string)
-
-	if v, exists := rawMap["ROUTING_CONFIDENCE_THRESHOLD"]; exists {
-		f, err := parseNumericFloat(v)
-		if err != nil || f <= 0 || f > 1.0 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "ROUTING_CONFIDENCE_THRESHOLD invalid: must be between 0 (exclusive) and 1 (inclusive)",
-			})
-			return
-		}
-		envUpdates["ROUTING_CONFIDENCE_THRESHOLD"] = strconv.FormatFloat(f, 'f', -1, 64)
-	}
-
-	if v, exists := rawMap["AI_MODEL_ID"]; exists {
-		s := parseString(v)
-		if s == "" {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "AI_MODEL_ID invalid: cannot be empty",
-			})
-			return
-		}
-		envUpdates["AI_MODEL_ID"] = s
-	}
-
-	if v, exists := rawMap["AI_TEMPERATURE"]; exists {
-		f, err := parseNumericFloat(v)
-		if err != nil || f < 0.0 || f > 2.0 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "AI_TEMPERATURE invalid: must be between 0.0 and 2.0",
-			})
-			return
-		}
-		envUpdates["AI_TEMPERATURE"] = strconv.FormatFloat(f, 'f', -1, 64)
-	}
-
-	if v, exists := rawMap["AI_REASONING_EFFORT"]; exists {
-		s := strings.ToLower(parseString(v))
-		if s != "low" && s != "medium" && s != "high" {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "AI_REASONING_EFFORT invalid: must be one of 'low', 'medium', 'high'",
-			})
-			return
-		}
-		envUpdates["AI_REASONING_EFFORT"] = s
-	}
-
-	if v, exists := rawMap["AI_TIMEOUT_SECONDS"]; exists {
-		i, err := parseNumericInt(v)
-		if err != nil || i < 1 || i > 300 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "AI_TIMEOUT_SECONDS invalid: must be between 1 and 300",
-			})
-			return
-		}
-		envUpdates["AI_TIMEOUT_SECONDS"] = strconv.Itoa(i)
-	}
-
-	if v, exists := rawMap["DEFAULT_LEVERAGE"]; exists {
-		i, err := parseNumericInt(v)
-		if err != nil || i < 1 || i > 125 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "DEFAULT_LEVERAGE invalid: must be between 1 and 125",
-			})
-			return
-		}
-		envUpdates["DEFAULT_LEVERAGE"] = strconv.Itoa(i)
-	}
-
-	if v, exists := rawMap["MIN_RISK_TO_REWARD_RATIO"]; exists {
-		f, err := parseNumericFloat(v)
-		if err != nil || f < 1.0 || f > 20.0 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "MIN_RISK_TO_REWARD_RATIO invalid: must be between 1.0 and 20.0",
-			})
-			return
-		}
-		envUpdates["MIN_RISK_TO_REWARD_RATIO"] = strconv.FormatFloat(f, 'f', -1, 64)
-	}
-
-	if v, exists := rawMap["MAX_CONCURRENT_SIGNALS"]; exists {
-		i, err := parseNumericInt(v)
-		if err != nil || i < 1 || i > 100 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "MAX_CONCURRENT_SIGNALS invalid: must be between 1 and 100",
-			})
-			return
-		}
-		envUpdates["MAX_CONCURRENT_SIGNALS"] = strconv.Itoa(i)
-	}
-
-	if v, exists := rawMap["MAX_RISK_PER_TRADE_PCT"]; exists {
-		f, err := parseNumericFloat(v)
-		if err != nil || f <= 0 || f > 1.0 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "MAX_RISK_PER_TRADE_PCT invalid: must be between 0 (exclusive) and 1 (inclusive)",
-			})
-			return
-		}
-		envUpdates["MAX_RISK_PER_TRADE_PCT"] = strconv.FormatFloat(f, 'f', -1, 64)
-	}
-
-	if v, exists := rawMap["MAX_DRAWDOWN_LIMIT_PCT"]; exists {
-		f, err := parseNumericFloat(v)
-		if err != nil || f <= 0 || f > 1.0 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "MAX_DRAWDOWN_LIMIT_PCT invalid: must be between 0 (exclusive) and 1 (inclusive)",
-			})
-			return
-		}
-		envUpdates["MAX_DRAWDOWN_LIMIT_PCT"] = strconv.FormatFloat(f, 'f', -1, 64)
-	}
-
-	if v, exists := rawMap["CALENDAR_HALT_MINUTES"]; exists {
-		i, err := parseNumericInt(v)
-		if err != nil || i < 0 || i > 1440 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "CALENDAR_HALT_MINUTES invalid: must be between 0 and 1440",
-			})
-			return
-		}
-		envUpdates["CALENDAR_HALT_MINUTES"] = strconv.Itoa(i)
-	}
-
-	if v, exists := rawMap["TYPESAFE_API_KEY"]; exists {
-		s := parseString(v)
-		// Masked writes: only overwrite if value non-empty AND not the masked placeholder
-		if !isMaskedPlaceholder(s) && s != "" {
-			envUpdates["TYPESAFE_API_KEY"] = s
-		}
-	}
-
-	if v, exists := rawMap["SCREENER_MIN_24H_VOLUME"]; exists {
-		f, err := parseNumericFloat(v)
-		if err != nil || f < 0 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "SCREENER_MIN_24H_VOLUME invalid: must be >= 0",
-			})
-			return
-		}
-		envUpdates["SCREENER_MIN_24H_VOLUME"] = strconv.FormatFloat(f, 'f', -1, 64)
-	}
-
-	if v, exists := rawMap["TIMEFRAME_SET_ALPHA"]; exists {
-		s := parseString(v)
-		set, err := config.ParseTimeframeSet("TIMEFRAME_SET_ALPHA", s)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": err.Error(),
-			})
-			return
-		}
-		envUpdates["TIMEFRAME_SET_ALPHA"] = strings.Join(set, ",")
-	}
-
-	if v, exists := rawMap["TIMEFRAME_SET_CORE"]; exists {
-		s := parseString(v)
-		set, err := config.ParseTimeframeSet("TIMEFRAME_SET_CORE", s)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": err.Error(),
-			})
-			return
-		}
-		envUpdates["TIMEFRAME_SET_CORE"] = strings.Join(set, ",")
-	}
-
-	if v, exists := rawMap["EARLY_EXIT_ENABLED"]; exists {
-		b, err := parseBool(v)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "EARLY_EXIT_ENABLED invalid: must be a boolean",
-			})
-			return
-		}
-		envUpdates["EARLY_EXIT_ENABLED"] = strconv.FormatBool(b)
-	}
-
-	if v, exists := rawMap["EARLY_EXIT_MIN_HOLD_MIN"]; exists {
-		i, err := parseNumericInt(v)
-		if err != nil || i < 0 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "EARLY_EXIT_MIN_HOLD_MIN invalid: must be >= 0",
-			})
-			return
-		}
-		envUpdates["EARLY_EXIT_MIN_HOLD_MIN"] = strconv.Itoa(i)
-	}
-
-	if v, exists := rawMap["EARLY_EXIT_MAX_PER_DAY"]; exists {
-		i, err := parseNumericInt(v)
-		if err != nil || i < 1 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "EARLY_EXIT_MAX_PER_DAY invalid: must be >= 1",
-			})
-			return
-		}
-		envUpdates["EARLY_EXIT_MAX_PER_DAY"] = strconv.Itoa(i)
-	}
-
-	if v, exists := rawMap["EARLY_EXIT_COOLDOWN_MIN"]; exists {
-		i, err := parseNumericInt(v)
-		if err != nil || i < 0 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "EARLY_EXIT_COOLDOWN_MIN invalid: must be >= 0",
-			})
-			return
-		}
-		envUpdates["EARLY_EXIT_COOLDOWN_MIN"] = strconv.Itoa(i)
-	}
-
-	if v, exists := rawMap["EARLY_EXIT_CONF_FLOOR"]; exists {
-		f, err := parseNumericFloat(v)
-		if err != nil || f < 0.0 || f > 1.0 {
-			w.WriteHeader(http.StatusBadRequest)
-			_ = json.NewEncoder(w).Encode(map[string]string{
-				"error": "EARLY_EXIT_CONF_FLOOR invalid: must be between 0.0 and 1.0",
-			})
-			return
-		}
-		envUpdates["EARLY_EXIT_CONF_FLOOR"] = strconv.FormatFloat(f, 'f', -1, 64)
+	envUpdates, err := validateAndBuildEnvUpdates(rawMap)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+		return
 	}
 
 	// 3. Persist to .env file
@@ -710,115 +477,287 @@ func (s *Server) handlePutSystemConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// 4. Apply in-process to live config and runtime services
-	if s.cfg != nil {
-		if v, ok := envUpdates["ROUTING_CONFIDENCE_THRESHOLD"]; ok {
-			f, _ := strconv.ParseFloat(v, 64)
-			s.cfg.RoutingConfidenceThreshold = v
-			_ = os.Setenv("ROUTING_CONFIDENCE_THRESHOLD", v)
-			s.ensureDecisionRouter(f)
-		}
-		if v, ok := envUpdates["AI_MODEL_ID"]; ok {
-			s.cfg.AIModelID = v
-			_ = os.Setenv("AI_MODEL_ID", v)
-		}
-		if v, ok := envUpdates["AI_TEMPERATURE"]; ok {
-			f, _ := strconv.ParseFloat(v, 64)
-			s.cfg.AITemperature = f
-			_ = os.Setenv("AI_TEMPERATURE", v)
-		}
-		if v, ok := envUpdates["AI_REASONING_EFFORT"]; ok {
-			s.cfg.AIReasoningEffort = v
-			_ = os.Setenv("AI_REASONING_EFFORT", v)
-		}
-		if v, ok := envUpdates["AI_TIMEOUT_SECONDS"]; ok {
-			i, _ := strconv.Atoi(v)
-			s.cfg.AITimeoutSeconds = i
-			_ = os.Setenv("AI_TIMEOUT_SECONDS", v)
-		}
-		if v, ok := envUpdates["DEFAULT_LEVERAGE"]; ok {
-			i, _ := strconv.Atoi(v)
-			s.cfg.DefaultLeverage = i
-			_ = os.Setenv("DEFAULT_LEVERAGE", v)
-		}
-		if v, ok := envUpdates["MIN_RISK_TO_REWARD_RATIO"]; ok {
-			f, _ := strconv.ParseFloat(v, 64)
-			s.cfg.MinRiskRewardRatio = f
-			_ = os.Setenv("MIN_RISK_TO_REWARD_RATIO", v)
-		}
-		if v, ok := envUpdates["MAX_CONCURRENT_SIGNALS"]; ok {
-			i, _ := strconv.Atoi(v)
-			s.cfg.MaxConcurrentSignals = i
-			_ = os.Setenv("MAX_CONCURRENT_SIGNALS", v)
-		}
-		if v, ok := envUpdates["MAX_RISK_PER_TRADE_PCT"]; ok {
-			f, _ := strconv.ParseFloat(v, 64)
-			s.cfg.MaxRiskPerTradePct = f
-			_ = os.Setenv("MAX_RISK_PER_TRADE_PCT", v)
-		}
-		if v, ok := envUpdates["MAX_DRAWDOWN_LIMIT_PCT"]; ok {
-			f, _ := strconv.ParseFloat(v, 64)
-			s.cfg.MaxDrawdownLimitPct = f
-			_ = os.Setenv("MAX_DRAWDOWN_LIMIT_PCT", v)
-		}
-		if v, ok := envUpdates["CALENDAR_HALT_MINUTES"]; ok {
-			i, _ := strconv.Atoi(v)
-			s.cfg.CalendarHaltMinutes = i
-			_ = os.Setenv("CALENDAR_HALT_MINUTES", v)
-		}
-		if v, ok := envUpdates["TYPESAFE_API_KEY"]; ok {
-			s.cfg.TypesafeAPIKey = v
-			_ = os.Setenv("TYPESAFE_API_KEY", v)
-			if s.decisionRouter != nil && s.decisionRouter.Jev != nil {
-				s.decisionRouter.Jev.SetAPIKey(v)
-			}
-		}
-		if v, ok := envUpdates["SCREENER_MIN_24H_VOLUME"]; ok {
-			f, _ := strconv.ParseFloat(v, 64)
-			s.cfg.ScreenerMin24hVolume = f
-			_ = os.Setenv("SCREENER_MIN_24H_VOLUME", v)
-		}
-		if v, ok := envUpdates["TIMEFRAME_SET_ALPHA"]; ok {
-			_ = os.Setenv("TIMEFRAME_SET_ALPHA", v)
-			_ = config.UpdateTimeframeSet("TIMEFRAME_SET_ALPHA", v)
-		}
-		if v, ok := envUpdates["TIMEFRAME_SET_CORE"]; ok {
-			_ = os.Setenv("TIMEFRAME_SET_CORE", v)
-			_ = config.UpdateTimeframeSet("TIMEFRAME_SET_CORE", v)
-		}
-		if v, ok := envUpdates["EARLY_EXIT_ENABLED"]; ok {
-			b, _ := strconv.ParseBool(v)
-			s.cfg.EarlyExit.Enabled = b
-			_ = os.Setenv("EARLY_EXIT_ENABLED", v)
-		}
-		if v, ok := envUpdates["EARLY_EXIT_MIN_HOLD_MIN"]; ok {
-			i, _ := strconv.Atoi(v)
-			s.cfg.EarlyExit.MinHoldMin = i
-			_ = os.Setenv("EARLY_EXIT_MIN_HOLD_MIN", v)
-		}
-		if v, ok := envUpdates["EARLY_EXIT_MAX_PER_DAY"]; ok {
-			i, _ := strconv.Atoi(v)
-			s.cfg.EarlyExit.MaxPerDay = i
-			_ = os.Setenv("EARLY_EXIT_MAX_PER_DAY", v)
-		}
-		if v, ok := envUpdates["EARLY_EXIT_COOLDOWN_MIN"]; ok {
-			i, _ := strconv.Atoi(v)
-			s.cfg.EarlyExit.CooldownMin = i
-			_ = os.Setenv("EARLY_EXIT_COOLDOWN_MIN", v)
-		}
-		if v, ok := envUpdates["EARLY_EXIT_CONF_FLOOR"]; ok {
-			f, _ := strconv.ParseFloat(v, 64)
-			s.cfg.EarlyExit.ConfFloor = f
-			_ = os.Setenv("EARLY_EXIT_CONF_FLOOR", v)
-		}
-		if s.earlyExitManager != nil {
-			s.earlyExitManager.UpdateConfig(s.cfg.EarlyExit)
-		}
-
-		if s.aiClient != nil {
-			s.aiClient.SetParams(s.cfg.AIModelID, s.cfg.AIReasoningEffort, s.cfg.AITemperature, s.cfg.AITimeoutSeconds)
-		}
-	}
+	s.applyLiveConfigUpdates(envUpdates)
 
 	w.WriteHeader(http.StatusOK)
 	_ = json.NewEncoder(w).Encode(s.systemConfigResponse())
+}
+
+func validateAndBuildEnvUpdates(rawMap map[string]interface{}) (map[string]string, error) {
+	envUpdates := make(map[string]string)
+
+	if v, exists := rawMap["ROUTING_CONFIDENCE_THRESHOLD"]; exists {
+		f, err := parseNumericFloat(v)
+		if err != nil || f <= 0 || f > 1.0 {
+			return nil, fmt.Errorf("ROUTING_CONFIDENCE_THRESHOLD invalid: must be between 0 (exclusive) and 1 (inclusive)")
+		}
+		envUpdates["ROUTING_CONFIDENCE_THRESHOLD"] = strconv.FormatFloat(f, 'f', -1, 64)
+	}
+
+	if v, exists := rawMap["AI_MODEL_ID"]; exists {
+		s := parseString(v)
+		if s == "" {
+			return nil, fmt.Errorf("AI_MODEL_ID invalid: cannot be empty")
+		}
+		envUpdates["AI_MODEL_ID"] = s
+	}
+
+	if v, exists := rawMap["AI_TEMPERATURE"]; exists {
+		f, err := parseNumericFloat(v)
+		if err != nil || f < 0.0 || f > 2.0 {
+			return nil, fmt.Errorf("AI_TEMPERATURE invalid: must be between 0.0 and 2.0")
+		}
+		envUpdates["AI_TEMPERATURE"] = strconv.FormatFloat(f, 'f', -1, 64)
+	}
+
+	if v, exists := rawMap["AI_REASONING_EFFORT"]; exists {
+		s := strings.ToLower(parseString(v))
+		if s != "low" && s != "medium" && s != "high" {
+			return nil, fmt.Errorf("AI_REASONING_EFFORT invalid: must be one of 'low', 'medium', 'high'")
+		}
+		envUpdates["AI_REASONING_EFFORT"] = s
+	}
+
+	if v, exists := rawMap["AI_TIMEOUT_SECONDS"]; exists {
+		i, err := parseNumericInt(v)
+		if err != nil || i < 1 || i > 300 {
+			return nil, fmt.Errorf("AI_TIMEOUT_SECONDS invalid: must be between 1 and 300")
+		}
+		envUpdates["AI_TIMEOUT_SECONDS"] = strconv.Itoa(i)
+	}
+
+	if v, exists := rawMap["DEFAULT_LEVERAGE"]; exists {
+		i, err := parseNumericInt(v)
+		if err != nil || i < 1 || i > 125 {
+			return nil, fmt.Errorf("DEFAULT_LEVERAGE invalid: must be between 1 and 125")
+		}
+		envUpdates["DEFAULT_LEVERAGE"] = strconv.Itoa(i)
+	}
+
+	if v, exists := rawMap["MIN_RISK_TO_REWARD_RATIO"]; exists {
+		f, err := parseNumericFloat(v)
+		if err != nil || f < 1.0 || f > 20.0 {
+			return nil, fmt.Errorf("MIN_RISK_TO_REWARD_RATIO invalid: must be between 1.0 and 20.0")
+		}
+		envUpdates["MIN_RISK_TO_REWARD_RATIO"] = strconv.FormatFloat(f, 'f', -1, 64)
+	}
+
+	if v, exists := rawMap["MAX_CONCURRENT_SIGNALS"]; exists {
+		i, err := parseNumericInt(v)
+		if err != nil || i < 1 || i > 100 {
+			return nil, fmt.Errorf("MAX_CONCURRENT_SIGNALS invalid: must be between 1 and 100")
+		}
+		envUpdates["MAX_CONCURRENT_SIGNALS"] = strconv.Itoa(i)
+	}
+
+	if v, exists := rawMap["MAX_RISK_PER_TRADE_PCT"]; exists {
+		f, err := parseNumericFloat(v)
+		if err != nil || f <= 0 || f > 1.0 {
+			return nil, fmt.Errorf("MAX_RISK_PER_TRADE_PCT invalid: must be between 0 (exclusive) and 1 (inclusive)")
+		}
+		envUpdates["MAX_RISK_PER_TRADE_PCT"] = strconv.FormatFloat(f, 'f', -1, 64)
+	}
+
+	if v, exists := rawMap["MAX_DRAWDOWN_LIMIT_PCT"]; exists {
+		f, err := parseNumericFloat(v)
+		if err != nil || f <= 0 || f > 1.0 {
+			return nil, fmt.Errorf("MAX_DRAWDOWN_LIMIT_PCT invalid: must be between 0 (exclusive) and 1 (inclusive)")
+		}
+		envUpdates["MAX_DRAWDOWN_LIMIT_PCT"] = strconv.FormatFloat(f, 'f', -1, 64)
+	}
+
+	if v, exists := rawMap["CALENDAR_HALT_MINUTES"]; exists {
+		i, err := parseNumericInt(v)
+		if err != nil || i < 0 || i > 1440 {
+			return nil, fmt.Errorf("CALENDAR_HALT_MINUTES invalid: must be between 0 and 1440")
+		}
+		envUpdates["CALENDAR_HALT_MINUTES"] = strconv.Itoa(i)
+	}
+
+	if v, exists := rawMap["TYPESAFE_API_KEY"]; exists {
+		s := parseString(v)
+		// Masked writes: only overwrite if value non-empty AND not the masked placeholder
+		if !isMaskedPlaceholder(s) && s != "" {
+			envUpdates["TYPESAFE_API_KEY"] = s
+		}
+	}
+
+	if v, exists := rawMap["SCREENER_MIN_24H_VOLUME"]; exists {
+		f, err := parseNumericFloat(v)
+		if err != nil || f < 0 {
+			return nil, fmt.Errorf("SCREENER_MIN_24H_VOLUME invalid: must be >= 0")
+		}
+		envUpdates["SCREENER_MIN_24H_VOLUME"] = strconv.FormatFloat(f, 'f', -1, 64)
+	}
+
+	if v, exists := rawMap["TIMEFRAME_SET_ALPHA"]; exists {
+		s := parseString(v)
+		set, err := config.ParseTimeframeSet("TIMEFRAME_SET_ALPHA", s)
+		if err != nil {
+			return nil, err
+		}
+		envUpdates["TIMEFRAME_SET_ALPHA"] = strings.Join(set, ",")
+	}
+
+	if v, exists := rawMap["TIMEFRAME_SET_CORE"]; exists {
+		s := parseString(v)
+		set, err := config.ParseTimeframeSet("TIMEFRAME_SET_CORE", s)
+		if err != nil {
+			return nil, err
+		}
+		envUpdates["TIMEFRAME_SET_CORE"] = strings.Join(set, ",")
+	}
+
+	if v, exists := rawMap["EARLY_EXIT_ENABLED"]; exists {
+		b, err := parseBool(v)
+		if err != nil {
+			return nil, fmt.Errorf("EARLY_EXIT_ENABLED invalid: must be a boolean")
+		}
+		envUpdates["EARLY_EXIT_ENABLED"] = strconv.FormatBool(b)
+	}
+
+	if v, exists := rawMap["EARLY_EXIT_MIN_HOLD_MIN"]; exists {
+		i, err := parseNumericInt(v)
+		if err != nil || i < 0 {
+			return nil, fmt.Errorf("EARLY_EXIT_MIN_HOLD_MIN invalid: must be >= 0")
+		}
+		envUpdates["EARLY_EXIT_MIN_HOLD_MIN"] = strconv.Itoa(i)
+	}
+
+	if v, exists := rawMap["EARLY_EXIT_MAX_PER_DAY"]; exists {
+		i, err := parseNumericInt(v)
+		if err != nil || i < 1 {
+			return nil, fmt.Errorf("EARLY_EXIT_MAX_PER_DAY invalid: must be >= 1")
+		}
+		envUpdates["EARLY_EXIT_MAX_PER_DAY"] = strconv.Itoa(i)
+	}
+
+	if v, exists := rawMap["EARLY_EXIT_COOLDOWN_MIN"]; exists {
+		i, err := parseNumericInt(v)
+		if err != nil || i < 0 {
+			return nil, fmt.Errorf("EARLY_EXIT_COOLDOWN_MIN invalid: must be >= 0")
+		}
+		envUpdates["EARLY_EXIT_COOLDOWN_MIN"] = strconv.Itoa(i)
+	}
+
+	if v, exists := rawMap["EARLY_EXIT_CONF_FLOOR"]; exists {
+		f, err := parseNumericFloat(v)
+		if err != nil || f < 0.0 || f > 1.0 {
+			return nil, fmt.Errorf("EARLY_EXIT_CONF_FLOOR invalid: must be between 0.0 and 1.0")
+		}
+		envUpdates["EARLY_EXIT_CONF_FLOOR"] = strconv.FormatFloat(f, 'f', -1, 64)
+	}
+
+	return envUpdates, nil
+}
+
+func (s *Server) applyLiveConfigUpdates(envUpdates map[string]string) {
+	if s.cfg == nil {
+		return
+	}
+	if v, ok := envUpdates["ROUTING_CONFIDENCE_THRESHOLD"]; ok {
+		f, _ := strconv.ParseFloat(v, 64)
+		s.cfg.RoutingConfidenceThreshold = v
+		_ = os.Setenv("ROUTING_CONFIDENCE_THRESHOLD", v)
+		s.ensureDecisionRouter(f)
+	}
+	if v, ok := envUpdates["AI_MODEL_ID"]; ok {
+		s.cfg.AIModelID = v
+		_ = os.Setenv("AI_MODEL_ID", v)
+	}
+	if v, ok := envUpdates["AI_TEMPERATURE"]; ok {
+		f, _ := strconv.ParseFloat(v, 64)
+		s.cfg.AITemperature = f
+		_ = os.Setenv("AI_TEMPERATURE", v)
+	}
+	if v, ok := envUpdates["AI_REASONING_EFFORT"]; ok {
+		s.cfg.AIReasoningEffort = v
+		_ = os.Setenv("AI_REASONING_EFFORT", v)
+	}
+	if v, ok := envUpdates["AI_TIMEOUT_SECONDS"]; ok {
+		i, _ := strconv.Atoi(v)
+		s.cfg.AITimeoutSeconds = i
+		_ = os.Setenv("AI_TIMEOUT_SECONDS", v)
+	}
+	if v, ok := envUpdates["DEFAULT_LEVERAGE"]; ok {
+		i, _ := strconv.Atoi(v)
+		s.cfg.DefaultLeverage = i
+		_ = os.Setenv("DEFAULT_LEVERAGE", v)
+	}
+	if v, ok := envUpdates["MIN_RISK_TO_REWARD_RATIO"]; ok {
+		f, _ := strconv.ParseFloat(v, 64)
+		s.cfg.MinRiskRewardRatio = f
+		_ = os.Setenv("MIN_RISK_TO_REWARD_RATIO", v)
+	}
+	if v, ok := envUpdates["MAX_CONCURRENT_SIGNALS"]; ok {
+		i, _ := strconv.Atoi(v)
+		s.cfg.MaxConcurrentSignals = i
+		_ = os.Setenv("MAX_CONCURRENT_SIGNALS", v)
+	}
+	if v, ok := envUpdates["MAX_RISK_PER_TRADE_PCT"]; ok {
+		f, _ := strconv.ParseFloat(v, 64)
+		s.cfg.MaxRiskPerTradePct = f
+		_ = os.Setenv("MAX_RISK_PER_TRADE_PCT", v)
+	}
+	if v, ok := envUpdates["MAX_DRAWDOWN_LIMIT_PCT"]; ok {
+		f, _ := strconv.ParseFloat(v, 64)
+		s.cfg.MaxDrawdownLimitPct = f
+		_ = os.Setenv("MAX_DRAWDOWN_LIMIT_PCT", v)
+	}
+	if v, ok := envUpdates["CALENDAR_HALT_MINUTES"]; ok {
+		i, _ := strconv.Atoi(v)
+		s.cfg.CalendarHaltMinutes = i
+		_ = os.Setenv("CALENDAR_HALT_MINUTES", v)
+	}
+	if v, ok := envUpdates["TYPESAFE_API_KEY"]; ok {
+		s.cfg.TypesafeAPIKey = v
+		_ = os.Setenv("TYPESAFE_API_KEY", v)
+		if s.decisionRouter != nil && s.decisionRouter.Jev != nil {
+			s.decisionRouter.Jev.SetAPIKey(v)
+		}
+	}
+	if v, ok := envUpdates["SCREENER_MIN_24H_VOLUME"]; ok {
+		f, _ := strconv.ParseFloat(v, 64)
+		s.cfg.ScreenerMin24hVolume = f
+		_ = os.Setenv("SCREENER_MIN_24H_VOLUME", v)
+	}
+	if v, ok := envUpdates["TIMEFRAME_SET_ALPHA"]; ok {
+		_ = os.Setenv("TIMEFRAME_SET_ALPHA", v)
+		_ = config.UpdateTimeframeSet("TIMEFRAME_SET_ALPHA", v)
+	}
+	if v, ok := envUpdates["TIMEFRAME_SET_CORE"]; ok {
+		_ = os.Setenv("TIMEFRAME_SET_CORE", v)
+		_ = config.UpdateTimeframeSet("TIMEFRAME_SET_CORE", v)
+	}
+	if v, ok := envUpdates["EARLY_EXIT_ENABLED"]; ok {
+		b, _ := strconv.ParseBool(v)
+		s.cfg.EarlyExit.Enabled = b
+		_ = os.Setenv("EARLY_EXIT_ENABLED", v)
+	}
+	if v, ok := envUpdates["EARLY_EXIT_MIN_HOLD_MIN"]; ok {
+		i, _ := strconv.Atoi(v)
+		s.cfg.EarlyExit.MinHoldMin = i
+		_ = os.Setenv("EARLY_EXIT_MIN_HOLD_MIN", v)
+	}
+	if v, ok := envUpdates["EARLY_EXIT_MAX_PER_DAY"]; ok {
+		i, _ := strconv.Atoi(v)
+		s.cfg.EarlyExit.MaxPerDay = i
+		_ = os.Setenv("EARLY_EXIT_MAX_PER_DAY", v)
+	}
+	if v, ok := envUpdates["EARLY_EXIT_COOLDOWN_MIN"]; ok {
+		i, _ := strconv.Atoi(v)
+		s.cfg.EarlyExit.CooldownMin = i
+		_ = os.Setenv("EARLY_EXIT_COOLDOWN_MIN", v)
+	}
+	if v, ok := envUpdates["EARLY_EXIT_CONF_FLOOR"]; ok {
+		f, _ := strconv.ParseFloat(v, 64)
+		s.cfg.EarlyExit.ConfFloor = f
+		_ = os.Setenv("EARLY_EXIT_CONF_FLOOR", v)
+	}
+	if s.earlyExitManager != nil {
+		s.earlyExitManager.UpdateConfig(s.cfg.EarlyExit)
+	}
+	if s.aiClient != nil {
+		s.aiClient.SetParams(s.cfg.AIModelID, s.cfg.AIReasoningEffort, s.cfg.AITemperature, s.cfg.AITimeoutSeconds)
+	}
 }
