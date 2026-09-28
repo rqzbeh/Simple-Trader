@@ -189,9 +189,13 @@ Batched exchange polling (Binance spot/futures, Yahoo) · Redis microsecond tick
 
 Live institutional feed, 30-min refresh. High-impact events halt new entries within ±`CALENDAR_HALT_MINUTES` (state field, not a hidden gate).
 
-## 🧠 ML → Statistics Feeder
+## 🧠 ML → Statistics Feeder (offline scripts only)
 
-GPU trainers (RTX 2060, PyTorch CUDA: `ml/train_gpu.py`, `train_max_acc.py`, `train_multi_asset.py`) produce historical fact only — *indicator X settled successful 63% of the time in regime Y*. Thompson posteriors are context. **The model never votes.**
+No ML runs inside the serving backend. The ML Engine UI, GPU trainers, and training handlers were **removed** (spec-013 v3.0 + optimization pass). What remains:
+
+- `ml/*.py` — offline training scripts (historical research; run manually on your own GPU if you want fresh stats).
+- The decision core consumes only **historical statistics** as context fields — *indicator X settled successful 63% of the time in regime Y*. Thompson posteriors are context.
+- **The model never votes, weights, or blocks.**
 
 ---
 
