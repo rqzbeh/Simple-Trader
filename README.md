@@ -191,9 +191,8 @@ Live institutional feed, 30-min refresh. High-impact events halt new entries wit
 
 ## 🧠 ML → Statistics Feeder (offline scripts only)
 
-No ML runs inside the serving backend. The ML Engine UI, GPU trainers, and training handlers were **removed** (spec-013 v3.0 + optimization pass). What remains:
+No ML runs inside the serving backend. ML Engine UI, GPU trainers, training handlers, and the `ml/` training scripts were **removed** (spec-013 v3.0 + optimization pass).
 
-- `ml/*.py` — offline training scripts (historical research; run manually on your own GPU if you want fresh stats).
 - The decision core consumes only **historical statistics** as context fields — *indicator X settled successful 63% of the time in regime Y*. Thompson posteriors are context.
 - **The model never votes, weights, or blocks.**
 
