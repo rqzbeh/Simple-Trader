@@ -199,8 +199,6 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
         body: JSON.stringify(payload),
       });
 
-      localStorage.setItem('st_ai_model', modelId);
-      localStorage.setItem('st_ai_endpoint', endpointUrl);
       setSavedSuccess(true);
       setTimeout(() => setSavedSuccess(false), 3000);
     } catch (err: unknown) {
@@ -430,7 +428,7 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
               Dataset Exporter
             </span>
             <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-500 font-mono">
-              OpenAI ChatML JSONL
+              ChatML JSONL
             </span>
           </div>
           <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3">

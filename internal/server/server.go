@@ -74,12 +74,10 @@ func NewServer(
 				Threshold: thr,
 				Escalate: func(ctx context.Context, state interface{}) (trader.DecisionOutcome, error) {
 					// 9Router escalation: slow brain answers when Jev low-confidence (FR-003).
-					js, _ := json.Marshal(state)
 					resp, err := aiClient.Analyze(ctx, ai.DecisionRequest{Symbol: "escalated", IndicatorSnap: cache.IndicatorSnapshot{}})
 					if err != nil {
 						return trader.DecisionOutcome{}, fmt.Errorf("escalation failed: %w", err)
 					}
-					_ = js
 					out := trader.DecisionOutcome{Confidence: resp.Confidence}
 					switch resp.Decision {
 					case "BUY":
@@ -100,7 +98,14 @@ func NewServer(
 	shadow.SetEnabled("exit", os.Getenv("SHADOW_EXIT") != "false")
 	shadow.SetEnabled("news", os.Getenv("SHADOW_NEWS") != "false")
 	binanceFetcher := market.NewBinanceFetcher()
-	screener := market.NewDynamicCryptoScreener(market.DefaultScreenerConfig(), binanceFetcher, redisClient, dbStore)
+	screenerCfg := market.DefaultScreenerConfig()
+	if cfg.ScreenerMin24hVolume > 0 {
+		screenerCfg.Min24hVolume = cfg.ScreenerMin24hVolume
+	}
+	if cfg.ScreenerMaxSpreadBps > 0 {
+		screenerCfg.MaxSpreadBps = cfg.ScreenerMaxSpreadBps
+	}
+	screener := market.NewDynamicCryptoScreener(screenerCfg, binanceFetcher, redisClient, dbStore)
 
 	tgBot := telegram.NewBotClient(telegram.BotConfig{
 		BotToken: cfg.TelegramBotToken,

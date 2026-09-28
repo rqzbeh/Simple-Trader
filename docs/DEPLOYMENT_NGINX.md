@@ -26,7 +26,7 @@ Simple-Trader is architected for production VPS hosting where the system adminis
 ┌─────────────────────────────────────────────────────────────┐
 │          Simple-Trader Containerized Go Backend             │
 │  - REST API & Real-time Signal Engine                       │
-│  - Compiled React 18 SPA Direct File Serving                │
+│  - Compiled React 19 SPA Direct File Serving                │
 └─────────────────────────────────────────────────────────────┘
 ```
 

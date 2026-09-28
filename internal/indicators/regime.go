@@ -102,20 +102,3 @@ func (rc *RegimeClassifier) ClassifyMultiFactorRegime(currentATR float64, histor
 
 	return regime, volRatio
 }
-func CalculateSizingMultiplier(regime MarketRegime, volRatio float64) float64 {
-	switch regime {
-	case RegimeHighVolChop:
-		if volRatio <= 0 {
-			return 0.5
-		}
-		mult := 1.0 / volRatio
-		if mult < 0.25 {
-			mult = 0.25
-		}
-		return mult
-	case RegimeLowVolMeanReversion:
-		return 1.10
-	default:
-		return 1.0
-	}
-}

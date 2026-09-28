@@ -299,21 +299,3 @@ func (ts *ThompsonSampler) SetWeights(targets map[string]float64) {
 		ts.manual[name] = math.Round(w*1000) / 1000
 	}
 }
-
-// UpdatePosteriors batches custom alpha and beta updates (e.g. from real-data GPU ML training).
-func (ts *ThompsonSampler) UpdatePosteriors(updates map[string]struct{ Alpha, Beta float64 }) {
-	ts.mu.Lock()
-	defer ts.mu.Unlock()
-
-	for name, param := range updates {
-		if post, exists := ts.posteriors[name]; exists {
-			post.Alpha = param.Alpha
-			post.Beta = param.Beta
-		} else {
-			ts.posteriors[name] = &BetaPosterior{
-				Alpha: param.Alpha,
-				Beta:  param.Beta,
-			}
-		}
-	}
-}

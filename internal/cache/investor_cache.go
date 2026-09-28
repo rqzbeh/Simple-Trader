@@ -11,12 +11,9 @@ import (
 
 const (
 	KeyInvestorPoolNAV  = "investor:pool:nav"
-	KeyInvestorList     = "investor:list"
 	KeyInvestorPrefix   = "investor:profile:"
 	KeyNewsSeenHashes   = "news:seen_hashes"
-	KeyNewsLatest       = "news:latest"
 	KeyScreenerUniverse = "screener:active_universe"
-	KeyAllocatorTiers   = "allocator:tier_status"
 )
 
 // SetPoolNAV caches the current master NAV and pool details.

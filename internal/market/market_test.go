@@ -143,20 +143,3 @@ func TestAssetUniverse(t *testing.T) {
 	}
 }
 
-func TestSimulatedFeed(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	feed := market.NewSimulatedFeed()
-	ch := feed.Subscribe(ctx)
-
-	select {
-	case tick := <-ch:
-		if tick.Symbol == "" || tick.Price <= 0 {
-			t.Errorf("invalid tick received: %+v", tick)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for simulated tick")
-	}
-}
-

@@ -90,15 +90,6 @@ export interface MacroCalendarEvent {
   previous?: string;
 }
 
-export interface MicrostructureData {
-  symbol: string;
-  obi: number; // Order Book Imbalance (-1.0 to 1.0)
-  cvd: number; // Cumulative Volume Delta
-  divergence: string; // NONE, BULLISH_ABSORPTION, BEARISH_EXHAUSTION
-  regime: string; // LOW_VOL_CONSOLIDATION, NORMAL_TRENDING, HIGH_VOL_CHOP
-  volRatio: number;
-}
-
 export interface MicrostructureState {
   symbol: string;
   obi: number; // -1.0 to 1.0
@@ -139,8 +130,6 @@ export interface BacktestSummary {
   execution_duration?: number;
 }
 
-export type BacktestRunResult = BacktestSummary;
-
 export interface MonteCarloSummary {
   iterations: number;
   mean_return_pct?: number;
@@ -151,8 +140,6 @@ export interface MonteCarloSummary {
   max_drawdown_99th_pct: number;
   probability_of_ruin_pct: number;
 }
-
-export type MonteCarloRunResult = MonteCarloSummary;
 
 // Investor Capital Ledger Types (US1, FR-009, FR-010)
 export interface Investor {
@@ -169,18 +156,6 @@ export interface Investor {
   pool_share_pct: number; // e.g. 24.50%
   created_at: string;
   updated_at: string;
-}
-
-export interface CapitalTransaction {
-  id: string;
-  investor_id: string;
-  tx_type: 'DEPOSIT' | 'WITHDRAWAL';
-  amount: number;
-  units_transacted: number;
-  unit_nav_at_tx: number;
-  settled_tier1_cash: number;
-  notes: string;
-  timestamp: string;
 }
 
 export interface TierAllocationBreakdown {
@@ -283,39 +258,10 @@ export function formatSignalPrice(v: number | undefined | null): string {
   return s;
 }
 
-// Dynamic Macroeconomic Regime (US2)
-export type MacroRegimeType = 'CRISIS' | 'NORMAL' | 'DOVISH_EXPANSION';
-
-export interface MacroIndicators {
-  geopolitical_index: number;
-  inflation_index: number;
-  interest_rate_index: number;
-  active_conflicts?: string[];
-  inflation_rate_yoy?: number;
-  benchmark_rate?: number;
-}
-
-export interface MacroRegimeState {
-  score: number;
-  regime: MacroRegimeType;
-  description: string;
-  indicators: MacroIndicators;
-  target_tier1_pct: number; // Cash
-  target_core_pct: number;  // Core Commodities (Gold/Silver)
-  target_alpha_pct: number; // Tactical Alpha
-  last_updated: string;
-}
-
 // Telegram Signals Bot Integration (US3)
 export interface TelegramConfigResponse {
   bot_token_configured: boolean;
   bot_token_masked: string;
-  chat_id: string;
-  enabled: boolean;
-}
-
-export interface TelegramConfigRequest {
-  bot_token: string;
   chat_id: string;
   enabled: boolean;
 }

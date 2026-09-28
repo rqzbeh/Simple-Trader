@@ -21,7 +21,7 @@ import (
 
 func main() {
 	log.Println("==========================================================")
-	log.Println("Simple-Trader v2.0 • Autonomous Go & AI Engine Starting...")
+	log.Println("Simple-Trader v3.1 • Autonomous Go & Decision Core Engine Starting...")
 	log.Println("==========================================================")
 
 	ctx, cancel := context.WithCancel(context.Background())

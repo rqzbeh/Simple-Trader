@@ -185,12 +185,6 @@ func TestRegimeClassifier(t *testing.T) {
 	if regimeNorm != indicators.RegimeNormalTrending {
 		t.Errorf("expected NORMAL_TRENDING, got %s (ratio=%f)", regimeNorm, ratioNorm)
 	}
-
-	// Multiplier tests
-	mHigh := indicators.CalculateSizingMultiplier(indicators.RegimeHighVolChop, 2.0)
-	if mHigh != 0.5 {
-		t.Errorf("expected 0.5 multiplier for ratio 2.0 in chop, got %f", mHigh)
-	}
 }
 
 func TestATR(t *testing.T) {

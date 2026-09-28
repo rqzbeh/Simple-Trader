@@ -171,7 +171,6 @@ func (c *NewsCrawler) IngestHeadline(ctx context.Context, source, title, url str
 	if err != nil {
 		return nil, false, err
 	}
-	_ = report
 
 	if pubTime.IsZero() {
 		pubTime = time.Now()

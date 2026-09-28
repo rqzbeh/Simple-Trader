@@ -48,8 +48,6 @@ func TelegramQueueKey() string {
 // PubSubChannels defines the standard pub/sub communication channels.
 const (
 	ChannelMarketTicks = "pubsub:market_ticks"
-	ChannelSignals     = "pubsub:signals"
-	ChannelTrades      = "pubsub:trades"
 )
 
 // TickerQuote represents the in-memory cached market quote.

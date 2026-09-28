@@ -43,10 +43,8 @@ type Config struct {
 	MaxSlippagePct      float64 // Cap on slippage percentage (e.g. 0.05 for 5%)
 	MaxTradeMarginPct   float64 // Max margin per trade as fraction of total equity (e.g. 0.20 for 20%)
 	SignalMaxAgeMinutes int     // Max lifetime of an intraday signal before time-exit (default 60 = 1h)
-	LogLevel            string
 	IsProduction        bool
 	AdminPassword       string
-	AppSecret           string
 	TelegramBotToken    string
 	TelegramChatID      string
 	EarlyExit           EarlyExitConfig
@@ -120,10 +118,8 @@ func Load() (*Config, error) {
 		MaxSlippagePct:      getEnvFloat("MAX_SLIPPAGE_PCT", 0.05),
 		MaxTradeMarginPct:   getEnvFloat("MAX_TRADE_MARGIN_PCT", 0.20),
 		SignalMaxAgeMinutes: getEnvInt("SIGNAL_MAX_AGE_MINUTES", 60),
-		LogLevel:            getEnv("LOG_LEVEL", "info"),
 		IsProduction:        getEnv("ENV", "development") == "production",
 		AdminPassword:       getEnv("ADMIN_PASSWORD", ""),
-		AppSecret:           getEnv("APP_SECRET", ""),
 		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:      getEnv("TELEGRAM_CHAT_ID", ""),
 		EarlyExit:           earlyExit,

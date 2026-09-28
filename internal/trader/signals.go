@@ -306,7 +306,6 @@ func (s *SignalService) EvaluateMarketSignal(
 	// config defaults. ATR at entry is persisted for the audit (FR-002).
 	entryPrice := quote.Price
 	slPct := aiResp.SuggestedStopLossPct
-	tpPct := aiResp.SuggestedTakeProfitPct
 	var atrPrice float64
 	if snap.NATR > 0 {
 		atrPrice = snap.NATR * entryPrice / 100.0 // NATR% -> absolute ATR
@@ -348,7 +347,6 @@ func (s *SignalService) EvaluateMarketSignal(
 			}
 		}
 	}
-	tpPct = math.Abs(tp1Price-entryPrice) / entryPrice * 100.0
 
 	// AI-suggested stop respected only when it widens inside the profile clamp
 	// and beats the structural stop distance (defense in depth, never a floor
@@ -361,7 +359,6 @@ func (s *SignalService) EvaluateMarketSignal(
 			stopLoss = entryPrice * (1.0 + slPct/100.0)
 		}
 	}
-	_ = tpPct // TP1 distance implied by the ATR model; kept for audit logging.
 
 	// 5. Leverage: vol-target formula from the profile (FR-006) when a
 	// volatility measurement exists; AI suggestion respected only when it

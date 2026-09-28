@@ -155,6 +155,6 @@
     <rect x="18" y="300" width="389" height="52" rx="8" fill="#0f172a" stroke="#10b981" stroke-width="1" stroke-dasharray="4,2" />
     <text x="32" y="322" class="font-mono" font-size="11" fill="#94a3b8">RESOLUTION:</text>
     <text x="125" y="322" class="font-mono" font-size="12" font-weight="700" fill="#10b981">CLOSED • REALIZED ROI +18.31%</text>
-    <text x="32" y="340" class="font-ui" font-size="11" fill="#cbd5e1">Fine-tuned Bayesian posterior weights in real-time VPS memory</text>
+    <text x="32" y="340" class="font-ui" font-size="11" fill="#cbd5e1">Decision core execution · Jev + 9Router zero-fallback routing</text>
   </g>
 </svg>

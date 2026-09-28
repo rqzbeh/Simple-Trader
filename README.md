@@ -38,7 +38,7 @@
     <td width="50%" align="center"><img src="docs/assets/feature-signals.svg" alt="Signal cards with institutional catalyst feed"/><br/><sub><b>Catalyst-driven entries</b> — news cluster → core judgment</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/assets/feature-ai-engine.svg" alt="News intelligence stream"/><br/><sub><b>News stream</b> — core-classified BULLISH/BEARISH/NEUTRAL/MIXED</sub></td>
+    <td align="center"><img src="docs/assets/feature-intel.svg" alt="News intelligence stream"/><br/><sub><b>News stream</b> — core-classified BULLISH/BEARISH/NEUTRAL/MIXED</sub></td>
     <td align="center"><img src="docs/assets/feature-whale-intel.svg" alt="Whale intelligence"/><br/><sub><b>Whale &amp; flow intel</b> — context feeders, zero agency</sub></td>
   </tr>
   <tr>
@@ -49,7 +49,7 @@
 
 <p align="center">
   <img src="docs/assets/feature-ledger.svg" alt="Investor ledger" width="48%"/>
-  <img src="docs/assets/feature-intel.svg" alt="Intelligence panel" width="48%"/>
+  <img src="docs/assets/macro-regime.svg" alt="Macro regime allocation" width="48%"/>
 </p>
 
 <p align="center">
@@ -215,7 +215,6 @@ EARLY_EXIT_COOLDOWN_MIN=60
 EARLY_EXIT_CONF_FLOOR=0.75
 TIMEFRAME_SET_ALPHA=15m,1h,4h
 TIMEFRAME_SET_CORE=1h,4h,12h
-SHADOW_REPORT_DAYS=14
 
 # 9Router gateway
 NINEROUTER_URL=https://your-gateway/v1

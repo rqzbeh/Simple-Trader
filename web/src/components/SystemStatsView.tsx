@@ -15,7 +15,7 @@ import {
 import { apiFetch } from '../utils/apiClient';
 import { SystemConfigResponse } from '../types';
 
-export interface GatewayStatsData {
+interface GatewayStatsData {
   total: number;
   success: number;
   fail: number;
@@ -26,12 +26,12 @@ export interface GatewayStatsData {
   last_ok_at: string | null;
 }
 
-export interface JevStatsData extends GatewayStatsData {
+interface JevStatsData extends GatewayStatsData {
   model: string;
   key_configured: boolean;
 }
 
-export interface SystemStatsResponse {
+interface SystemStatsResponse {
   version: string;
   uptime_seconds: number;
   routing_threshold?: number;

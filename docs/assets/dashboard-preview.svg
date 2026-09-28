@@ -173,8 +173,8 @@
     <rect width="952" height="135" rx="10" fill="#0f172a" stroke="#1e293b" stroke-width="1" />
 
     <g transform="translate(20, 20)">
-      <text class="font-sans" font-size="13" font-weight="700" fill="#ffffff">Adaptive Indicator Weight Matrix</text>
-      <text class="font-mono" font-size="11" fill="#94a3b8" y="18">Dynamically calibrated in real time based on post-trade regret minimization [0.20x - 3.00x]</text>
+      <text class="font-sans" font-size="13" font-weight="700" fill="#ffffff">Indicator Historical Success Stats (Context Only)</text>
+      <text class="font-mono" font-size="11" fill="#94a3b8" y="18">Feeds Decision Core — no voting, no veto · Thompson posteriors as data</text>
 
       <!-- Weight Badges Grid -->
       <g transform="translate(0, 32)">
@@ -219,8 +219,8 @@
         <!-- Export JSONL Button -->
         <g transform="translate(760, 0)">
           <rect width="150" height="48" rx="8" fill="#0284c7" />
-          <text class="font-sans" font-size="11" font-weight="700" fill="#ffffff" x="22" y="22">Export ChatML JSONL</text>
-          <text class="font-mono" font-size="9" fill="#e0f2fe" x="22" y="36">Fine-Tuning Dataset</text>
+          <text class="font-sans" font-size="11" font-weight="700" fill="#ffffff" x="22" y="22">Download dataset.jsonl</text>
+          <text class="font-mono" font-size="9" fill="#e0f2fe" x="22" y="36">In-Context Regret Pairs</text>
         </g>
       </g>
     </g>

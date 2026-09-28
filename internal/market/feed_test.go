@@ -3,6 +3,7 @@ package market
 import (
 	"context"
 	"math/rand"
+	"testing"
 	"time"
 
 	"github.com/rqzbeh/simple-trader/internal/cache"
@@ -83,4 +84,21 @@ func (s *SimulatedFeed) Subscribe(ctx context.Context) <-chan cache.TickerQuote 
 	}()
 
 	return ch
+}
+
+func TestSimulatedFeed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	feed := NewSimulatedFeed()
+	ch := feed.Subscribe(ctx)
+
+	select {
+	case tick := <-ch:
+		if tick.Symbol == "" || tick.Price <= 0 {
+			t.Errorf("invalid tick received: %+v", tick)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for simulated tick")
+	}
 }
