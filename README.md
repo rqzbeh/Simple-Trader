@@ -70,6 +70,15 @@ Spec: [`specs/013-jev-shadow-eval/spec.md`](specs/013-jev-shadow-eval/spec.md) (
 
 ---
 
+## 🆕 v3.1 Features (spec-014/016 + ops)
+
+- **News-Driven Early Exit (spec-014)**: while a position is open, fresh news clusters are re-judged by the core (`close_now` Noul, batched). A "do not hold" verdict closes the position with exit reason `NEWS_EARLY_EXIT` and sends exactly one Telegram notification. Hard guards: min-hold, per-day budget, cooldown, confidence floor, kill switch — all `.env`-configurable, all failures explicit.
+- **Dynamic Trade Timeframe (spec-016)**: the core picks the execution timeframe per trade in the same batched request as the entry judgment — ALPHA `15m/1h/4h`, CORE `1h/4h/12h` (configurable). Horizon derives from a timeframe-keyed profile map; exit decay follows each signal's stored timeframe (legacy rows mapped once, logged).
+- **System Stats page**: live 9Router gateway + Jev health — status dot, total/success/failed, success rate, last/EMA latency, masked key status, routing threshold. Polls every 10s.
+- **Settings persist to `.env`**: UI edits go through `PUT /api/v1/system/config` (auth + whitelist + range validation) → atomic `.env` write → live in-process apply. Single source of truth survives redeploys.
+- **CI parallel matrix**: 11 per-package test jobs + backend/frontend verify — per-package failure visibility, ~65% faster.
+- **Optimization pass 45/45**: engine lock removed from network I/O, `rows.Err()` everywhere, `pgx.Tx` atomicity, Redis cache-aside on hot endpoints, SSE on Redis Pub/Sub, dead code purged (12 orphan components, ML backend handlers, `any`-free TS).
+
 ## 🚀 Quick Start
 
 ```bash
@@ -174,7 +183,15 @@ PORT=8080
 DATABASE_URL=postgres://trader:REDACTED_DB_PASSWORD@localhost:5432/simple_trader?sslmode=disable
 REDIS_URL=redis://localhost:6379/0
 
-# Decision Core
+# Decision Core (Jev) + Early Exit + Timeframe
+EARLY_EXIT_ENABLED=true
+EARLY_EXIT_MIN_HOLD_MIN=30
+EARLY_EXIT_MAX_PER_DAY=3
+EARLY_EXIT_COOLDOWN_MIN=60
+EARLY_EXIT_CONF_FLOOR=0.75
+TIMEFRAME_SET_ALPHA=15m,1h,4h
+TIMEFRAME_SET_CORE=1h,4h,12h
+SHADOW_REPORT_DAYS=14
 TYPESAFE_API_KEY=your_typesafe_key        # Jev (System One)
 NINEROUTER_URL=https://your-gateway/v1    # 9Router (OpenAI-compatible)
 NINEROUTER_KEY=your_gateway_key
@@ -210,7 +227,7 @@ Full config: [`docs/DEPLOYMENT_NGINX.md`](docs/DEPLOYMENT_NGINX.md).
 
 ## 📡 API & SSE Endpoints
 
-Core routes: `GET /health` · `GET /api/v1/assets` · signals/positions/trades CRUD · `GET /api/v1/stream` (SSE) · macro calendar · screener · admin config. v3.0 adds shadow/evidence report routes (see spec-013 `contracts/`).
+Core routes: `GET /health` · `GET /api/v1/assets` · signals/positions/trades CRUD · `GET /api/v1/stream` (SSE) · macro calendar · screener · admin config. v3.0 adds shadow/evidence report routes; `GET /api/v1/system/stats` (gateway/Jev health); `GET|PUT /api/v1/system/config` (settings persist to `.env`, session-auth). See spec-013/014/016 `contracts/`.
 
 ---
 
