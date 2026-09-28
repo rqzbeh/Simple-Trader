@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "lightweight-charts": "^4.2.0",
+<<<<<<< HEAD
     "lucide-react": "^1.48.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
@@ -17,6 +18,15 @@
   "devDependencies": {
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+=======
+    "lucide-react": "^0.446.0",
+    "react": "^19.3.0",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^18.3.0",
+>>>>>>> 0445b53 (chore(deps): bump react and @types/react in /web)
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.47",
