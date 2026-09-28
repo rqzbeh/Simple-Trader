@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
-import { Download, Terminal, Settings, CheckCircle2 } from 'lucide-react';
+import { Download, Terminal, Settings, CheckCircle2, AlertCircle } from 'lucide-react';
+import { getAuthToken } from '../context/AuthContext';
 
 export const FineTuningConsole: React.FC = () => {
   const [modelId, setModelId] = useState<string>('');
   const [apiKey, setApiKey] = useState<string>('');
   const [endpoint, setEndpoint] = useState<string>('Configured via Environment');
   const [isSaved, setIsSaved] = useState<boolean>(false);
+  const [saveLoading, setSaveLoading] = useState<boolean>(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
 
@@ -18,10 +21,41 @@ export const FineTuningConsole: React.FC = () => {
       .catch(() => {});
   }, []);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsSaved(true);
-    setTimeout(() => setIsSaved(false), 2500);
+    setSaveLoading(true);
+    setSaveError(null);
+    try {
+      const payload: Record<string, any> = {};
+      if (modelId) payload['AI_MODEL_ID'] = modelId;
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      const token = getAuthToken();
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch('/api/v1/system/config', {
+        method: 'PUT',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}: Failed to save configuration`);
+      }
+
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 2500);
+    } catch (err: any) {
+      setSaveError(err.message || 'Failed to save configuration');
+    } finally {
+      setSaveLoading(false);
+    }
   };
 
   const handleDownloadDataset = async () => {
@@ -113,12 +147,20 @@ export const FineTuningConsole: React.FC = () => {
             />
           </div>
 
+          {saveError && (
+            <div className="p-2 bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 rounded-lg text-xs flex items-center space-x-1.5 font-mono">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              <span>{saveError}</span>
+            </div>
+          )}
+
           <button
             type="submit"
-            className="w-full py-1.5 px-3 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors shadow-sm"
+            disabled={saveLoading}
+            className="w-full py-1.5 px-3 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold flex items-center justify-center space-x-1.5 transition-colors shadow-sm disabled:opacity-50"
           >
             {isSaved ? <CheckCircle2 className="w-3.5 h-3.5" /> : null}
-            <span>{isSaved ? 'Settings Applied' : 'Save AI Configuration'}</span>
+            <span>{saveLoading ? 'Saving...' : isSaved ? 'Settings Applied' : 'Save AI Configuration'}</span>
           </button>
         </form>
 

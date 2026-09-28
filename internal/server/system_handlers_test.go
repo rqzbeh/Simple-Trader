@@ -1,10 +1,13 @@
 package server_test
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/rqzbeh/simple-trader/internal/ai"
@@ -100,5 +103,157 @@ func TestSystemStatsEndpoint(t *testing.T) {
 	}
 	if data.Jev.Model == "" {
 		t.Errorf("expected non-empty jev model")
+	}
+}
+
+func TestSystemConfigEndpoints(t *testing.T) {
+	tempDir := t.TempDir()
+	envPath := tempDir + "/.env"
+	_ = os.WriteFile(envPath, []byte("ROUTING_CONFIDENCE_THRESHOLD=0.75\nDEFAULT_LEVERAGE=8\n"), 0600)
+	t.Setenv("ENV_FILE", envPath)
+	t.Setenv("TYPESAFE_API_KEY", "apikey_typesafe_secret_123456789")
+
+	cfg := &config.Config{
+		AdminPassword:              "AdminSecret2026!",
+		RoutingConfidenceThreshold: "0.75",
+		DefaultLeverage:            8,
+		TypesafeAPIKey:             "apikey_typesafe_secret_123456789",
+		AIAPIKey:                   "sk-ai-secret-key-123456789",
+		AIModelID:                  "test-model",
+	}
+
+	srv := server.NewServer(cfg, nil, nil, nil, nil, nil)
+	router := srv.Router()
+
+	// 1. GET /api/v1/system/config without auth (should work, masked telemetry)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/system/config", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected GET 200, got %d", rec.Code)
+	}
+
+	var getResp map[string]interface{}
+	if err := json.NewDecoder(rec.Body).Decode(&getResp); err != nil {
+		t.Fatalf("decode GET response failed: %v", err)
+	}
+
+	if getResp["typesafe_api_key_configured"] != true {
+		t.Errorf("expected typesafe_api_key_configured=true")
+	}
+	if getResp["typesafe_base_url"] != "https://api.typesafe.ai" {
+		t.Errorf("expected typesafe_base_url=https://api.typesafe.ai, got %v", getResp["typesafe_base_url"])
+	}
+	if getResp["env_file"] != envPath {
+		t.Errorf("expected env_file=%s, got %v", envPath, getResp["env_file"])
+	}
+	// Verify keys are masked
+	if strings.Contains(fmt.Sprintf("%v", getResp["typesafe_api_key_masked"]), "secret") {
+		t.Errorf("typesafe key leaked in response: %v", getResp["typesafe_api_key_masked"])
+	}
+	if strings.Contains(fmt.Sprintf("%v", getResp["ai_api_key_masked"]), "secret") {
+		t.Errorf("ai key leaked in response: %v", getResp["ai_api_key_masked"])
+	}
+
+	// 2. PUT /api/v1/system/config without auth -> expect 401
+	putPayload, _ := json.Marshal(map[string]string{"ROUTING_CONFIDENCE_THRESHOLD": "0.85"})
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/system/config", bytes.NewReader(putPayload))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected PUT without auth to return 401, got %d", rec.Code)
+	}
+
+	// 3. Login to obtain session token
+	loginPayload, _ := json.Marshal(map[string]string{"password": "AdminSecret2026!"})
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewReader(loginPayload))
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("login failed: %d", rec.Code)
+	}
+	var loginResp map[string]interface{}
+	_ = json.NewDecoder(rec.Body).Decode(&loginResp)
+	token, _ := loginResp["token"].(string)
+	if token == "" {
+		t.Fatalf("expected token from login, got empty")
+	}
+
+	// 4. PUT with invalid key -> expect 400
+	disallowedPayload, _ := json.Marshal(map[string]string{"INVALID_KEY": "foo"})
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/system/config", bytes.NewReader(disallowedPayload))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for disallowed key, got %d", rec.Code)
+	}
+
+	// 5. PUT with invalid range -> expect 400
+	invalidRangePayload, _ := json.Marshal(map[string]interface{}{"ROUTING_CONFIDENCE_THRESHOLD": 1.5})
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/system/config", bytes.NewReader(invalidRangePayload))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for out of range threshold, got %d", rec.Code)
+	}
+
+	// 6. PUT with valid authorized payload
+	validPayload, _ := json.Marshal(map[string]interface{}{
+		"ROUTING_CONFIDENCE_THRESHOLD": "0.85",
+		"DEFAULT_LEVERAGE":             12,
+		"TYPESAFE_API_KEY":             "***", // masked placeholder, should not overwrite
+	})
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/system/config", bytes.NewReader(validPayload))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for valid PUT, got %d, body: %s", rec.Code, rec.Body.String())
+	}
+
+	var putResp map[string]interface{}
+	_ = json.NewDecoder(rec.Body).Decode(&putResp)
+	if putResp["default_leverage"] != float64(12) {
+		t.Errorf("expected default_leverage=12, got %v", putResp["default_leverage"])
+	}
+	if putResp["routing_confidence_threshold"] != 0.85 {
+		t.Errorf("expected routing_confidence_threshold=0.85, got %v", putResp["routing_confidence_threshold"])
+	}
+
+	// Verify .env file on disk was updated
+	envBytes, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf("failed reading env file: %v", err)
+	}
+	envContent := string(envBytes)
+	if !strings.Contains(envContent, "ROUTING_CONFIDENCE_THRESHOLD=0.85") {
+		t.Errorf("expected ROUTING_CONFIDENCE_THRESHOLD=0.85 in file, got:\n%s", envContent)
+	}
+	if !strings.Contains(envContent, "DEFAULT_LEVERAGE=12") {
+		t.Errorf("expected DEFAULT_LEVERAGE=12 in file, got:\n%s", envContent)
+	}
+	// Verify TYPESAFE_API_KEY was not overwritten with "***"
+	if strings.Contains(envContent, "TYPESAFE_API_KEY=***") {
+		t.Errorf("TYPESAFE_API_KEY was overwritten with masked placeholder!")
+	}
+	// Verify in-memory config updated
+	if cfg.DefaultLeverage != 12 {
+		t.Errorf("in-memory cfg.DefaultLeverage not updated, got %d", cfg.DefaultLeverage)
+	}
+	if cfg.RoutingConfidenceThreshold != "0.85" {
+		t.Errorf("in-memory cfg.RoutingConfidenceThreshold not updated, got %s", cfg.RoutingConfidenceThreshold)
 	}
 }

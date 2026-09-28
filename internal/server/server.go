@@ -361,28 +361,8 @@ func (s *Server) setupRoutes() {
 	})
 
 	// System Runtime Configuration Telemetry (binds live .env to UI)
-	r.Get("/api/v1/system/config", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		maskedKey := ""
-		if len(s.cfg.AIAPIKey) > 8 {
-			maskedKey = s.cfg.AIAPIKey[:4] + "..." + s.cfg.AIAPIKey[len(s.cfg.AIAPIKey)-4:]
-		} else if len(s.cfg.AIAPIKey) > 0 {
-			maskedKey = "***"
-		}
-
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"ai_base_url_configured":  s.cfg.AIBaseURL != "",
-			"ai_model_id":             s.cfg.AIModelID,
-			"ai_reasoning_effort":     s.cfg.AIReasoningEffort,
-			"ai_api_key_configured":   s.cfg.AIAPIKey != "",
-			"ai_api_key_masked":       maskedKey,
-			"initial_capital":         s.cfg.InitialCapital,
-			"core_target_pct":         s.cfg.CoreTargetPct,
-			"alpha_target_pct":        s.cfg.AlphaTargetPct,
-			"telegram_bot_configured": s.cfg.TelegramBotToken != "" && s.cfg.TelegramChatID != "",
-			"telegram_chat_id":        s.cfg.TelegramChatID,
-		})
-	})
+	r.Get("/api/v1/system/config", s.handleGetSystemConfig)
+	r.Put("/api/v1/system/config", s.handlePutSystemConfig)
 	r.Get("/api/v1/system/stats", s.handleSystemStats)
 
 	// Real-Time Server-Sent Events (SSE)

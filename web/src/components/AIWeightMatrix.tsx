@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { IndicatorWeights } from '../types';
-import { Cpu, Sliders, Download, RefreshCw, CheckCircle2, ArrowRight } from 'lucide-react';
+import { Cpu, Sliders, Download, RefreshCw, CheckCircle2, ArrowRight, AlertCircle } from 'lucide-react';
 import { formatTime, useTimezone } from '../utils/time';
+import { getAuthToken } from '../context/AuthContext';
 
 interface AIWeightMatrixProps {
   weights: IndicatorWeights;
@@ -182,12 +183,46 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
     }
   };
 
-  const handleSaveSettings = (e: React.FormEvent) => {
+  const [modelSaving, setModelSaving] = useState<boolean>(false);
+  const [modelSaveError, setModelSaveError] = useState<string | null>(null);
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem('st_ai_model', modelId);
-    localStorage.setItem('st_ai_endpoint', endpointUrl);
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+    setModelSaving(true);
+    setModelSaveError(null);
+    try {
+      const payload: Record<string, any> = {};
+      if (modelId) payload['AI_MODEL_ID'] = modelId;
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      const token = getAuthToken();
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const res = await fetch('/api/v1/system/config', {
+        method: 'PUT',
+        headers,
+        credentials: 'include',
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `HTTP ${res.status}: Failed to save model settings`);
+      }
+
+      localStorage.setItem('st_ai_model', modelId);
+      localStorage.setItem('st_ai_endpoint', endpointUrl);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } catch (err: any) {
+      setModelSaveError(err.message || 'Failed to save configuration');
+    } finally {
+      setModelSaving(false);
+    }
   };
 
   return (
@@ -322,6 +357,12 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
           </div>
 
           <form onSubmit={handleSaveSettings} className="space-y-3 text-xs font-mono">
+            {modelSaveError && (
+              <div className="p-2 rounded bg-rose-500/10 border border-rose-500/20 text-rose-600 dark:text-rose-400 text-[11px] flex items-center gap-1.5">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{modelSaveError}</span>
+              </div>
+            )}
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="block text-slate-600 dark:text-slate-400">
@@ -378,7 +419,8 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
 
             <button
               type="submit"
-              className="w-full mt-2 py-2 px-3 rounded-lg bg-sky-500 hover:bg-sky-600 text-white font-semibold transition-colors flex items-center justify-center space-x-1.5"
+              disabled={modelSaving}
+              className="w-full mt-2 py-2 px-3 rounded-lg bg-sky-500 hover:bg-sky-600 text-white font-semibold transition-colors flex items-center justify-center space-x-1.5 disabled:opacity-50"
             >
               {savedSuccess ? (
                 <>
@@ -387,7 +429,7 @@ export const AIWeightMatrix: React.FC<AIWeightMatrixProps> = ({
                 </>
               ) : (
                 <>
-                  <span>Save Model Settings</span>
+                  <span>{modelSaving ? 'Saving...' : 'Save Model Settings'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </>
               )}

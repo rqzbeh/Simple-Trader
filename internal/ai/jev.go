@@ -8,12 +8,14 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
 // JevClient talks to TypeSafe System One (spec-013 contracts/shadow-jobs.md §1).
 // Typed errors only — no default answers, ever.
 type JevClient struct {
+	mu      sync.RWMutex
 	baseURL string
 	apiKey  string
 	model   string
@@ -33,6 +35,39 @@ func NewJevClient(baseURL, apiKey string, timeout time.Duration) *JevClient {
 		model:   "jev-latest",
 		http:    &http.Client{Timeout: timeout},
 	}
+}
+
+// SetAPIKey dynamically updates the TypeSafe API key live.
+func (j *JevClient) SetAPIKey(key string) {
+	if j == nil {
+		return
+	}
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	j.apiKey = key
+}
+
+// GetAPIKey returns the current TypeSafe API key.
+func (j *JevClient) GetAPIKey() string {
+	if j == nil {
+		return ""
+	}
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	return j.apiKey
+}
+
+// BaseURL returns the configured base URL.
+func (j *JevClient) BaseURL() string {
+	if j == nil {
+		return "https://api.typesafe.ai"
+	}
+	j.mu.RLock()
+	defer j.mu.RUnlock()
+	if j.baseURL == "" {
+		return "https://api.typesafe.ai"
+	}
+	return j.baseURL
 }
 
 func (j *JevClient) Model() string {
@@ -100,7 +135,8 @@ func (j *JevClient) Evaluate(ctx context.Context, cycleID string, state interfac
 			RecordJev(true, latencyMs, "")
 		}
 	}()
-	if j.apiKey == "" {
+	apiKey := j.GetAPIKey()
+	if apiKey == "" {
 		return nil, JevUsage{}, WrapDecision("jev", cycleID, ErrJevAuth, "TYPESAFE_API_KEY missing")
 	}
 	body, err := json.Marshal(jevRequest{State: state, Model: j.model, Questions: questions})
@@ -108,12 +144,12 @@ func (j *JevClient) Evaluate(ctx context.Context, cycleID string, state interfac
 		return nil, JevUsage{}, WrapDecision("jev", cycleID, ErrJevSchema, "marshal request failed")
 	}
 	start = time.Now()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, j.baseURL+"/v1/systemone", bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, j.BaseURL()+"/v1/systemone", bytes.NewReader(body))
 	if err != nil {
 		return nil, JevUsage{}, WrapDecision("jev", cycleID, ErrJevUnavailable, "request creation failed")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+j.apiKey)
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 
 	resp, err := j.http.Do(req)
 	latency := time.Since(start)

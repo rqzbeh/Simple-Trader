@@ -320,6 +320,34 @@ export interface TelegramConfigRequest {
   enabled: boolean;
 }
 
+// System Runtime Configuration Telemetry & Persistence (spec-013 v3.0)
+export interface SystemConfigResponse {
+  ai_base_url_configured: boolean;
+  ai_model_id: string;
+  ai_temperature?: number;
+  ai_timeout_seconds?: number;
+  ai_reasoning_effort?: string;
+  ai_api_key_configured: boolean;
+  ai_api_key_masked: string;
+  typesafe_api_key_configured: boolean;
+  typesafe_api_key_masked: string;
+  typesafe_base_url: string;
+  routing_confidence_threshold: number | null;
+  default_leverage?: number;
+  min_risk_to_reward_ratio?: number;
+  max_concurrent_signals?: number;
+  max_risk_per_trade_pct?: number;
+  max_drawdown_limit_pct?: number;
+  calendar_halt_minutes?: number;
+  screener_min_24h_volume?: number;
+  initial_capital: number;
+  core_target_pct: number;
+  alpha_target_pct: number;
+  telegram_bot_configured: boolean;
+  telegram_chat_id: string;
+  env_file: string;
+}
+
 // Real-Data Machine Learning Training & Model Telemetry (US6)
 export interface MLTrainingRun {
   id: string;

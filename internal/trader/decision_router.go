@@ -2,6 +2,7 @@ package trader
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/rqzbeh/simple-trader/internal/ai"
@@ -10,9 +11,30 @@ import (
 // DecisionRouter: Jev-first, 9Router-escalated (spec-013 FR-001/FR-003).
 // Exactly one final writer per decision.
 type DecisionRouter struct {
+	mu        sync.RWMutex
 	Jev       *ai.JevClient
 	Threshold float64 // ROUTING_CONFIDENCE_THRESHOLD — no default; startup error if unset
 	Escalate  func(ctx context.Context, state interface{}) (DecisionOutcome, error)
+}
+
+// SetThreshold dynamically updates the routing confidence threshold live.
+func (r *DecisionRouter) SetThreshold(thr float64) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.Threshold = thr
+}
+
+// GetThreshold returns the current routing confidence threshold.
+func (r *DecisionRouter) GetThreshold() float64 {
+	if r == nil {
+		return 0
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.Threshold
 }
 
 // DecisionOutcome is the core's final typed answer.
@@ -33,7 +55,8 @@ var ErrThresholdMissing = ai.ErrConfigMissing
 
 // Route runs Jev first; escalates when confidence < Threshold.
 func (r *DecisionRouter) Route(ctx context.Context, cycleID string, state interface{}, questions map[string]ai.JevQuestion, allowed map[string]bool) (DecisionOutcome, error) {
-	if r.Threshold <= 0 {
+	thr := r.GetThreshold()
+	if thr <= 0 {
 		return DecisionOutcome{}, ai.WrapDecision("config", cycleID, ErrThresholdMissing, "ROUTING_CONFIDENCE_THRESHOLD")
 	}
 	answers, usage, err := r.Jev.Evaluate(ctx, cycleID, state, questions)
@@ -72,7 +95,7 @@ func (r *DecisionRouter) Route(ctx context.Context, cycleID string, state interf
 	}
 
 	// One final writer: escalate ONLY when below threshold. Never both.
-	if ans.Confidence >= r.Threshold {
+	if ans.Confidence >= thr {
 		return out, nil
 	}
 	if r.Escalate == nil {

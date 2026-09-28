@@ -3,6 +3,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 interface AuthContextType {
   isAuthenticated: boolean;
   tokenMasked?: string;
+  token?: string;
   loading: boolean;
   login: (password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
@@ -11,9 +12,18 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+export const getAuthToken = (): string | undefined => {
+  try {
+    return sessionStorage.getItem('simple_trader_session_token') || undefined;
+  } catch {
+    return undefined;
+  }
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [tokenMasked, setTokenMasked] = useState<string | undefined>(undefined);
+  const [token, setToken] = useState<string | undefined>(getAuthToken);
   const [loading, setLoading] = useState<boolean>(true);
 
   const checkSession = async () => {
@@ -67,6 +77,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       setIsAuthenticated(true);
+      if (data.token) {
+        setToken(data.token);
+        try {
+          sessionStorage.setItem('simple_trader_session_token', data.token);
+        } catch {}
+      }
       if (data.token && data.token.length > 8) {
         setTokenMasked(data.token.slice(0, 4) + '...' + data.token.slice(-4));
       }
@@ -84,11 +100,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } finally {
       setIsAuthenticated(false);
       setTokenMasked(undefined);
+      setToken(undefined);
+      try {
+        sessionStorage.removeItem('simple_trader_session_token');
+      } catch {}
     }
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, tokenMasked, loading, login, logout, checkSession }}>
+    <AuthContext.Provider value={{ isAuthenticated, tokenMasked, token, loading, login, logout, checkSession }}>
       {children}
     </AuthContext.Provider>
   );

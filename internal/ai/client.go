@@ -9,13 +9,47 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
 // Client interacts with any OpenAI-compatible /v1/chat/completions endpoint.
 type Client struct {
+	mu         sync.RWMutex
 	cfg        ClientConfig
 	httpClient *http.Client
+}
+
+// SetParams dynamically updates AI model parameters live.
+func (c *Client) SetParams(modelID, reasoningEffort string, temperature float64, timeoutSec int) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if modelID != "" {
+		c.cfg.ModelID = modelID
+	}
+	if reasoningEffort != "" {
+		c.cfg.ReasoningEffort = reasoningEffort
+	}
+	if temperature >= 0 {
+		c.cfg.Temperature = temperature
+	}
+	if timeoutSec > 0 {
+		c.cfg.TimeoutSec = timeoutSec
+		c.httpClient.Timeout = time.Duration(timeoutSec) * time.Second
+	}
+}
+
+// GetConfig returns a copy of current ClientConfig.
+func (c *Client) GetConfig() ClientConfig {
+	if c == nil {
+		return ClientConfig{}
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.cfg
 }
 
 // NewClient creates a new unified OpenAI AI client.
@@ -220,20 +254,26 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (respOut *Dec
 			RecordGateway(true, latencyMs, "")
 		}
 	}()
-	if c.cfg.BaseURL == "" || c.cfg.APIKey == "" {
+
+	c.mu.RLock()
+	cfg := c.cfg
+	httpClient := c.httpClient
+	c.mu.RUnlock()
+
+	if cfg.BaseURL == "" || cfg.APIKey == "" {
 		return nil, WrapDecision("llm", req.Symbol, ErrLLMClassify, "AI client unconfigured (missing BaseURL or APIKey)")
 	}
 
-	url := fmt.Sprintf("%s/chat/completions", strings.TrimRight(c.cfg.BaseURL, "/"))
-	if !strings.HasSuffix(c.cfg.BaseURL, "/v1") && !strings.Contains(c.cfg.BaseURL, "/v1/") {
-		url = fmt.Sprintf("%s/v1/chat/completions", strings.TrimRight(c.cfg.BaseURL, "/"))
+	url := fmt.Sprintf("%s/chat/completions", strings.TrimRight(cfg.BaseURL, "/"))
+	if !strings.HasSuffix(cfg.BaseURL, "/v1") && !strings.Contains(cfg.BaseURL, "/v1/") {
+		url = fmt.Sprintf("%s/v1/chat/completions", strings.TrimRight(cfg.BaseURL, "/"))
 	}
 
 	streamFalse := false
 	body := openAIChatRequest{
-		Model:           c.cfg.ModelID,
-		Temperature:     &c.cfg.Temperature,
-		ReasoningEffort: c.cfg.ReasoningEffort,
+		Model:           cfg.ModelID,
+		Temperature:     &cfg.Temperature,
+		ReasoningEffort: cfg.ReasoningEffort,
 		ToolChoice:      "none",
 		Stream:          &streamFalse,
 		Messages: []openAIMessage{
@@ -252,9 +292,9 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (respOut *Dec
 		return nil, WrapDecision("llm", req.Symbol, fmt.Errorf("%w: create request: %v", ErrLLMClassify, err), "http request creation failed")
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.cfg.APIKey))
+	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", cfg.APIKey))
 
-	resp, err := c.httpClient.Do(httpReq)
+	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		return nil, WrapDecision("llm", req.Symbol, fmt.Errorf("%w: gateway network failure %s: %v", ErrLLMClassify, url, err), "network error")
 	}
@@ -336,28 +376,28 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (respOut *Dec
 	} else if decision.Confidence > 1.0 {
 		decision.Confidence = 1.0
 	}
-	if decision.Leverage < 1 || decision.Leverage > c.cfg.DefaultLeverage {
-		if c.cfg.DefaultLeverage > 0 {
-			decision.Leverage = c.cfg.DefaultLeverage
+	if decision.Leverage < 1 || decision.Leverage > cfg.DefaultLeverage {
+		if cfg.DefaultLeverage > 0 {
+			decision.Leverage = cfg.DefaultLeverage
 		} else {
 			decision.Leverage = 8
 		}
 	}
-	if decision.SuggestedStopLossPct <= 0 || decision.SuggestedStopLossPct > c.cfg.MaxStopLossPct {
-		decision.SuggestedStopLossPct = c.cfg.MinStopLossPct
+	if decision.SuggestedStopLossPct <= 0 || decision.SuggestedStopLossPct > cfg.MaxStopLossPct {
+		decision.SuggestedStopLossPct = cfg.MinStopLossPct
 		if decision.SuggestedStopLossPct <= 0 {
 			decision.SuggestedStopLossPct = 1.0
 		}
 	}
-	if decision.SuggestedTakeProfitPct <= 0 || decision.SuggestedTakeProfitPct > c.cfg.MaxTakeProfitPct {
-		decision.SuggestedTakeProfitPct = c.cfg.MinTakeProfitPct
+	if decision.SuggestedTakeProfitPct <= 0 || decision.SuggestedTakeProfitPct > cfg.MaxTakeProfitPct {
+		decision.SuggestedTakeProfitPct = cfg.MinTakeProfitPct
 		if decision.SuggestedTakeProfitPct <= 0 {
 			decision.SuggestedTakeProfitPct = 3.0
 		}
 	}
 
 	log.Printf("[AI-CORE] OmniRoute %s signal for %s: %s (Confidence: %.2f, WinProb: %.2f, Regime: %s, Lev: %dx, SL: %.2f%%, TP: %.2f%%) reasoning=%q",
-		c.cfg.ModelID, req.Symbol, decision.Decision, decision.Confidence, decision.EstimatedWinProbability, decision.Regime,
+		cfg.ModelID, req.Symbol, decision.Decision, decision.Confidence, decision.EstimatedWinProbability, decision.Regime,
 		decision.Leverage, decision.SuggestedStopLossPct, decision.SuggestedTakeProfitPct, decision.Reasoning)
 
 	return &decision, nil

@@ -79,6 +79,8 @@ func getEnvInt(key string, defaultVal int) int {
 // Load parses environment variables and returns a validated Config.
 func Load() (*Config, error) {
 	return &Config{
+		TypesafeAPIKey:             getEnv("TYPESAFE_API_KEY", ""),
+		RoutingConfidenceThreshold: getEnv("ROUTING_CONFIDENCE_THRESHOLD", ""),
 		Port:                getEnv("PORT", "8080"),
 		DatabaseURL:         getEnv("DATABASE_URL", "postgres://trader:REDACTED_DB_PASSWORD@localhost:5432/simple_trader?sslmode=disable"),
 		RedisURL:            getEnv("REDIS_URL", "redis://localhost:6379/0"),
