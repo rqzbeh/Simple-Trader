@@ -70,6 +70,11 @@ type DecisionResponse struct {
 	GateRejected string `json:"gate_rejected,omitempty"`
 	// GateRejectedDetail carries the rule metrics for the audit/SSE payload.
 	GateRejectedDetail map[string]interface{} `json:"gate_rejected_detail,omitempty"`
+
+	// Dynamic trade timeframe (spec-016)
+	Timeframe             string             `json:"timeframe,omitempty"`
+	TimeframeDistribution map[string]float64 `json:"timeframe_distribution,omitempty"`
+	TimeframeConfidence   float64            `json:"timeframe_confidence,omitempty"`
 }
 
 // TradeOutcome captures execution and exit results for adaptive weight tuning.

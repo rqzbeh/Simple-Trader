@@ -192,6 +192,10 @@ func main() {
 	srv.StartBackgroundSignalScanner(ctx, 2*time.Minute)
 	log.Println("[INFO] Transparent Background Signal Scanner started (evaluating news catalysts across full universe).")
 
+	// 6c. Start News-Driven Early Trade Exit Worker (spec-014)
+	srv.StartEarlyExitWorker(ctx, 30*time.Second)
+	log.Println("[INFO] News-Driven Early Trade Exit Worker started (evaluating open positions against news catalysts every 30s).")
+
 	// 7. Start Market Live Ticker Feed from Online Exchange APIs (Binance)
 	liveFeed := market.NewLiveMarketFeed(market.GetSupportedAssets())
 

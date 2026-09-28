@@ -53,6 +53,7 @@ type Server struct {
 	newsClassifier    market.NewsClassifier // spec-013: core headline classifier (explicit-error)
 	decisionRouter    *trader.DecisionRouter
 	shadow            *trader.ShadowOrchestrator
+	earlyExitManager  *trader.EarlyExitManager
 	startTime         time.Time
 }
 
@@ -329,6 +330,44 @@ func (s *Server) Authenticator() *auth.Authenticator {
 // Calendar returns the active economic calendar manager.
 func (s *Server) Calendar() *market.EconomicCalendar {
 	return s.calendar
+}
+
+// StartEarlyExitWorker starts the news-driven early exit evaluation loop (spec-014).
+func (s *Server) StartEarlyExitWorker(ctx context.Context, interval time.Duration) {
+	if s.decisionRouter == nil || s.decisionRouter.Jev == nil || s.execEngine == nil || s.catalystClusterer == nil {
+		return
+	}
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	eeCfg := config.EarlyExitConfig{
+		Enabled:     true,
+		MinHoldMin:  30,
+		MaxPerDay:   3,
+		CooldownMin: 60,
+		ConfFloor:   0.75,
+	}
+	if s.cfg != nil {
+		eeCfg = s.cfg.EarlyExit
+	}
+
+	mgr := trader.NewEarlyExitManager(
+		eeCfg,
+		s.execEngine,
+		s.dbStore,
+		s.telegramBot,
+		s.decisionRouter.Jev,
+		s.catalystClusterer,
+		func(event string, data interface{}) {
+			if s.broadcaster != nil {
+				if b, err := json.Marshal(data); err == nil {
+					s.broadcaster.Broadcast(event, string(b))
+				}
+			}
+		},
+	)
+	s.earlyExitManager = mgr
+	mgr.Start(ctx, interval)
 }
 
 func (s *Server) setupRoutes() {

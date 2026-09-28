@@ -1096,6 +1096,34 @@ func (s *Server) applyDecayState(ctx context.Context, sig *db.FuturesTradeSignal
 		return
 	}
 
+	tf := ""
+	if sig.Timeframe != nil {
+		tf = *sig.Timeframe
+	}
+
+	// Legacy migration (spec-016 FR-206):
+	// NULL legacy row → map CRYPTO→1h COMMODITY→4h, write back + log legacy_timeframe_mapped.
+	if tf == "" {
+		if strings.ToUpper(sig.Profile) == "COMMODITY" {
+			tf = "4h"
+		} else {
+			tf = "1h"
+		}
+		sig.Timeframe = &tf
+		if s.dbStore != nil {
+			if err := s.dbStore.UpdateTimeframe(ctx, sig.ID, tf); err != nil {
+				log.Printf("[Decay] failed to persist legacy timeframe for signal #%d: %v", sig.ID, err)
+			}
+		}
+		log.Printf("legacy_timeframe_mapped: signal #%d profile %s mapped to %s", sig.ID, sig.Profile, tf)
+	}
+
+	if tfProf, ok := config.GetTimeframeProfile(tf); ok {
+		prof.HorizonMin = tfProf.HorizonMin
+		prof.DecayBreakevenAtMin = tfProf.BEOffsetMin
+		prof.DecayFlatAtMin = tfProf.FlatOffsetMin
+	}
+
 	ageMin := time.Since(sig.CreatedAt).Minutes()
 	riskDist := sig.EntryPrice - sig.StopLoss
 	if sig.Direction == "SHORT" {
@@ -1134,13 +1162,15 @@ func (s *Server) applyDecayState(ctx context.Context, sig *db.FuturesTradeSignal
 		if !moved {
 			return
 		}
-		if err := s.dbStore.UpdateSignalStop(ctx, sig.ID, beStop); err != nil {
-			log.Printf("[Decay] failed to move stop for #%d: %v", sig.ID, err)
-			return
-		}
-		if err := s.dbStore.UpdateSignalDecay(ctx, sig.ID, state); err != nil {
-			log.Printf("[Decay] failed to persist decay state for #%d: %v", sig.ID, err)
-			return
+		if s.dbStore != nil {
+			if err := s.dbStore.UpdateSignalStop(ctx, sig.ID, beStop); err != nil {
+				log.Printf("[Decay] failed to move stop for #%d: %v", sig.ID, err)
+				return
+			}
+			if err := s.dbStore.UpdateSignalDecay(ctx, sig.ID, state); err != nil {
+				log.Printf("[Decay] failed to persist decay state for #%d: %v", sig.ID, err)
+				return
+			}
 		}
 		sig.StopLoss = beStop
 		sig.DecayState = state

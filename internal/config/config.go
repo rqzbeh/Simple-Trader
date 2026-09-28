@@ -49,6 +49,7 @@ type Config struct {
 	AppSecret           string
 	TelegramBotToken    string
 	TelegramChatID      string
+	EarlyExit           EarlyExitConfig
 }
 
 func getEnv(key, defaultVal string) string {
@@ -78,6 +79,11 @@ func getEnvInt(key string, defaultVal int) int {
 
 // Load parses environment variables and returns a validated Config.
 func Load() (*Config, error) {
+	earlyExit, err := LoadEarlyExitConfig()
+	if err != nil {
+		return nil, err
+	}
+
 	return &Config{
 		TypesafeAPIKey:             getEnv("TYPESAFE_API_KEY", ""),
 		RoutingConfidenceThreshold: getEnv("ROUTING_CONFIDENCE_THRESHOLD", ""),
@@ -120,6 +126,7 @@ func Load() (*Config, error) {
 		AppSecret:           getEnv("APP_SECRET", ""),
 		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:      getEnv("TELEGRAM_CHAT_ID", ""),
+		EarlyExit:           earlyExit,
 	}, nil
 }
 

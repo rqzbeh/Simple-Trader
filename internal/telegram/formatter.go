@@ -1,6 +1,7 @@
 package telegram
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -235,3 +236,64 @@ func FormatTestMessage(botName string) string {
 		EscapeMarkdownV2(name),
 	)
 }
+
+// Sender defines the contract for dispatching Telegram messages with retry (FR-103).
+// *BotClient satisfies this interface.
+type Sender interface {
+	SendMessageWithRetry(ctx context.Context, text string) error
+}
+
+// EarlyExitMessage holds fields for early exit notification per spec-014 contracts §4.
+type EarlyExitMessage struct {
+	Symbol     string
+	Direction  string
+	Cluster    string
+	Confidence float64
+	Route      string
+	PnLUSD     float64
+	ReturnPct  float64
+	ExitReason string
+}
+
+// FormatEarlyExit produces a Telegram MarkdownV2 alert for news-driven early trade exits.
+// Contracts §4:
+// 🔴 EARLY EXIT — NEWS
+// Symbol: BTC/USDT (closed LONG)
+// Reason: SEC sues exchange... [cluster]
+// Confidence: 0.82 · route: jev_direct
+// PnL: +$142.10 (+1.4%) · exit: NEWS_EARLY_EXIT
+func FormatEarlyExit(msg EarlyExitMessage) string {
+	if msg.ExitReason == "" {
+		msg.ExitReason = "NEWS_EARLY_EXIT"
+	}
+	signPnL := "\\+"
+	if msg.PnLUSD < 0 {
+		signPnL = "\\-"
+	}
+	absPnL := math.Abs(msg.PnLUSD)
+
+	signPct := "\\+"
+	if msg.ReturnPct < 0 {
+		signPct = "\\-"
+	}
+	absPct := math.Abs(msg.ReturnPct)
+
+	return fmt.Sprintf(
+		"🔴 *EARLY EXIT — NEWS*\n\n"+
+			"*Symbol:* `%s` \\(closed %s\\)\n"+
+			"*Reason:* %s\n"+
+			"*Confidence:* %s · *route:* %s\n"+
+			"*PnL:* %s$%s \\(%s%s%%\\) · *exit:* %s",
+		EscapeMarkdownV2(msg.Symbol),
+		EscapeMarkdownV2(msg.Direction),
+		EscapeMarkdownV2(msg.Cluster),
+		EscapeMarkdownV2(fmt.Sprintf("%.2f", msg.Confidence)),
+		EscapeMarkdownV2(msg.Route),
+		signPnL,
+		EscapeMarkdownV2(fmt.Sprintf("%.2f", absPnL)),
+		signPct,
+		EscapeMarkdownV2(fmt.Sprintf("%.1f", absPct)),
+		EscapeMarkdownV2(msg.ExitReason),
+	)
+}
+

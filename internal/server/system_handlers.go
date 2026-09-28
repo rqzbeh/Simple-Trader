@@ -230,6 +230,19 @@ func (s *Server) systemConfigResponse() map[string]interface{} {
 		aiTimeoutSeconds = s.cfg.AITimeoutSeconds
 	}
 
+	earlyExitEnabled := true
+	earlyExitMinHoldMin := 30
+	earlyExitMaxPerDay := 3
+	earlyExitCooldownMin := 60
+	earlyExitConfFloor := 0.75
+	if s.cfg != nil {
+		earlyExitEnabled = s.cfg.EarlyExit.Enabled
+		earlyExitMinHoldMin = s.cfg.EarlyExit.MinHoldMin
+		earlyExitMaxPerDay = s.cfg.EarlyExit.MaxPerDay
+		earlyExitCooldownMin = s.cfg.EarlyExit.CooldownMin
+		earlyExitConfFloor = s.cfg.EarlyExit.ConfFloor
+	}
+
 	return map[string]interface{}{
 		"ai_base_url_configured":       aiBaseURLConfigured,
 		"ai_model_id":                  aiModelID,
@@ -254,6 +267,11 @@ func (s *Server) systemConfigResponse() map[string]interface{} {
 		"alpha_target_pct":             alphaTargetPct,
 		"telegram_bot_configured":      telegramBotConfigured,
 		"telegram_chat_id":             telegramChatID,
+		"early_exit_enabled":           earlyExitEnabled,
+		"early_exit_min_hold_min":      earlyExitMinHoldMin,
+		"early_exit_max_per_day":       earlyExitMaxPerDay,
+		"early_exit_cooldown_min":      earlyExitCooldownMin,
+		"early_exit_conf_floor":        earlyExitConfFloor,
 		"env_file":                     envFile,
 	}
 }
@@ -278,6 +296,13 @@ var allowedConfigKeys = map[string]bool{
 	"CALENDAR_HALT_MINUTES":        true,
 	"TYPESAFE_API_KEY":             true,
 	"SCREENER_MIN_24H_VOLUME":      true,
+	"TIMEFRAME_SET_ALPHA":          true,
+	"TIMEFRAME_SET_CORE":           true,
+	"EARLY_EXIT_ENABLED":           true,
+	"EARLY_EXIT_MIN_HOLD_MIN":      true,
+	"EARLY_EXIT_MAX_PER_DAY":       true,
+	"EARLY_EXIT_COOLDOWN_MIN":      true,
+	"EARLY_EXIT_CONF_FLOOR":        true,
 }
 
 func parseNumericFloat(val interface{}) (float64, error) {
@@ -322,6 +347,31 @@ func parseString(val interface{}) string {
 		return strconv.Itoa(v)
 	default:
 		return fmt.Sprintf("%v", v)
+	}
+}
+
+func parseBool(val interface{}) (bool, error) {
+	switch v := val.(type) {
+	case bool:
+		return v, nil
+	case string:
+		return strconv.ParseBool(strings.TrimSpace(v))
+	case int:
+		if v == 1 {
+			return true, nil
+		} else if v == 0 {
+			return false, nil
+		}
+		return false, fmt.Errorf("invalid boolean integer")
+	case float64:
+		if v == 1.0 {
+			return true, nil
+		} else if v == 0.0 {
+			return false, nil
+		}
+		return false, fmt.Errorf("invalid boolean float")
+	default:
+		return false, fmt.Errorf("invalid boolean value")
 	}
 }
 
@@ -561,6 +611,92 @@ func (s *Server) handlePutSystemConfig(w http.ResponseWriter, r *http.Request) {
 		envUpdates["SCREENER_MIN_24H_VOLUME"] = strconv.FormatFloat(f, 'f', -1, 64)
 	}
 
+	if v, exists := rawMap["TIMEFRAME_SET_ALPHA"]; exists {
+		s := parseString(v)
+		set, err := config.ParseTimeframeSet("TIMEFRAME_SET_ALPHA", s)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": err.Error(),
+			})
+			return
+		}
+		envUpdates["TIMEFRAME_SET_ALPHA"] = strings.Join(set, ",")
+	}
+
+	if v, exists := rawMap["TIMEFRAME_SET_CORE"]; exists {
+		s := parseString(v)
+		set, err := config.ParseTimeframeSet("TIMEFRAME_SET_CORE", s)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": err.Error(),
+			})
+			return
+		}
+		envUpdates["TIMEFRAME_SET_CORE"] = strings.Join(set, ",")
+	}
+
+	if v, exists := rawMap["EARLY_EXIT_ENABLED"]; exists {
+		b, err := parseBool(v)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "EARLY_EXIT_ENABLED invalid: must be a boolean",
+			})
+			return
+		}
+		envUpdates["EARLY_EXIT_ENABLED"] = strconv.FormatBool(b)
+	}
+
+	if v, exists := rawMap["EARLY_EXIT_MIN_HOLD_MIN"]; exists {
+		i, err := parseNumericInt(v)
+		if err != nil || i < 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "EARLY_EXIT_MIN_HOLD_MIN invalid: must be >= 0",
+			})
+			return
+		}
+		envUpdates["EARLY_EXIT_MIN_HOLD_MIN"] = strconv.Itoa(i)
+	}
+
+	if v, exists := rawMap["EARLY_EXIT_MAX_PER_DAY"]; exists {
+		i, err := parseNumericInt(v)
+		if err != nil || i < 1 {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "EARLY_EXIT_MAX_PER_DAY invalid: must be >= 1",
+			})
+			return
+		}
+		envUpdates["EARLY_EXIT_MAX_PER_DAY"] = strconv.Itoa(i)
+	}
+
+	if v, exists := rawMap["EARLY_EXIT_COOLDOWN_MIN"]; exists {
+		i, err := parseNumericInt(v)
+		if err != nil || i < 0 {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "EARLY_EXIT_COOLDOWN_MIN invalid: must be >= 0",
+			})
+			return
+		}
+		envUpdates["EARLY_EXIT_COOLDOWN_MIN"] = strconv.Itoa(i)
+	}
+
+	if v, exists := rawMap["EARLY_EXIT_CONF_FLOOR"]; exists {
+		f, err := parseNumericFloat(v)
+		if err != nil || f < 0.0 || f > 1.0 {
+			w.WriteHeader(http.StatusBadRequest)
+			_ = json.NewEncoder(w).Encode(map[string]string{
+				"error": "EARLY_EXIT_CONF_FLOOR invalid: must be between 0.0 and 1.0",
+			})
+			return
+		}
+		envUpdates["EARLY_EXIT_CONF_FLOOR"] = strconv.FormatFloat(f, 'f', -1, 64)
+	}
+
 	// 3. Persist to .env file
 	envFilePath := config.DefaultEnvPath()
 	if len(envUpdates) > 0 {
@@ -640,6 +776,42 @@ func (s *Server) handlePutSystemConfig(w http.ResponseWriter, r *http.Request) {
 			f, _ := strconv.ParseFloat(v, 64)
 			s.cfg.ScreenerMin24hVolume = f
 			_ = os.Setenv("SCREENER_MIN_24H_VOLUME", v)
+		}
+		if v, ok := envUpdates["TIMEFRAME_SET_ALPHA"]; ok {
+			_ = os.Setenv("TIMEFRAME_SET_ALPHA", v)
+			_ = config.UpdateTimeframeSet("TIMEFRAME_SET_ALPHA", v)
+		}
+		if v, ok := envUpdates["TIMEFRAME_SET_CORE"]; ok {
+			_ = os.Setenv("TIMEFRAME_SET_CORE", v)
+			_ = config.UpdateTimeframeSet("TIMEFRAME_SET_CORE", v)
+		}
+		if v, ok := envUpdates["EARLY_EXIT_ENABLED"]; ok {
+			b, _ := strconv.ParseBool(v)
+			s.cfg.EarlyExit.Enabled = b
+			_ = os.Setenv("EARLY_EXIT_ENABLED", v)
+		}
+		if v, ok := envUpdates["EARLY_EXIT_MIN_HOLD_MIN"]; ok {
+			i, _ := strconv.Atoi(v)
+			s.cfg.EarlyExit.MinHoldMin = i
+			_ = os.Setenv("EARLY_EXIT_MIN_HOLD_MIN", v)
+		}
+		if v, ok := envUpdates["EARLY_EXIT_MAX_PER_DAY"]; ok {
+			i, _ := strconv.Atoi(v)
+			s.cfg.EarlyExit.MaxPerDay = i
+			_ = os.Setenv("EARLY_EXIT_MAX_PER_DAY", v)
+		}
+		if v, ok := envUpdates["EARLY_EXIT_COOLDOWN_MIN"]; ok {
+			i, _ := strconv.Atoi(v)
+			s.cfg.EarlyExit.CooldownMin = i
+			_ = os.Setenv("EARLY_EXIT_COOLDOWN_MIN", v)
+		}
+		if v, ok := envUpdates["EARLY_EXIT_CONF_FLOOR"]; ok {
+			f, _ := strconv.ParseFloat(v, 64)
+			s.cfg.EarlyExit.ConfFloor = f
+			_ = os.Setenv("EARLY_EXIT_CONF_FLOOR", v)
+		}
+		if s.earlyExitManager != nil {
+			s.earlyExitManager.UpdateConfig(s.cfg.EarlyExit)
 		}
 
 		if s.aiClient != nil {

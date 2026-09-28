@@ -18,6 +18,24 @@ func EffectiveProfile(name string) (config.RiskProfile, error) {
 	return p, nil
 }
 
+// EffectiveProfileWithTimeframe resolves the base risk profile and overrides
+// HorizonMin, DecayBreakevenAtMin, and DecayFlatAtMin from the TimeframeProfile
+// if timeframe is non-empty and known (spec-016 FR-205/FR-206).
+func EffectiveProfileWithTimeframe(name, timeframe string) (config.RiskProfile, error) {
+	p, err := EffectiveProfile(name)
+	if err != nil {
+		return config.RiskProfile{}, err
+	}
+	if timeframe != "" {
+		if tfProf, ok := config.GetTimeframeProfile(timeframe); ok {
+			p.HorizonMin = tfProf.HorizonMin
+			p.DecayBreakevenAtMin = tfProf.BEOffsetMin
+			p.DecayFlatAtMin = tfProf.FlatOffsetMin
+		}
+	}
+	return p, nil
+}
+
 // ValidateRiskProfiles checks the full seeded set at startup so operators learn
 // about a bad configuration before the first signal is generated.
 func ValidateRiskProfiles() error {

@@ -25,6 +25,7 @@ const futuresSignalColumns = `s.id, s.symbol, s.direction, s.status, s.catalyst_
 		s.telegram_dispatched, s.telegram_resolved, s.created_at,
 		s.profile, s.model_confidence, s.catalyst_event_id, s.atr_at_entry, s.tp1_close_fraction,
 		s.recomputed, s.decay_state, s.rejected_reason, s.indicator_snapshot,
+		s.timeframe, s.timeframe_distribution, s.timeframe_confidence,
 		e.story_count, e.sources, e.created_at`
 
 // futuresSignalFrom joins futures_trade_signals to its catalyst_events row
@@ -62,6 +63,7 @@ func scanFuturesSignal(row pgx.Row) (FuturesTradeSignal, error) {
 		&sig.TelegramDispatched, &sig.TelegramResolved, &sig.CreatedAt,
 		&sig.Profile, &sig.ModelConfidence, &sig.CatalystEventID, &sig.ATRAtEntry, &sig.TP1CloseFraction,
 		&sig.Recomputed, &sig.DecayState, &sig.RejectedReason, &sig.IndicatorSnapshot,
+		&sig.Timeframe, &sig.TimeframeDistribution, &sig.TimeframeConfidence,
 		&sig.CatalystEventStoryCount, &sig.CatalystEventSources, &sig.CatalystEventAt,
 	)
 	return sig, err
@@ -112,6 +114,11 @@ type FuturesTradeSignal struct {
 	// produced this signal (spec 012 US7, FR-022). Null for legacy rows;
 	// null means "unknown" and must never be back-filled (Amendment A1).
 	IndicatorSnapshot json.RawMessage `json:"indicator_snapshot,omitempty"`
+
+	// Dynamic Trade Timeframe (spec-016)
+	Timeframe             *string         `json:"timeframe,omitempty"`
+	TimeframeDistribution json.RawMessage `json:"timeframe_distribution,omitempty"`
+	TimeframeConfidence   *float64        `json:"timeframe_confidence,omitempty"`
 }
 
 // IndicatorSnapshotRecord is the persisted copy of the decision-time
@@ -169,14 +176,16 @@ func (s *Store) InsertFuturesSignal(ctx context.Context, sig *FuturesTradeSignal
 			risk_reward_ratio, allocated_capital_usd, allocated_capital_pct,
 			telegram_dispatched, telegram_resolved,
 			profile, model_confidence, catalyst_event_id, atr_at_entry, tp1_close_fraction, decay_state,
-			indicator_snapshot
+			indicator_snapshot,
+			timeframe, timeframe_distribution, timeframe_confidence
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11,
 			$12, $13, $14,
 			$15, $16,
 			$17, $18, $19, $20, $21, $22,
-			$23
+			$23,
+			$24, $25, $26
 		)
 		RETURNING id, created_at
 	`,
@@ -187,6 +196,7 @@ func (s *Store) InsertFuturesSignal(ctx context.Context, sig *FuturesTradeSignal
 		defaultString(sig.Profile, "CRYPTO"), sig.ModelConfidence, sig.CatalystEventID,
 		sig.ATRAtEntry, sig.TP1CloseFraction, defaultString(sig.DecayState, "NONE"),
 		nullableJSON(sig.IndicatorSnapshot),
+		sig.Timeframe, nullableJSON(sig.TimeframeDistribution), sig.TimeframeConfidence,
 	)
 
 	err := row.Scan(&sig.ID, &sig.CreatedAt)
@@ -375,6 +385,15 @@ func (s *Store) MarkSignalResolved(ctx context.Context, id int64) error {
 		return errors.New("database pool not initialized")
 	}
 	_, err := s.Pool.Exec(ctx, `UPDATE futures_trade_signals SET telegram_resolved = TRUE WHERE id = $1`, id)
+	return err
+}
+
+// UpdateTimeframe records the chosen or legacy-mapped timeframe on a signal row (spec-016 FR-206).
+func (s *Store) UpdateTimeframe(ctx context.Context, id int64, timeframe string) error {
+	if s.Pool == nil {
+		return errors.New("database pool not initialized")
+	}
+	_, err := s.Pool.Exec(ctx, `UPDATE futures_trade_signals SET timeframe = $1 WHERE id = $2`, timeframe, id)
 	return err
 }
 
@@ -687,4 +706,42 @@ func (s *Store) ListRiskProfiles(ctx context.Context) ([]RiskProfileRow, error) 
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// TimeframeDistributionRow represents aggregate counts of chosen timeframes per bucket (spec-016 SC-203).
+type TimeframeDistributionRow struct {
+	Bucket    string `json:"bucket"`
+	Timeframe string `json:"timeframe"`
+	Count     int64  `json:"count"`
+}
+
+// GetTimeframeDistribution returns counts of chosen timeframes grouped by bucket/profile (spec-016 SC-203).
+func (s *Store) GetTimeframeDistribution(ctx context.Context, profile string) ([]TimeframeDistributionRow, error) {
+	if s.Pool == nil {
+		return nil, errors.New("database pool not initialized")
+	}
+	query := `
+		SELECT COALESCE(profile, 'CRYPTO') AS bucket,
+		       COALESCE(timeframe, 'unknown') AS timeframe,
+		       COUNT(*) AS count
+		FROM futures_trade_signals
+		WHERE ($1 = '' OR profile = $1)
+		GROUP BY bucket, timeframe
+		ORDER BY bucket, count DESC
+	`
+	rows, err := s.Pool.Query(ctx, query, profile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query timeframe distribution: %w", err)
+	}
+	defer rows.Close()
+
+	var result []TimeframeDistributionRow
+	for rows.Next() {
+		var row TimeframeDistributionRow
+		if err := rows.Scan(&row.Bucket, &row.Timeframe, &row.Count); err != nil {
+			return nil, fmt.Errorf("failed scanning timeframe distribution row: %w", err)
+		}
+		result = append(result, row)
+	}
+	return result, rows.Err()
 }

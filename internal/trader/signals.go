@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/rqzbeh/simple-trader/internal/ai"
@@ -315,6 +316,13 @@ func (s *SignalService) EvaluateMarketSignal(
 	if profErr != nil {
 		return nil, aiResp, fmt.Errorf("risk profile for %s: %w", bucket, profErr)
 	}
+	if aiResp != nil && aiResp.Timeframe != "" {
+		if tfProf, ok := config.GetTimeframeProfile(aiResp.Timeframe); ok {
+			profile.HorizonMin = tfProf.HorizonMin
+			profile.DecayBreakevenAtMin = tfProf.BEOffsetMin
+			profile.DecayFlatAtMin = tfProf.FlatOffsetMin
+		}
+	}
 
 	stopLoss, slPctFromATR := CalculateATRStop(entryPrice, 0, 0, atrPrice, dir, profile)
 	slPct = slPctFromATR
@@ -505,11 +513,19 @@ func (s *SignalService) EvaluateMarketSignal(
 		// FR-012: confidence is NOT sentiment — model confidence always
 		// recorded separately; catalyst_sentiment carries the fused cluster
 		// score when a Catalyst Event exists, else the heuristic above.
-		ModelConfidence: &modelConfidence,
-		// Spec 012 US2 audit columns (FR-002/004): volatility measurement and
-		// staged-exit fraction at entry, for the UI and post-trade review.
-		ATRAtEntry:       &atrPrice,
-		TP1CloseFraction: &closeFrac,
+		ModelConfidence:     &modelConfidence,
+		ATRAtEntry:          &atrPrice,
+		TP1CloseFraction:    &closeFrac,
+	}
+
+	if aiResp != nil && aiResp.Timeframe != "" {
+		tf := aiResp.Timeframe
+		sig.Timeframe = &tf
+		sig.TimeframeConfidence = &aiResp.TimeframeConfidence
+		if len(aiResp.TimeframeDistribution) > 0 {
+			distBytes, _ := json.Marshal(aiResp.TimeframeDistribution)
+			sig.TimeframeDistribution = distBytes
+		}
 	}
 
 	if catMeta != nil && catMeta.EventID > 0 {
@@ -670,6 +686,7 @@ func (s *SignalService) settleAndClose(ctx context.Context, sig *db.FuturesTrade
 // judgeEntryCore runs the decision core (Jev first → optional 9Router
 // escalation) and maps the typed outcome onto the legacy DecisionResponse
 // consumed by signal assembly (position intent → BUY/SELL mapping unchanged).
+// Timeframe choice rides the same batched request (spec-016 FR-201).
 func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req ai.DecisionRequest) (*ai.DecisionResponse, error) {
 	state, err := BuildState(symbol, time.Now().UTC().Format(time.RFC3339),
 		snapToMap(req.IndicatorSnap), 1.5, 3.0,
@@ -679,25 +696,81 @@ func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req a
 		return nil, err
 	}
 	cycle := fmt.Sprintf("%s-%d", symbol, time.Now().UnixNano())
-	out, err := s.router.Route(ctx, cycle, state, EntryQuestions(), entryVocab)
+	bucket := req.Bucket
+	if bucket == "" {
+		bucket = "ALPHA"
+	}
+	questions := EntryQuestions(bucket)
+
+	thr := s.router.GetThreshold()
+	if thr <= 0 {
+		return nil, ai.WrapDecision("config", cycle, ErrThresholdMissing, "ROUTING_CONFIDENCE_THRESHOLD")
+	}
+
+	answers, _, err := s.router.Jev.Evaluate(ctx, cycle, state, questions)
 	if err != nil {
+		if strings.Contains(err.Error(), "timeframe") {
+			return nil, ai.WrapDecision("timeframe", cycle, ai.ErrJevSchema, "missing or invalid timeframe answer in batch: "+err.Error())
+		}
 		return nil, err
 	}
+
+	// Validate timeframe choice ∈ bucket set (FR-202, SC-202). No default.
+	bucketSet := config.GetBucketTimeframeSet(bucket)
+	tfAns, ok := answers["timeframe"]
+	if !ok {
+		return nil, ai.WrapDecision("timeframe", cycle, ai.ErrJevSchema, "missing timeframe answer in batch")
+	}
+	if err := ValidateTimeframe(tfAns, bucketSet, cycle); err != nil {
+		return nil, err
+	}
+
+	// Validate entry choice ∈ entryVocab
+	entryAns, ok := answers["entry"]
+	if !ok {
+		return nil, ai.WrapDecision("entry", cycle, ai.ErrJevSchema, "missing entry answer in batch")
+	}
+	if err := ai.ValidateChoice(entryAns, entryVocab, cycle); err != nil {
+		return nil, err
+	}
+
+	entryChoice := entryAns.Choice
+	entryConf := entryAns.Confidence
+	route := "jev_direct"
+	baseline := ""
+
+	if entryAns.Confidence < thr {
+		if s.router.Escalate == nil {
+			return nil, ai.WrapDecision("router", cycle, ai.ErrLLMClassify, "confidence below threshold but no escalation path configured")
+		}
+		esc, err := s.router.Escalate(ctx, state)
+		if err != nil {
+			return nil, ai.WrapDecision("router", cycle, ai.ErrLLMClassify, "escalation failed: "+err.Error())
+		}
+		entryChoice = esc.Choice
+		entryConf = esc.Confidence
+		route = "escalated"
+		baseline = entryAns.Choice
+	}
+
 	// Position intent only — execution layer maps to order sides (FR-005).
 	decision := "HOLD"
-	switch out.Choice {
+	switch entryChoice {
 	case "LONG":
 		decision = "BUY"
 	case "SHORT":
 		decision = "SELL"
 	}
 	resp := &ai.DecisionResponse{
-		Decision:   decision,
-		Confidence: out.Confidence,
-		Reasoning:  fmt.Sprintf("route=%s", out.Route),
+		Decision:              decision,
+		Confidence:            entryConf,
+		Reasoning:             fmt.Sprintf("route=%s", route),
+		Timeframe:             tfAns.Choice,
+		TimeframeDistribution: tfAns.Probabilities,
+		TimeframeConfidence:   tfAns.Confidence,
 	}
 	if s.shadow != nil {
-		s.shadow.JudgeEntry(cycle, symbol, state, EntryQuestions(), entryVocab, out.Baseline)
+		s.shadow.JudgeEntry(cycle, symbol, state, questions, entryVocab, baseline)
 	}
 	return resp, nil
 }
@@ -715,8 +788,12 @@ func snapToMap(snap cache.IndicatorSnapshot) map[string]float64 {
 	}
 }
 
-// EntryQuestions: one batched Jev request per cycle (research.md batch rule).
-func EntryQuestions() map[string]ai.JevQuestion {
+// EntryQuestions: one batched Jev request per cycle (research.md batch rule, spec-016).
+func EntryQuestions(bucketOpt ...string) map[string]ai.JevQuestion {
+	bucket := "ALPHA"
+	if len(bucketOpt) > 0 && bucketOpt[0] != "" {
+		bucket = bucketOpt[0]
+	}
 	return map[string]ai.JevQuestion{
 		"entry": {
 			Type: "choice",
@@ -730,5 +807,6 @@ func EntryQuestions() map[string]ai.JevQuestion {
 				"NO_TRADE": "No edge, mixed signals, or gate failure",
 			},
 		},
+		"timeframe": TimeframeQuestion(bucket),
 	}
 }

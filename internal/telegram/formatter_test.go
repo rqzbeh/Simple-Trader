@@ -176,3 +176,47 @@ func TestFormatSignalEntryMicroCapDistinctPrices(t *testing.T) {
 		t.Errorf("entry/SL/TP1 not distinct: %v", prices)
 	}
 }
+
+func TestFormatEarlyExit(t *testing.T) {
+	msg := telegram.EarlyExitMessage{
+		Symbol:     "BTC/USDT",
+		Direction:  "LONG",
+		Cluster:    "SEC sues exchange over staking program",
+		Confidence: 0.82,
+		Route:      "jev_direct",
+		PnLUSD:     142.10,
+		ReturnPct:  1.4,
+		ExitReason: "NEWS_EARLY_EXIT",
+	}
+
+	res := telegram.FormatEarlyExit(msg)
+
+	if !strings.Contains(res, "EARLY EXIT") {
+		t.Errorf("expected header in message, got: %s", res)
+	}
+	if !strings.Contains(res, "BTC/USDT") {
+		t.Errorf("expected symbol in message, got: %s", res)
+	}
+	if !strings.Contains(res, "closed LONG") {
+		t.Errorf("expected closed direction in message, got: %s", res)
+	}
+	if !strings.Contains(res, "SEC sues exchange") {
+		t.Errorf("expected cluster headline in message, got: %s", res)
+	}
+	if !strings.Contains(res, "0\\.82") && !strings.Contains(res, "0.82") {
+		t.Errorf("expected confidence in message, got: %s", res)
+	}
+	if !strings.Contains(res, telegram.EscapeMarkdownV2("jev_direct")) {
+		t.Errorf("expected route in message, got: %s", res)
+	}
+	if !strings.Contains(res, "142") {
+		t.Errorf("expected PnL in message, got: %s", res)
+	}
+	if !strings.Contains(res, "1\\.4%") {
+		t.Errorf("expected ReturnPct in message, got: %s", res)
+	}
+	if !strings.Contains(res, telegram.EscapeMarkdownV2("NEWS_EARLY_EXIT")) {
+		t.Errorf("expected exit reason in message, got: %s", res)
+	}
+}
+

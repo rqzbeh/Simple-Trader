@@ -6,8 +6,8 @@ import (
 	"strconv"
 )
 
-// GET /api/admin/shadow/report?type=entry|exit|news&days=14
-// Admin-only, read-only evidence report (spec-013 FR-017, contracts §4).
+// GET /api/admin/shadow/report?type=entry|exit|news|news_exit&days=14
+// Admin-only, read-only evidence report (spec-013 FR-017, spec-014 FR-106).
 func (s *Server) handleShadowReport(w http.ResponseWriter, r *http.Request) {
 	tok := ""
 	if h := r.Header.Get("Authorization"); len(h) > 7 && h[:7] == "Bearer " {
@@ -21,8 +21,8 @@ func (s *Server) handleShadowReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	typ := r.URL.Query().Get("type")
-	if typ != "entry" && typ != "exit" && typ != "news" {
-		http.Error(w, "type must be entry|exit|news", http.StatusBadRequest)
+	if typ != "entry" && typ != "exit" && typ != "news" && typ != "news_exit" {
+		http.Error(w, "type must be entry|exit|news|news_exit", http.StatusBadRequest)
 		return
 	}
 	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
@@ -30,7 +30,13 @@ func (s *Server) handleShadowReport(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "component=shadow-report: database unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	rep, err := s.dbStore.ShadowReport(r.Context(), typ, days)
+	var rep map[string]interface{}
+	var err error
+	if typ == "news_exit" {
+		rep, err = s.dbStore.EarlyExitReport(r.Context(), days)
+	} else {
+		rep, err = s.dbStore.ShadowReport(r.Context(), typ, days)
+	}
 	if err != nil {
 		http.Error(w, "component=shadow-report: report unavailable", http.StatusInternalServerError)
 		return

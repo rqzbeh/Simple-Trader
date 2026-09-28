@@ -8,6 +8,32 @@ import (
 	"sync"
 )
 
+// TimeframeProfile defines holding horizon and decay offsets for a chosen timeframe (spec-016).
+type TimeframeProfile struct {
+	HorizonMin    int `json:"horizon_min"`
+	BEOffsetMin   int `json:"be_offset_min"`
+	FlatOffsetMin int `json:"flat_offset_min"`
+}
+
+// DefaultTimeframeProfiles returns the seeded profile set per data-model.md.
+// Seeded: 15m→(45,15,30), 1h→(120,30,60), 4h→(360,90,180), 12h→(720,180,360).
+var DefaultTimeframeProfiles = map[string]TimeframeProfile{
+	"15m": {HorizonMin: 45, BEOffsetMin: 15, FlatOffsetMin: 30},
+	"30m": {HorizonMin: 90, BEOffsetMin: 25, FlatOffsetMin: 45},
+	"1h":  {HorizonMin: 120, BEOffsetMin: 30, FlatOffsetMin: 60},
+	"2h":  {HorizonMin: 180, BEOffsetMin: 45, FlatOffsetMin: 90},
+	"4h":  {HorizonMin: 360, BEOffsetMin: 90, FlatOffsetMin: 180},
+	"6h":  {HorizonMin: 540, BEOffsetMin: 135, FlatOffsetMin: 270},
+	"12h": {HorizonMin: 720, BEOffsetMin: 180, FlatOffsetMin: 360},
+	"1d":  {HorizonMin: 1440, BEOffsetMin: 360, FlatOffsetMin: 720},
+}
+
+// GetTimeframeProfile returns the profile for a timeframe interval.
+func GetTimeframeProfile(timeframe string) (TimeframeProfile, bool) {
+	p, ok := DefaultTimeframeProfiles[strings.TrimSpace(timeframe)]
+	return p, ok
+}
+
 // RiskProfile bundles the evidence-based exit/entry/sizing parameters for one
 // asset class (spec FR-019: all values config-driven with documented defaults).
 // Defaults come from docs/RESEARCH-trading-system-optimization.md (R2/R3/R4/R8).

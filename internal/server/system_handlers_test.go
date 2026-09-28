@@ -256,4 +256,60 @@ func TestSystemConfigEndpoints(t *testing.T) {
 	if cfg.RoutingConfidenceThreshold != "0.85" {
 		t.Errorf("in-memory cfg.RoutingConfidenceThreshold not updated, got %s", cfg.RoutingConfidenceThreshold)
 	}
+
+	// 7. Test EARLY_EXIT_* keys (spec-014 contracts §5)
+	// Invalid EARLY_EXIT_CONF_FLOOR -> 400
+	invalidFloorPayload, _ := json.Marshal(map[string]interface{}{"EARLY_EXIT_CONF_FLOOR": 1.5})
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/system/config", bytes.NewReader(invalidFloorPayload))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for EARLY_EXIT_CONF_FLOOR > 1.0, got %d", rec.Code)
+	}
+
+	// Invalid EARLY_EXIT_MAX_PER_DAY -> 400
+	invalidBudgetPayload, _ := json.Marshal(map[string]interface{}{"EARLY_EXIT_MAX_PER_DAY": 0})
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/system/config", bytes.NewReader(invalidBudgetPayload))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for EARLY_EXIT_MAX_PER_DAY < 1, got %d", rec.Code)
+	}
+
+	// Valid EARLY_EXIT update -> 200
+	validEarlyExitPayload, _ := json.Marshal(map[string]interface{}{
+		"EARLY_EXIT_ENABLED":      false,
+		"EARLY_EXIT_MIN_HOLD_MIN": 45,
+		"EARLY_EXIT_MAX_PER_DAY":  5,
+		"EARLY_EXIT_COOLDOWN_MIN": 90,
+		"EARLY_EXIT_CONF_FLOOR":   0.80,
+	})
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/system/config", bytes.NewReader(validEarlyExitPayload))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for valid EARLY_EXIT update, got %d, body: %s", rec.Code, rec.Body.String())
+	}
+
+	if cfg.EarlyExit.Enabled != false {
+		t.Errorf("expected cfg.EarlyExit.Enabled=false, got %v", cfg.EarlyExit.Enabled)
+	}
+	if cfg.EarlyExit.MinHoldMin != 45 {
+		t.Errorf("expected cfg.EarlyExit.MinHoldMin=45, got %d", cfg.EarlyExit.MinHoldMin)
+	}
+	if cfg.EarlyExit.MaxPerDay != 5 {
+		t.Errorf("expected cfg.EarlyExit.MaxPerDay=5, got %d", cfg.EarlyExit.MaxPerDay)
+	}
+	if cfg.EarlyExit.CooldownMin != 90 {
+		t.Errorf("expected cfg.EarlyExit.CooldownMin=90, got %d", cfg.EarlyExit.CooldownMin)
+	}
+	if cfg.EarlyExit.ConfFloor != 0.80 {
+		t.Errorf("expected cfg.EarlyExit.ConfFloor=0.80, got %f", cfg.EarlyExit.ConfFloor)
+	}
 }
