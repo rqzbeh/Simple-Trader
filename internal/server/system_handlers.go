@@ -578,6 +578,11 @@ func validateAndBuildEnvUpdates(rawMap map[string]interface{}) (map[string]strin
 		s := parseString(v)
 		// Masked writes: only overwrite if value non-empty AND not the masked placeholder
 		if !isMaskedPlaceholder(s) && s != "" {
+			// Zero-fallback: probe TypeSafe with the candidate key BEFORE saving.
+			// A bad key must fail loudly here, not at the next trade cycle (401).
+			if err := probeTypeSafe(context.Background(), s); err != nil {
+				return nil, err
+			}
 			envUpdates["TYPESAFE_API_KEY"] = s
 		}
 	}
@@ -759,5 +764,33 @@ func (s *Server) applyLiveConfigUpdates(envUpdates map[string]string) {
 	}
 	if s.aiClient != nil {
 		s.aiClient.SetParams(s.cfg.AIModelID, s.cfg.AIReasoningEffort, s.cfg.AITemperature, s.cfg.AITimeoutSeconds)
+	}
+}
+
+
+// probeTypeSafe validates a candidate API key with one cheap live call so a
+// rejected key never lands in .env (explicit save-time error, FR-007).
+func probeTypeSafe(ctx context.Context, key string) error {
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+	defer cancel()
+	body := `{"state":"key probe","model":"jev-latest","questions":{"ok":{"type":"noul","instructions":"ok?"}}}`
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.typesafe.ai/v1/systemone", strings.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("TYPESAFE_API_KEY validation could not run: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+key)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("TYPESAFE_API_KEY validation unreachable: %v", err)
+	}
+	defer resp.Body.Close()
+	switch resp.StatusCode {
+	case 200:
+		return nil
+	case 401, 403:
+		return fmt.Errorf("TYPESAFE_API_KEY rejected by TypeSafe (http %d): key is invalid — fix the value and save again", resp.StatusCode)
+	default:
+		return fmt.Errorf("TYPESAFE_API_KEY validation failed: TypeSafe http %d", resp.StatusCode)
 	}
 }
