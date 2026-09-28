@@ -7,32 +7,72 @@
 ![Frontend](https://img.shields.io/badge/Frontend-React%2019%20%2B%20TypeScript%20(Bun)-f472b6?logo=bun)
 ![Architecture](https://img.shields.io/badge/Architecture-Host%20Nginx%20%7C%20Go%208080%20%7C%20Postgres%20%7C%20Redis-0284c7)
 ![Decision Core](https://img.shields.io/badge/Decision%20Core-Jev%20%2B%209Router-8b5cf6)
-![Version](https://img.shields.io/badge/version-3.0.0--decision--core-purple)
+![Version](https://img.shields.io/badge/version-3.1.0--decision--core-purple)
 ![Docker](https://img.shields.io/badge/Docker-GHCR%20Prebuilt%20Backend-2496ED?logo=docker)
 
 <p align="center">
   <b>Simple-Trader</b> is an institutional-grade, 24/7 autonomous quantitative trading terminal and Progressive Web App (PWA).
   <br />
-  v3.0: <b>exactly one decision core — Jev + 9Router.</b> News gathering, indicators, and ML models are context feeders with no agency.
-  Zero fallbacks. Zero silent degradation. Every failure is an explicit, named error.
+  <b>One decision core — Jev + 9Router.</b> News, indicators, and ML models are context feeders with no agency.
+  Zero fallbacks. Every failure is an explicit, named error.
 </p>
 
+[![Simple-Trader Terminal Preview](docs/assets/dashboard-preview.svg)](https://github.com/rqzbeh/Simple-Trader)
+
 [Quick Start](#-quick-start) •
-[Decision Core](#-decision-core-v30) •
-[Asset Universe](#-asset-universe-123-instruments) •
+[Decision Core](#-decision-core) •
+[v3.1 Features](#-v31-features) •
 [Signal Pipeline](#-signal-pipeline--position-lifecycle) •
-[Indicators](#-institutional-quantitative-indicators) •
-[ML Stats Feeder](#-gpu-machine-learning--statistics-feeder) •
-[Dynamic Config](#-dynamic-environment-configuration) •
-[API Reference](#-api--sse-endpoints)
+[Asset Universe](#-asset-universe-123-instruments) •
+[System Stats](#-system-stats--settings)
 
 </div>
 
 ---
 
-## 🧠 Decision Core (v3.0)
+## 🖼️ The Terminal
 
-**Law**: one decision path owns entry, exit, and news impact. Everything else is data.
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/assets/signals-terminal.svg" alt="Live signals terminal — LONG/SHORT cards with catalysts, ATR stops, staged targets"/><br/><sub><b>Live signals terminal</b> — two-sided futures cards, catalyst-first entries</sub></td>
+    <td width="50%" align="center"><img src="docs/assets/feature-signals.svg" alt="Signal cards with institutional catalyst feed"/><br/><sub><b>Catalyst-driven entries</b> — news cluster → core judgment</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/assets/feature-news-intel.svg" alt="News intelligence stream"/><br/><sub><b>News stream</b> — core-classified BULLISH/BEARISH/NEUTRAL/MIXED</sub></td>
+    <td align="center"><img src="docs/assets/feature-whale-intel.svg" alt="Whale intelligence"/><br/><sub><b>Whale &amp; flow intel</b> — context feeders, zero agency</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/assets/feature-macro.svg" alt="Macroeconomic calendar"/><br/><sub><b>Macro calendar</b> — event halts as state fields</sub></td>
+    <td align="center"><img src="docs/assets/feature-screener.svg" alt="Dynamic asset screener"/><br/><sub><b>123-asset screener</b> — liquidity-qualified universe</sub></td>
+  </tr>
+</table>
+
+<p align="center">
+  <img src="docs/assets/feature-ledger.svg" alt="Investor ledger" width="48%"/>
+  <img src="docs/assets/feature-intel.svg" alt="Intelligence panel" width="48%"/>
+</p>
+
+<p align="center">
+  <img src="dashboard-dark.png" width="46%" alt="Dark dashboard"/>
+  <img src="dashboard-1758278315694.png" width="46%" alt="Dashboard preview"/>
+</p>
+
+<p align="center">
+  <img src="screenshots/signals.png" width="31%" alt="Signals view"/>
+  <img src="screenshots/news-stream.png" width="31%" alt="News stream"/>
+  <img src="screenshots/screener.png" width="31%" alt="Screener"/>
+</p>
+
+<p align="center">
+  <img src="web/pwa-192.png" width="120" alt="PWA icon"/>
+  <sub>PWA — offline service worker, SSE live stream, dark/light themes, installable on mobile</sub>
+</p>
+
+---
+
+## 🧠 Decision Core
+
+**Law**: one decision path owns entry, exit, timeframe, and news impact. Everything else is data.
 
 ```
 ┌────────────── CONTEXT LAYER (no agency) ──────────────┐
@@ -54,30 +94,25 @@
         (LONG/SHORT/NO_TRADE → order side conversion)
 ```
 
-**Routing rules**
-- **Jev first** for entry, exit, news classification: `Choice` (LONG/SHORT/NO_TRADE, BULLISH/BEARISH/NEUTRAL/MIXED), `Noul` (exit-now, catalyst), `Score` (severity) — full probability distributions, calibrated confidence.
-- **9Router** invoked when Jev confidence < `SHADOW`/routing threshold, or when text is required. Its answer is final when invoked. Route recorded per decision: `jev_direct` or `escalated`.
-- **One final writer per decision.** No parallel judges, no races, no vetoes.
+**Routing**: Jev answers first (`Choice`/`Noul`/`Score` with calibrated distributions). Below `ROUTING_CONFIDENCE_THRESHOLD` → 9Router escalation, its answer final. One writer per decision, route recorded (`jev_direct` | `escalated`).
 
-**Zero-fallback policy (enforced by tests)**
-- Keyword sentiment lexicon: **deleted**.
-- `fallbackHeuristic` (hard-coded BUY/HOLD guess, 11 call sites): **deleted**.
-- Missing model, timeout, malformed answer, unreachable feeder → **explicit error** with component + reason + cycle id. Never a neutral default, never a substituted judge.
+**Zero-fallback policy**: keyword lexicon deleted · `fallbackHeuristic` deleted · failures = explicit errors with component + reason + cycle id. Never a default, never a substituted judge.
 
-**Futures vocabulary**: the core speaks position intent only (`LONG`/`SHORT`/`NO_TRADE`). Order sides (`BUY`/`SELL`) exist only in the execution layer — short entry = SELL order, short exit = BUY order.
+**Futures vocabulary**: core speaks position intent only. `BUY`/`SELL` live in the execution layer (short entry = SELL order, short exit = BUY order).
 
-Spec: [`specs/013-jev-shadow-eval/spec.md`](specs/013-jev-shadow-eval/spec.md) (v3.0) · Research: [`docs/RESEARCH-jev-callisifer.md`](docs/RESEARCH-jev-callisifer.md)
+Spec: [`specs/013-jev-shadow-eval/spec.md`](specs/013-jev-shadow-eval/spec.md) · Research: [`docs/RESEARCH-jev-callisifer.md`](docs/RESEARCH-jev-callisifer.md)
 
 ---
 
-## 🆕 v3.1 Features (spec-014/016 + ops)
+## 🆕 v3.1 Features (spec-014 / spec-016 + ops)
 
-- **News-Driven Early Exit (spec-014)**: while a position is open, fresh news clusters are re-judged by the core (`close_now` Noul, batched). A "do not hold" verdict closes the position with exit reason `NEWS_EARLY_EXIT` and sends exactly one Telegram notification. Hard guards: min-hold, per-day budget, cooldown, confidence floor, kill switch — all `.env`-configurable, all failures explicit.
-- **Dynamic Trade Timeframe (spec-016)**: the core picks the execution timeframe per trade in the same batched request as the entry judgment — ALPHA `15m/1h/4h`, CORE `1h/4h/12h` (configurable). Horizon derives from a timeframe-keyed profile map; exit decay follows each signal's stored timeframe (legacy rows mapped once, logged).
-- **System Stats page**: live 9Router gateway + Jev health — status dot, total/success/failed, success rate, last/EMA latency, masked key status, routing threshold. Polls every 10s.
-- **Settings persist to `.env`**: UI edits go through `PUT /api/v1/system/config` (auth + whitelist + range validation) → atomic `.env` write → live in-process apply. Single source of truth survives redeploys.
+- **News-Driven Early Exit (spec-014)**: fresh news clusters re-judged against every open position (`close_now` Noul, one batched call per cycle). "Do not hold" → position closes with `NEWS_EARLY_EXIT` + exactly one Telegram message. Guards: min-hold, per-day budget, cooldown, confidence floor, kill switch — `.env`-configurable, every rejection recorded.
+- **Dynamic Trade Timeframe (spec-016)**: the core picks the execution timeframe in the same batched request as the entry judgment — ALPHA `15m/1h/4h` (news dies ≤6h), CORE `1h/4h/12h`. Horizon derives from a timeframe-keyed profile map; exit decay follows each signal's stored timeframe; legacy rows mapped once, logged.
+- **Settings persist to `.env`**: `PUT /api/v1/system/config` (session auth + whitelist + range validation) → atomic `.env` write → live in-process apply. Single source of truth, survives redeploys.
 - **CI parallel matrix**: 11 per-package test jobs + backend/frontend verify — per-package failure visibility, ~65% faster.
-- **Optimization pass 45/45**: engine lock removed from network I/O, `rows.Err()` everywhere, `pgx.Tx` atomicity, Redis cache-aside on hot endpoints, SSE on Redis Pub/Sub, dead code purged (12 orphan components, ML backend handlers, `any`-free TS).
+- **Optimization 45/45**: engine lock freed from network I/O · `rows.Err()` everywhere · `pgx.Tx` atomicity · Redis cache-aside on hot endpoints · SSE on Redis Pub/Sub · 12 orphan components + ML backend handlers purged · TS `any`-free.
+
+---
 
 ## 🚀 Quick Start
 
@@ -101,89 +136,75 @@ curl http://localhost:8080/api/v1/assets | jq '.assets | length'
 
 ## 🌐 Asset Universe (123 Instruments)
 
-Single source of truth: `internal/market/assets.go`, served via `GET /api/v1/assets`.
+Single source of truth: `internal/market/assets.go` → `GET /api/v1/assets`.
 
-**CORE (10 commodities)**: PAXG, XAU (GOLD) · XAG (SILVER) · COPPER · XPT/XPD (PLATINUM/PALLADIUM) · OIL/BRENT/NG (energy, Yahoo Finance `CL=F`/`BZ=F`/`NG=F`).
+**CORE (10 commodities)**: PAXG, XAU (GOLD) · XAG (SILVER) · COPPER · XPT/XPD · OIL/BRENT/NG (Yahoo Finance `CL=F`/`BZ=F`/`NG=F`) · ALUMINUM.
 
-**ALPHA (113 cryptocurrencies)**: every non-stablecoin CoinMarketCap top-200 listing on all four Binance, KuCoin, CoinEx, Kraken (verified against public market APIs). Correlated exposure groups block duplicate risk (PAXG signal blocks new XAU signal). Order sizes from live `LOT_SIZE` steps; display decimals from live price scale.
+**ALPHA (113 cryptocurrencies)**: non-stablecoin CoinMarketCap top-200 listing on Binance, KuCoin, CoinEx, Kraken. Correlated exposure groups block duplicate risk. Order sizes from live `LOT_SIZE` steps.
 
 ---
 
 ## 📡 Signal Pipeline & Position Lifecycle
 
-Two-sided (LONG/SHORT), **news-catalyst-first**: no catalyst, no trade — technicals alone never trigger entries. The core consumes both; neither decides alone.
+Two-sided (LONG/SHORT), **news-catalyst-first**: no catalyst, no trade.
 
 ```
 Live ticks ─┐
-News crawler ─┴─▶ Context layer: one State Object (candles, indicators, cluster labels,
-                   LSTM stats, ATR levels, gates-as-fields)
+News crawler ─┴─▶ Context layer: one State Object
                         │
                         ▼
-              DECISION CORE (Jev → [escalate] → 9Router)
-                        │  typed: LONG / SHORT / NO_TRADE
+         DECISION CORE (Jev → [escalate] → 9Router)
+              + timeframe choice (batched)
+                        │  LONG / SHORT / NO_TRADE
                         ▼
               FuturesTradeSignal (PostgreSQL)
                         │
           ┌─────────────┴─────────────┐
           ▼                           ▼
    ExecutionEngine            SSE + Telegram broadcast
-   (order-side conversion)    (entry + resolution events)
           │
           ▼
-   Exit cycle: core judges exit-now (Jev → escalate),
-   ATR stop levels are context, not triggers
+   Exit: core judges exit-now + NEWS_EARLY_EXIT on fresh news,
+   ATR bounds are context, not triggers
           │
           ▼
    Position closed → margin released → Thompson posterior updated
 ```
 
-Invariants:
-- **Signals = positions.** Every ACTIVE signal has a matching engine position; rehydration restores pairing from PostgreSQL on startup.
-- **ATR bounds are context.** SL = `1.5 × NATR`, TP = `3.0 × NATR` from live snapshot; the core receives them as data and decides.
-- **Sizing integrity.** Position size from clamped margin; persisted allocation never disagrees with engine.
-- **Concurrency guard.** `MAX_CONCURRENT_SIGNALS` (default 5) + correlated-commodity blocking.
-- **Manual close immediate.** Closing a signal closes the engine position in-request.
+Invariants: signals = positions (rehydrated from PostgreSQL) · ATR bounds are context · sizing from clamped margin · `MAX_CONCURRENT_SIGNALS` + correlated blocking · manual close immediate.
 
 ---
 
-## 📊 Institutional Quantitative Indicators (context feeders)
+## 📊 Indicators (context feeders)
 
-Computed from authentic exchange candles, zero synthetic data: Garman-Klass & Parkinson volatility estimators, Kaufman Efficiency Ratio, Chaikin Money Flow, RSI, MACD, Bollinger Bands, SuperTrend, EMA, VWAP, confluence. **Their outputs are fields in the State Object — they never decide.**
-
----
-
-## 📡 Multi-Source Live Exchange Feed & SSE
-
-Public exchange REST/WS feeds, Redis microsecond ticker cache, indicator snapshot storage, SSE broadcast with full hydration burst on connect (no cold-start `$0` prices). Dual serialization accepts `change24h`/`change_24h`.
+Garman-Klass & Parkinson volatility, Kaufman Efficiency Ratio, Chaikin Money Flow, RSI, MACD, Bollinger Bands, SuperTrend, EMA, VWAP, OBI/CVD — computed from authentic candles, **fields in the State Object, never deciders**.
 
 ---
 
-## 📅 Macroeconomic Calendar & Trading Halts
+## 📡 Feeds & SSE
 
-- Live institutional feed (`ECONOMIC_CALENDAR_URL`, default ForexFactory JSON), refreshed 30 min.
-- New entries halt within $[T_{event} - W, T_{event} + W]$ around high-impact events (`CALENDAR_HALT_MINUTES`, default 15) — a hard safety gate expressed as a state field.
+Batched exchange polling (Binance spot/futures, Yahoo) · Redis microsecond ticker cache · SSE with hydration burst on connect · v3.1: SSE backed by Redis Pub/Sub.
+
+## 📅 Macro Calendar & Halts
+
+Live institutional feed, 30-min refresh. High-impact events halt new entries within ±`CALENDAR_HALT_MINUTES` (state field, not a hidden gate).
+
+## 🧠 ML → Statistics Feeder
+
+GPU trainers (RTX 2060, PyTorch CUDA: `ml/train_gpu.py`, `train_max_acc.py`, `train_multi_asset.py`) produce historical fact only — *indicator X settled successful 63% of the time in regime Y*. Thompson posteriors are context. **The model never votes.**
 
 ---
 
-## 🧠 GPU Machine Learning → Statistics Feeder
+## 🖥️ System Stats & Settings
 
-- Local NVIDIA RTX 2060, PyTorch CUDA: `ml/train_gpu.py` (LSTM), `ml/train_max_acc.py` (Residual MLP + Attention), `ml/train_multi_asset.py` (cross-asset, ~54% out-of-sample directional accuracy).
-- **v3.0 role**: historical fact only — *indicator X settled successful 63% of time in regime Y*, most impactful features. Emitted as labeled context fields. **It never votes, weights, or blocks.**
-- Adaptive Thompson Sampling: realized outcomes update Beta posteriors per indicator (RSI, MACD, SuperTrend, Microstructure, CMF, KER) → statistics, also context.
+**System Stats page**: live 9Router gateway + Jev health cards — status dot, total/success/failed, success rate, last/EMA latency, masked key status, routing threshold. Polls every 10 s.
 
----
-
-## ⚙️ Dynamic Environment Configuration
-
-All parameters via `.env` — zero hardcoding:
+**Settings → `.env`**: Decision Core threshold, risk bounds, guard keys (`EARLY_EXIT_*`), timeframe sets (`TIMEFRAME_SET_*`) — edited in UI, persisted atomically, applied live.
 
 ```env
-# Server
-PORT=8080
-DATABASE_URL=postgres://trader:REDACTED_DB_PASSWORD@localhost:5432/simple_trader?sslmode=disable
-REDIS_URL=redis://localhost:6379/0
-
 # Decision Core (Jev) + Early Exit + Timeframe
+TYPESAFE_API_KEY=
+ROUTING_CONFIDENCE_THRESHOLD=0.75
 EARLY_EXIT_ENABLED=true
 EARLY_EXIT_MIN_HOLD_MIN=30
 EARLY_EXIT_MAX_PER_DAY=3
@@ -192,51 +213,43 @@ EARLY_EXIT_CONF_FLOOR=0.75
 TIMEFRAME_SET_ALPHA=15m,1h,4h
 TIMEFRAME_SET_CORE=1h,4h,12h
 SHADOW_REPORT_DAYS=14
-TYPESAFE_API_KEY=your_typesafe_key        # Jev (System One)
-NINEROUTER_URL=https://your-gateway/v1    # 9Router (OpenAI-compatible)
-NINEROUTER_KEY=your_gateway_key
-ROUTING_CONFIDENCE_THRESHOLD=0.75         # below → 9Router escalation
-AI_TIMEOUT_SECONDS=30
 
-# Risk
-INITIAL_CAPITAL=100000.0
-MAX_RISK_PER_TRADE_PCT=0.02
-MAX_DRAWDOWN_LIMIT_PCT=0.10
+# 9Router gateway
+NINEROUTER_URL=https://your-gateway/v1
+NINEROUTER_KEY=
+AI_MODEL_ID=
+
+# Server & risk
+PORT=8080
+DATABASE_URL=postgres://trader:REDACTED_DB_PASSWORD@localhost:5432/simple_trader?sslmode=disable
+REDIS_URL=redis://localhost:6379/0
 MAX_CONCURRENT_SIGNALS=5
 MIN_RISK_TO_REWARD_RATIO=2.5
-DEFAULT_LEVERAGE=8
-CALENDAR_HALT_MINUTES=15
 ADMIN_PASSWORD=your_secure_admin_password
 ```
 
-**Fail-fast, no masking**: unreachable DB → bounded-time in-memory mode with explicit log; missing `TYPESAFE_API_KEY`/threshold → startup error; any feeder failure → named error in state. Nothing silently pretends to be healthy.
+**Fail-fast**: missing threshold/key at boot = startup error. Feeder failure = named error in state. Nothing silently pretends to be healthy.
 
 ---
 
 ## 🛡️ Host-Managed Reverse Proxy (Nginx)
 
-Backend + React PWA on `:8080`; host Nginx handles SSL, gzip, SSE streaming:
-
-```nginx
-upstream simple_trader_backend { server 127.0.0.1:8080; keepalive 32; }
-```
-
-Full config: [`docs/DEPLOYMENT_NGINX.md`](docs/DEPLOYMENT_NGINX.md).
+Backend + React PWA on `:8080`; host Nginx: SSL, gzip, SSE streaming (`upstream simple_trader_backend { server 127.0.0.1:8080; }`). Full config: [`docs/DEPLOYMENT_NGINX.md`](docs/DEPLOYMENT_NGINX.md).
 
 ---
 
 ## 📡 API & SSE Endpoints
 
-Core routes: `GET /health` · `GET /api/v1/assets` · signals/positions/trades CRUD · `GET /api/v1/stream` (SSE) · macro calendar · screener · admin config. v3.0 adds shadow/evidence report routes; `GET /api/v1/system/stats` (gateway/Jev health); `GET|PUT /api/v1/system/config` (settings persist to `.env`, session-auth). See spec-013/014/016 `contracts/`.
+`GET /health` · `GET /api/v1/assets` · signals/positions/trades CRUD · `GET /api/v1/events` (SSE) · macro calendar · screener · `GET /api/v1/system/stats` (gateway/Jev health) · `GET|PUT /api/v1/system/config` (settings → `.env`, session-auth) · admin shadow/evidence reports. See spec-013/014/016 `contracts/`.
 
 ---
 
 ## 🧪 Testing & Evidence
 
-- Constitution VI: TDD required — unit + integration tests per subsystem; regression shielding.
-- Spec-Kit pipeline for any trading-logic change: `/speckit-specify → plan → tasks → implement → converge`.
-- Constitution VIII: risk parameters only from measured distributions, gated on recorded evidence.
-- Zero-fallback policy verified by chaos tests: every injected failure must surface as an explicit error (SC-007).
+- TDD required (Constitution VI): unit + integration + race detector; chaos suite proves explicit errors, never silent degradation (SC-007).
+- Spec-Kit pipeline for every trading-logic change: `/speckit-specify → plan → tasks → implement → converge`.
+- CI: 11-package parallel matrix + vet + zero-fallback deletion guards + tsc/vite frontend gate.
+- Constitution VIII: risk parameters only from measured distributions; early-exit/timeframe defaults tuned from recorded evidence.
 
 ## 📄 License
 
