@@ -131,7 +131,7 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
 
       {/* Loading Skeleton */}
       {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-2.5" aria-hidden="true">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2.5" aria-hidden="true">
           {Array.from({ length: 9 }).map((_, idx) => (
             <div
               key={idx}
@@ -149,14 +149,14 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
         </div>
       ) : (
         /* Performance Cards Grid */
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-2.5">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-2.5">
           {/* 1. Closed */}
           <div className="min-w-0 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
             <span className="text-[10px] uppercase font-mono tracking-wide leading-tight text-slate-500 dark:text-slate-400">
               Closed
             </span>
             <div className="mt-1">
-              <span className="text-base font-bold font-mono tabular-nums break-all text-slate-900 dark:text-slate-100">
+              <span className="text-base font-bold font-mono tabular-nums whitespace-nowrap text-slate-900 dark:text-slate-100">
                 {summary.closed}
               </span>
               <span className="block text-[10px] text-slate-400 font-mono">
@@ -172,7 +172,7 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
             </span>
             <div className="mt-1">
               <span
-                className={`block text-base font-bold font-mono tabular-nums break-all leading-tight ${
+                className={`block text-base font-bold font-mono tabular-nums whitespace-nowrap leading-tight ${
                   summary.win_rate >= 0.5 ? 'text-emerald-500' : 'text-slate-700 dark:text-slate-200'
                 }`}
               >
@@ -230,7 +230,7 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
             </span>
             <div className="mt-1">
               <span
-                className={`block text-base font-bold font-mono tabular-nums break-all leading-tight ${
+                className={`block text-base font-bold font-mono tabular-nums whitespace-nowrap leading-tight ${
                   summary.expectancy_pct >= 0 ? 'text-emerald-500' : 'text-rose-500'
                 }`}
               >
@@ -248,7 +248,7 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
             </span>
             <div className="mt-1">
               <span
-                className={`block text-base font-bold font-mono tabular-nums break-all leading-tight ${
+                className={`block text-base font-bold font-mono tabular-nums whitespace-nowrap leading-tight ${
                   summary.total_pnl_usd >= 0 ? 'text-emerald-500' : 'text-rose-500'
                 }`}
               >

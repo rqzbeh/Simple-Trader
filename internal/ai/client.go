@@ -66,6 +66,7 @@ func NewClient(cfg ClientConfig) *Client {
 	return &Client{
 		cfg: cfg,
 		httpClient: &http.Client{
+			Transport: upstreamTransport(),
 			Timeout: timeout,
 		},
 	}

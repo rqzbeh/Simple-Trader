@@ -1,6 +1,8 @@
 package ai
 
 import (
+	"os"
+	"net/url"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -33,7 +35,7 @@ func NewJevClient(baseURL, apiKey string, timeout time.Duration) *JevClient {
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
 		model:   "jev-latest",
-		http:    &http.Client{Timeout: timeout},
+		http:    &http.Client{Timeout: timeout, Transport: upstreamTransport()},
 	}
 }
 
@@ -144,6 +146,12 @@ func (j *JevClient) Evaluate(ctx context.Context, cycleID string, state interfac
 		return nil, JevUsage{}, WrapDecision("jev", cycleID, ErrJevSchema, "marshal request failed")
 	}
 	start = time.Now()
+	// Detach from caller budget: leftover parent deadlines starved this call
+	// (deadline exceeded despite healthy network). Values kept, deadline ours.
+	ctx = context.WithoutCancel(ctx)
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, j.http.Timeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, j.BaseURL()+"/v1/systemone", bytes.NewReader(body))
 	if err != nil {
 		return nil, JevUsage{}, WrapDecision("jev", cycleID, ErrJevUnavailable, "request creation failed")
@@ -219,4 +227,17 @@ func ValidateChoice(ans JevAnswer, allowed map[string]bool, cycleID string) erro
 		return WrapDecision("jev", cycleID, ErrJevSchema, fmt.Sprintf("probabilities sum %.4f != 1", sum))
 	}
 	return nil
+}
+
+
+// upstreamTransport applies optional UPSTREAM_PROXY_URL (socks5:// or http://)
+// to decision-core outbound traffic; nil-safe stdlib default otherwise.
+func upstreamTransport() http.RoundTripper {
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	if p := strings.TrimSpace(os.Getenv("UPSTREAM_PROXY_URL")); p != "" {
+		if u, err := url.Parse(p); err == nil && u.Scheme != "" {
+			base.Proxy = http.ProxyURL(u)
+		}
+	}
+	return base
 }
