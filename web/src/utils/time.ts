@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from 'react';
+import { useSyncExternalStore } from 'react';
 
 // Display timezone for every timestamp in the terminal. Operators work across
 // regions: a signal stamped in UTC is meaningless to someone trading in UTC+8,
@@ -92,9 +92,7 @@ function subscribe(listener: () => void): () => void {
 
 /** Re-renders the component whenever the display timezone changes. */
 export function useTimezone(): string {
-  const [, forceUpdate] = useReducer((tick: number) => tick + 1, 0);
-  useEffect(() => subscribe(forceUpdate), []);
-  return timezone;
+  return useSyncExternalStore(subscribe, getTimezone);
 }
 
 function options(): Intl.DateTimeFormatOptions {
