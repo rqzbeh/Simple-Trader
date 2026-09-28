@@ -131,7 +131,7 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
 
       {/* Loading Skeleton */}
       {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-2.5" aria-hidden="true">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-2.5" aria-hidden="true">
           {Array.from({ length: 9 }).map((_, idx) => (
             <div
               key={idx}
@@ -149,14 +149,14 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
         </div>
       ) : (
         /* Performance Cards Grid */
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9 gap-2.5">
           {/* 1. Closed */}
-          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
-            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400">
+          <div className="min-w-0 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
+            <span className="text-[10px] uppercase font-mono tracking-wide leading-tight text-slate-500 dark:text-slate-400">
               Closed
             </span>
             <div className="mt-1">
-              <span className="text-base font-bold font-mono text-slate-900 dark:text-slate-100">
+              <span className="text-base font-bold font-mono tabular-nums break-all text-slate-900 dark:text-slate-100">
                 {summary.closed}
               </span>
               <span className="block text-[10px] text-slate-400 font-mono">
@@ -166,8 +166,8 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
           </div>
 
           {/* 2. Win rate % */}
-          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
-            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+          <div className="min-w-0 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
+            <span className="text-[10px] uppercase font-mono tracking-wide leading-tight text-slate-500 dark:text-slate-400 flex items-center gap-1">
               <Percent className="w-2.5 h-2.5 text-sky-400" /> Win Rate
             </span>
             <div className="mt-1">
@@ -185,8 +185,8 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
           </div>
 
           {/* 3. Avg win % */}
-          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
-            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+          <div className="min-w-0 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
+            <span className="text-[10px] uppercase font-mono tracking-wide leading-tight text-slate-500 dark:text-slate-400 flex items-center gap-1">
               <TrendingUp className="w-2.5 h-2.5 text-emerald-500" /> Avg Win
             </span>
             <div className="mt-1">
@@ -198,8 +198,8 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
           </div>
 
           {/* 4. Avg loss % */}
-          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
-            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+          <div className="min-w-0 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
+            <span className="text-[10px] uppercase font-mono tracking-wide leading-tight text-slate-500 dark:text-slate-400 flex items-center gap-1">
               <TrendingDown className="w-2.5 h-2.5 text-rose-500" /> Avg Loss
             </span>
             <div className="mt-1">
@@ -211,8 +211,8 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
           </div>
 
           {/* 5. Payoff */}
-          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
-            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+          <div className="min-w-0 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
+            <span className="text-[10px] uppercase font-mono tracking-wide leading-tight text-slate-500 dark:text-slate-400 flex items-center gap-1">
               <Award className="w-2.5 h-2.5 text-amber-500" /> Payoff
             </span>
             <div className="mt-1">
@@ -224,8 +224,8 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
           </div>
 
           {/* 6. Expectancy % */}
-          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
-            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400">
+          <div className="min-w-0 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
+            <span className="text-[10px] uppercase font-mono tracking-wide leading-tight text-slate-500 dark:text-slate-400">
               Expectancy
             </span>
             <div className="mt-1">
@@ -242,8 +242,8 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
           </div>
 
           {/* 7. Total PnL USD */}
-          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
-            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+          <div className="min-w-0 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
+            <span className="text-[10px] uppercase font-mono tracking-wide leading-tight text-slate-500 dark:text-slate-400 flex items-center gap-1">
               <DollarSign className="w-2.5 h-2.5 text-sky-400" /> Total PnL
             </span>
             <div className="mt-1">
@@ -263,8 +263,8 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
           </div>
 
           {/* 8. Stop-out rate % */}
-          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
-            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+          <div className="min-w-0 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
+            <span className="text-[10px] uppercase font-mono tracking-wide leading-tight text-slate-500 dark:text-slate-400 flex items-center gap-1">
               <ShieldAlert className="w-2.5 h-2.5 text-rose-500" /> Stop-Out
             </span>
             <div className="mt-1">
@@ -276,8 +276,8 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
           </div>
 
           {/* 9. TP1 hit % */}
-          <div className="p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
-            <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1">
+          <div className="min-w-0 p-3 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-700/60 flex flex-col justify-between">
+            <span className="text-[10px] uppercase font-mono tracking-wide leading-tight text-slate-500 dark:text-slate-400 flex items-center gap-1">
               <Target className="w-2.5 h-2.5 text-emerald-500" /> TP1 Hit
             </span>
             <div className="mt-1">

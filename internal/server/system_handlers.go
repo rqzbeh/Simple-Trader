@@ -400,7 +400,7 @@ func (s *Server) ensureDecisionRouter(thr float64) {
 		typesafeKey = os.Getenv("TYPESAFE_API_KEY")
 	}
 	s.decisionRouter = &trader.DecisionRouter{
-		Jev:       ai.NewJevClient("https://api.typesafe.ai", typesafeKey, 5*time.Second),
+		Jev:       ai.NewJevClient("https://api.typesafe.ai", typesafeKey, 12*time.Second),
 		Threshold: thr,
 		Escalate: func(ctx context.Context, state interface{}) (trader.DecisionOutcome, error) {
 			if s.aiClient == nil {

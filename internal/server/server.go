@@ -70,7 +70,7 @@ func NewServer(
 			log.Printf("[FATAL] decision core not configured: %v", terr)
 		} else {
 			decisionRouter = &trader.DecisionRouter{
-				Jev:       ai.NewJevClient("https://api.typesafe.ai", os.Getenv("TYPESAFE_API_KEY"), 5*time.Second),
+				Jev:       ai.NewJevClient("https://api.typesafe.ai", os.Getenv("TYPESAFE_API_KEY"), 12*time.Second),
 				Threshold: thr,
 				Escalate: func(ctx context.Context, state interface{}) (trader.DecisionOutcome, error) {
 					// 9Router escalation: slow brain answers when Jev low-confidence (FR-003).
