@@ -279,6 +279,7 @@ export interface SystemConfigResponse {
   typesafe_api_key_masked: string;
   typesafe_base_url: string;
   routing_confidence_threshold: number | null;
+  upstream_proxy_url?: string;
   default_leverage?: number;
   min_risk_to_reward_ratio?: number;
   max_concurrent_signals?: number;

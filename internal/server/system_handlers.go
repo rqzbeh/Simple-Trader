@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net/url"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -254,6 +255,7 @@ func (s *Server) systemConfigResponse() map[string]interface{} {
 		"typesafe_api_key_configured":  typesafeKey != "",
 		"typesafe_api_key_masked":      maskedTypesafeKey,
 		"typesafe_base_url":            typesafeBaseURL,
+		"upstream_proxy_url":           os.Getenv("UPSTREAM_PROXY_URL"),
 		"routing_confidence_threshold": routingThreshold,
 		"default_leverage":             defaultLeverage,
 		"min_risk_to_reward_ratio":     minRiskRewardRatio,
@@ -295,6 +297,7 @@ var allowedConfigKeys = map[string]bool{
 	"MAX_DRAWDOWN_LIMIT_PCT":       true,
 	"CALENDAR_HALT_MINUTES":        true,
 	"TYPESAFE_API_KEY":             true,
+	"UPSTREAM_PROXY_URL":           true,
 	"SCREENER_MIN_24H_VOLUME":      true,
 	"TIMEFRAME_SET_ALPHA":          true,
 	"TIMEFRAME_SET_CORE":           true,
@@ -574,6 +577,17 @@ func validateAndBuildEnvUpdates(rawMap map[string]interface{}) (map[string]strin
 		envUpdates["CALENDAR_HALT_MINUTES"] = strconv.Itoa(i)
 	}
 
+	if v, exists := rawMap["UPSTREAM_PROXY_URL"]; exists {
+		s := parseString(v)
+		if s != "" {
+			u, err := url.Parse(s)
+			if err != nil || (u.Scheme != "socks5" && u.Scheme != "http" && u.Scheme != "https") {
+				return nil, fmt.Errorf("UPSTREAM_PROXY_URL invalid: need socks5://host:port or http://host:port")
+			}
+		}
+		envUpdates["UPSTREAM_PROXY_URL"] = s
+	}
+
 	if v, exists := rawMap["TYPESAFE_API_KEY"]; exists {
 		s := parseString(v)
 		// Masked writes: only overwrite if value non-empty AND not the masked placeholder
@@ -713,6 +727,9 @@ func (s *Server) applyLiveConfigUpdates(envUpdates map[string]string) {
 		i, _ := strconv.Atoi(v)
 		s.cfg.CalendarHaltMinutes = i
 		_ = os.Setenv("CALENDAR_HALT_MINUTES", v)
+	}
+	if v, ok := envUpdates["UPSTREAM_PROXY_URL"]; ok {
+		_ = os.Setenv("UPSTREAM_PROXY_URL", v)
 	}
 	if v, ok := envUpdates["TYPESAFE_API_KEY"]; ok {
 		s.cfg.TypesafeAPIKey = v

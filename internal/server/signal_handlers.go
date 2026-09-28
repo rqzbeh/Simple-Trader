@@ -282,6 +282,11 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol string, headli
 		if s.calendar != nil {
 			var events []trader.ScheduledEvent
 			for _, ev := range s.calendar.GetEvents() {
+				// Only HIGH-impact events open blackout windows — LOW/MEDIUM
+				// "FOMC Member Speaks" speeches are noise, not decision events.
+				if ev.Impact != market.ImpactHigh {
+					continue
+				}
 				if name := blackoutEventName(ev.Title); name != "" {
 					events = append(events, trader.ScheduledEvent{Name: name, Time: ev.ScheduledAt})
 				}
