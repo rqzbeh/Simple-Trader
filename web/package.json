@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "lightweight-charts": "^4.2.0",
-    "lucide-react": "^0.446.0",
+    "lucide-react": "^1.48.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
