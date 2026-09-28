@@ -172,7 +172,7 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
             </span>
             <div className="mt-1">
               <span
-                className={`text-base font-bold font-mono ${
+                className={`block text-base font-bold font-mono tabular-nums break-all leading-tight ${
                   summary.win_rate >= 0.5 ? 'text-emerald-500' : 'text-slate-700 dark:text-slate-200'
                 }`}
               >
@@ -230,7 +230,7 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
             </span>
             <div className="mt-1">
               <span
-                className={`text-base font-bold font-mono ${
+                className={`block text-base font-bold font-mono tabular-nums break-all leading-tight ${
                   summary.expectancy_pct >= 0 ? 'text-emerald-500' : 'text-rose-500'
                 }`}
               >
@@ -248,7 +248,7 @@ export const PerformanceSummary: React.FC<PerformanceSummaryProps> = ({ profile 
             </span>
             <div className="mt-1">
               <span
-                className={`text-base font-bold font-mono ${
+                className={`block text-base font-bold font-mono tabular-nums break-all leading-tight ${
                   summary.total_pnl_usd >= 0 ? 'text-emerald-500' : 'text-rose-500'
                 }`}
               >
