@@ -38,7 +38,7 @@
     <td width="50%" align="center"><img src="docs/assets/feature-signals.svg" alt="Signal cards with institutional catalyst feed"/><br/><sub><b>Catalyst-driven entries</b> — news cluster → core judgment</sub></td>
   </tr>
   <tr>
-    <td align="center"><img src="docs/assets/feature-news-intel.svg" alt="News intelligence stream"/><br/><sub><b>News stream</b> — core-classified BULLISH/BEARISH/NEUTRAL/MIXED</sub></td>
+    <td align="center"><img src="docs/assets/feature-ai-engine.svg" alt="News intelligence stream"/><br/><sub><b>News stream</b> — core-classified BULLISH/BEARISH/NEUTRAL/MIXED</sub></td>
     <td align="center"><img src="docs/assets/feature-whale-intel.svg" alt="Whale intelligence"/><br/><sub><b>Whale &amp; flow intel</b> — context feeders, zero agency</sub></td>
   </tr>
   <tr>
@@ -54,17 +54,17 @@
 
 <p align="center">
   <img src="dashboard-dark.png" width="46%" alt="Dark dashboard"/>
-  <img src="dashboard-1758278315694.png" width="46%" alt="Dashboard preview"/>
+  <img src="dashboard-home.png" width="46%" alt="Dashboard preview"/>
 </p>
 
 <p align="center">
-  <img src="screenshots/signals.png" width="31%" alt="Signals view"/>
-  <img src="screenshots/news-stream.png" width="31%" alt="News stream"/>
-  <img src="screenshots/screener.png" width="31%" alt="Screener"/>
+  <img src="signals-view.png" width="31%" alt="Signals view"/>
+  <img src="news-stream.png" width="31%" alt="News stream"/>
+  <img src="dashboard-light.png" width="31%" alt="Screener"/>
 </p>
 
 <p align="center">
-  <img src="web/pwa-192.png" width="120" alt="PWA icon"/>
+  <img src="web/public/pwa-192x192.png" width="120" alt="PWA icon"/>
   <sub>PWA — offline service worker, SSE live stream, dark/light themes, installable on mobile</sub>
 </p>
 
