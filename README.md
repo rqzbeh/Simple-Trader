@@ -204,7 +204,7 @@ No ML runs inside the serving backend. ML Engine UI, GPU trainers, training hand
 
 **Settings → `.env`**: Decision Core threshold, risk bounds, guard keys (`EARLY_EXIT_*`), timeframe sets (`TIMEFRAME_SET_*`) — edited in UI, persisted atomically, applied live.
 
-### Required — app fails or core features break without these
+### Required — boot fails listing every missing key (no in-code defaults, spec-017)
 
 | Key | Purpose |
 |---|---|
@@ -214,6 +214,19 @@ No ML runs inside the serving backend. ML Engine UI, GPU trainers, training hand
 | `ADMIN_PASSWORD` | UI access gate — required in production |
 | `APP_SECRET` | session-token signing |
 | `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_DB` | database (compose builds `DATABASE_URL`) |
+| `PORT` · `DATABASE_URL` · `REDIS_URL` · `ENV` | process wiring (compose supplies the first three in Docker) |
+| `AI_TEMPERATURE` · `AI_TIMEOUT_SECONDS` · `AI_REASONING_EFFORT` | gateway tuning (samples: `0.2` · `30` · `high`) |
+| `JEV_BASE_URL` · `JEV_MODEL` | Jev endpoint/model (samples: `https://api.typesafe.ai` · `jev-latest`) |
+| `INITIAL_CAPITAL` · `CORE_TARGET_PCT` · `ALPHA_TARGET_PCT` · `MAX_DRAWDOWN_LIMIT_PCT` | capital & risk envelope |
+| `MIN_RISK_PER_TRADE_PCT` · `KELLY_FRACTION` · `MAX_CONCURRENT_SIGNALS` · `IMPACT_FACTOR` | sizing & risk math |
+| `CALENDAR_HALT_MINUTES` · `ECONOMIC_CALENDAR_URL` · `SCREENER_MIN_24H_VOLUME` · `SCREENER_MAX_SPREAD_BPS` | macro & liquidity filters |
+| `MIN/MAX_STOP_LOSS_PCT` · `MIN/MAX_TAKE_PROFIT_PCT` · `MAKER/TAKER_FEE_RATE` · `MAX_SLIPPAGE_PCT` · `MAX_TRADE_MARGIN_PCT` · `SIGNAL_MAX_AGE_MINUTES` | execution bounds |
+| `EARLY_EXIT_*` (5 keys) · `TIMEFRAME_SET_ALPHA/CORE` | feature params (samples match former defaults) |
+| `DB_MAX_CONNS` · `DB_MIN_CONNS` | pool sizing (samples `25` · `5`) |
+| `TELEGRAM_BOT_TOKEN` · `TELEGRAM_CHAT_ID` | notifications (may be empty until configured) |
+
+One boot error lists **every** missing or unparseable key — copy `.env.example` (complete) to start. `.env` is the single source of truth; the process never substitutes a built-in value.
+
 
 ### Optional — unset = decision core manages (spec-015)
 

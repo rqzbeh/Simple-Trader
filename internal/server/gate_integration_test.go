@@ -83,7 +83,7 @@ func buyDecision() *ai.DecisionResponse {
 }
 
 func newGateService(store *recordingStore) *trader.SignalService {
-	return trader.NewSignalService(store, &fakeAnalyzer{resp: buyDecision()}, trader.DefaultSignalConfig())
+	return trader.NewSignalService(store, &fakeAnalyzer{resp: buyDecision()}, trader.SampleSignalConfig())
 }
 
 // runGate evaluates one fixture snapshot and returns the outcome fields the

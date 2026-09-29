@@ -27,8 +27,10 @@ type TimeframeConfig struct {
 
 var (
 	timeframeMu  sync.RWMutex
-	liveAlphaSet = []string{"15m", "1h", "4h"}
-	liveCoreSet  = []string{"1h", "4h", "12h"}
+	// spec-017 FR-402: no in-code default sets — populated by
+	// LoadTimeframeConfig() at boot (env TIMEFRAME_SET_ALPHA/CORE).
+	liveAlphaSet []string
+	liveCoreSet  []string
 )
 
 // ParseTimeframeSet parses and validates a comma-separated list of timeframe options.

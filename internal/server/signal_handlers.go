@@ -40,7 +40,9 @@ func (s *Server) newSignalService(optCtx ...context.Context) *trader.SignalServi
 			MaxTradeMarginPct:  s.cfg.MaxTradeMarginPct,
 		}
 	} else {
-		sigCfg = trader.DefaultSignalConfig()
+		// spec-017 FR-409: no hardcoded fallback config — a nil server config
+		// is a wiring bug (boot is fatal without config.Load success).
+		log.Fatalf("[FATAL] newSignalService: server config not loaded (spec-017 wiring error)")
 	}
 	// A typed-nil *db.Store must not enter an interface field: SignalService
 	// checks `store != nil`, which stays true for a nil pointer in a non-nil

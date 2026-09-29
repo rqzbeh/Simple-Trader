@@ -18,12 +18,20 @@ import (
 func mockJevServerWithBatch(answers map[string]interface{}) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fullAnswers := map[string]interface{}{
-			"min_rr_accept": map[string]interface{}{"type": "score", "score": 2.5},
-			"leverage":      map[string]interface{}{"type": "choice", "choice": "8x", "probabilities": map[string]float64{"8x": 1.0}},
-			"conviction":    map[string]interface{}{"type": "score", "score": 0.75},
-			"atr_regime":    map[string]interface{}{"type": "choice", "choice": "NORMAL", "probabilities": map[string]float64{"NORMAL": 1.0}},
-			"confluence":    map[string]interface{}{"type": "score", "score": 0.70},
-			"decay":         map[string]interface{}{"type": "choice", "choice": "FAST_BREAKING", "probabilities": map[string]float64{"FAST_BREAKING": 1.0}},
+			// Docs-shaped Score answers: probability-weighted LEVEL INDEX via
+			// probabilities keyed by level index (docs.typesafe.ai/api).
+			"min_rr_accept": map[string]interface{}{"type": "score", "score": 2.3, "confidence": 0.8,
+				"probabilities": map[string]float64{"1": 0.3, "2": 0.7},
+				"legend":        map[string]string{"0": "Reject <1.5", "1": "Marginal 1.5-2.5", "2": "Accept 2.5-4", "3": "Strong >4"}},
+			"leverage": map[string]interface{}{"type": "choice", "choice": "8x", "probabilities": map[string]float64{"8x": 1.0}},
+			"conviction": map[string]interface{}{"type": "score", "score": 1.7, "confidence": 0.75,
+				"probabilities": map[string]float64{"1": 0.3, "2": 0.7},
+				"legend":        map[string]string{"0": "Weak", "1": "Moderate", "2": "High", "3": "Very high"}},
+			"atr_regime": map[string]interface{}{"type": "choice", "choice": "NORMAL", "probabilities": map[string]float64{"NORMAL": 1.0}},
+			"confluence": map[string]interface{}{"type": "score", "score": 1.5, "confidence": 0.7,
+				"probabilities": map[string]float64{"1": 0.5, "2": 0.5},
+				"legend":        map[string]string{"0": "<0.25", "1": "0.25-0.35", "2": "0.35-0.50", "3": ">0.50"}},
+			"decay": map[string]interface{}{"type": "choice", "choice": "FAST_BREAKING", "probabilities": map[string]float64{"FAST_BREAKING": 1.0}},
 		}
 		for k, v := range answers {
 			fullAnswers[k] = v
@@ -55,16 +63,16 @@ func TestEntryPath_TimeframeValid(t *testing.T) {
 
 	answers := map[string]interface{}{
 		"entry": map[string]interface{}{
-			"type":   "choice",
-			"choice": "LONG",
+			"type":       "choice",
+			"choice":     "LONG",
 			"confidence": 0.90,
 			"probabilities": map[string]float64{
 				"LONG": 0.90, "SHORT": 0.05, "NO_TRADE": 0.05,
 			},
 		},
 		"timeframe": map[string]interface{}{
-			"type":   "choice",
-			"choice": "1h",
+			"type":       "choice",
+			"choice":     "1h",
 			"confidence": 0.88,
 			"probabilities": map[string]float64{
 				"15m": 0.10, "1h": 0.80, "4h": 0.10,
@@ -140,16 +148,16 @@ func TestEntryPath_TimeframeInvalid_AbortsLoud(t *testing.T) {
 	// "2h" is not in ALPHA set {15m, 1h, 4h}
 	answers := map[string]interface{}{
 		"entry": map[string]interface{}{
-			"type":   "choice",
-			"choice": "LONG",
+			"type":       "choice",
+			"choice":     "LONG",
 			"confidence": 0.90,
 			"probabilities": map[string]float64{
 				"LONG": 0.90, "SHORT": 0.05, "NO_TRADE": 0.05,
 			},
 		},
 		"timeframe": map[string]interface{}{
-			"type":   "choice",
-			"choice": "2h",
+			"type":       "choice",
+			"choice":     "2h",
 			"confidence": 0.85,
 			"probabilities": map[string]float64{
 				"15m": 0.10, "1h": 0.80, "4h": 0.10,
@@ -200,8 +208,8 @@ func TestEntryPath_TimeframeMissing_AbortsLoud(t *testing.T) {
 	// Missing timeframe answer
 	answers := map[string]interface{}{
 		"entry": map[string]interface{}{
-			"type":   "choice",
-			"choice": "LONG",
+			"type":       "choice",
+			"choice":     "LONG",
 			"confidence": 0.90,
 			"probabilities": map[string]float64{
 				"LONG": 0.90, "SHORT": 0.05, "NO_TRADE": 0.05,

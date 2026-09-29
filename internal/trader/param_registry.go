@@ -34,6 +34,10 @@ type ParamSpec struct {
 	Question    func(state map[string]interface{}) ai.JevQuestion
 	Clamp       func(raw interface{}, bounds Bounds) (applied interface{}, clamped bool, detail map[string]interface{}, err error)
 	GetOverride func() interface{}
+	// LevelValues maps each Score level index to its semantic value.
+	// TypeSafe Score answers return a probability-weighted LEVEL INDEX
+	// (docs: api/primitives/score) — code converts to the real value via EV.
+	LevelValues []float64
 }
 
 // ResolvedParam is the cycle outcome for a single parameter.
@@ -50,17 +54,17 @@ type ResolvedParam struct {
 var MustStayForbiddenParams = map[string]bool{
 	"MAX_DRAWDOWN_LIMIT_PCT": true,
 	"MAX_CONCURRENT_SIGNALS": true,
-	"MAKER_FEE_RATE":        true,
-	"TAKER_FEE_RATE":        true,
-	"MAX_SLIPPAGE_PCT":      true,
+	"MAKER_FEE_RATE":         true,
+	"TAKER_FEE_RATE":         true,
+	"MAX_SLIPPAGE_PCT":       true,
 	"MAX_TRADE_MARGIN_PCT":   true,
 	"max_drawdown_limit_pct": true,
 	"max_concurrent_signals": true,
-	"maker_fee_rate":        true,
-	"taker_fee_rate":        true,
-	"max_slippage_pct":      true,
+	"maker_fee_rate":         true,
+	"taker_fee_rate":         true,
+	"max_slippage_pct":       true,
 	"max_trade_margin_pct":   true,
-	"drawdown":              true,
+	"drawdown":               true,
 	"liquidation_buffer":     true,
 }
 
@@ -231,11 +235,13 @@ func lookupAnswer(answers map[string]ai.JevAnswer, spec ParamSpec) *ai.JevAnswer
 
 func (r *ParamRegistry) registerPhase1Specs() {
 	// 1. min_rr
+	minRRLevels := []float64{1.2, 2.0, 3.0, 4.5} // Reject / Marginal / Accept / Strong bands
 	r.specs["min_rr"] = ParamSpec{
 		Key:         "min_rr",
 		EnvKey:      "MIN_RISK_TO_REWARD_RATIO",
 		QuestionKey: "min_rr_accept",
 		Bounds:      Bounds{Min: 0.5, Max: 10.0},
+		LevelValues: minRRLevels,
 		Mode: func() ParamMode {
 			if r.cfg != nil && r.cfg.OverrideMinRiskRewardRatio != nil {
 				return ModeOverride
@@ -268,7 +274,7 @@ func (r *ParamRegistry) registerPhase1Specs() {
 			}
 		},
 		Clamp: func(raw interface{}, bounds Bounds) (interface{}, bool, map[string]interface{}, error) {
-			val, err := extractNumeric(raw)
+			val, _, err := answerValue(raw, minRRLevels)
 			if err != nil {
 				return nil, false, nil, fmt.Errorf("param min_rr schema error: %w", err)
 			}
@@ -358,11 +364,13 @@ func (r *ParamRegistry) registerPhase1Specs() {
 	if r.cfg != nil && r.cfg.MaxRiskPerTradePct > 0 {
 		maxRisk = r.cfg.MaxRiskPerTradePct
 	}
+	convLevels := []float64{0.25, 0.5, 0.75, 1.0} // Weak/Moderate/High/Very high → fraction of risk band
 	r.specs["conviction"] = ParamSpec{
 		Key:         "conviction",
 		EnvKey:      "MAX_RISK_PER_TRADE_PCT",
 		QuestionKey: "conviction",
 		Bounds:      Bounds{Min: minRisk, Max: maxRisk},
+		LevelValues: convLevels,
 		Mode: func() ParamMode {
 			if r.cfg != nil && r.cfg.OverrideMaxRiskPerTradePct != nil {
 				return ModeOverride
@@ -390,30 +398,50 @@ func (r *ParamRegistry) registerPhase1Specs() {
 			}
 		},
 		Clamp: func(raw interface{}, bounds Bounds) (interface{}, bool, map[string]interface{}, error) {
-			score, err := extractNumeric(raw)
+			if score, ok := rawScoreOnly(raw); ok {
+				// Legacy undistributed raw score = direct risk fraction
+				// (forced bound drills): keep historic clamp semantics.
+				if score > 1.0 || (score > bounds.Max && score < 1.0) {
+					if score > bounds.Max {
+						return bounds.Max, true, map[string]interface{}{
+							"requested": score,
+							"applied":   bounds.Max,
+							"bound":     "max_risk_cap",
+						}, nil
+					}
+				}
+				if score < 0.0 {
+					return bounds.Min, true, map[string]interface{}{
+						"requested": score,
+						"applied":   bounds.Min,
+						"bound":     "min_risk_floor",
+					}, nil
+				}
+				val := bounds.Min + score*(bounds.Max-bounds.Min)
+				return math.Round(val*10000) / 10000, false, nil, nil
+			}
+			// Docs-shaped: EV over band fractions [0.25..1.0] → risk lands
+			// inside [Min..Max] by construction; bounds stay as safety net.
+			ev, _, err := answerValue(raw, convLevels)
 			if err != nil {
 				return nil, false, nil, fmt.Errorf("param conviction schema error: %w", err)
 			}
-			// If score is a fractional risk directly (or forced out-of-bound > maxRisk or < minRisk in tests)
-			if score > 1.0 || (score > bounds.Max && score < 1.0) {
-				if score > bounds.Max {
-					return bounds.Max, true, map[string]interface{}{
-						"requested": score,
-						"applied":   bounds.Max,
-						"bound":     "max_risk_cap",
-					}, nil
-				}
-			}
-			if score < 0.0 {
+			if ev < 0 {
 				return bounds.Min, true, map[string]interface{}{
-					"requested": score,
+					"requested": ev,
 					"applied":   bounds.Min,
 					"bound":     "min_risk_floor",
 				}, nil
 			}
-			// Standard [0, 1] conviction score scales risk between Min and Max
-			val := bounds.Min + score*(bounds.Max-bounds.Min)
-			return math.Round(val*10000) / 10000, false, nil, nil
+			val := bounds.Min + ev*(bounds.Max-bounds.Min)
+			if val > bounds.Max {
+				return bounds.Max, true, map[string]interface{}{
+					"requested": val,
+					"applied":   bounds.Max,
+					"bound":     "max_risk_cap",
+				}, nil
+			}
+			return math.Round(val*1000000) / 1000000, false, nil, nil
 		},
 	}
 
@@ -532,11 +560,13 @@ func (r *ParamRegistry) registerPhase1Specs() {
 	}
 
 	// 6. confluence
+	confLevels := []float64{0.20, 0.30, 0.42, 0.55} // rubric bands → threshold on the indicator-confluence 0-1 scale
 	r.specs["confluence"] = ParamSpec{
 		Key:         "confluence",
 		EnvKey:      "CONFLUENCE_MIN",
 		QuestionKey: "confluence",
 		Bounds:      Bounds{Min: 0.0, Max: 1.0},
+		LevelValues: confLevels,
 		Mode: func() ParamMode {
 			if r.cfg != nil && r.cfg.OverrideConfluenceMin != nil {
 				return ModeOverride
@@ -550,23 +580,44 @@ func (r *ParamRegistry) registerPhase1Specs() {
 			return 0.60
 		},
 		Question: func(state map[string]interface{}) ai.JevQuestion {
+			// Scale anchoring (spec-015 convergence 2026-09-29): the gate
+			// compares this threshold against indicators.CalculateConfluence,
+			// whose |normalized alignment| reads 0.25-0.50 in real markets.
+			// Label-based answers (0.6-0.75) vetoed every BUY — the question
+			// must carry the live score and the true distribution.
+			cur := 0.0
+			if v, ok := state["confluence"].(float64); ok {
+				cur = v
+			}
 			return ai.JevQuestion{
 				Type: "score",
 				Criteria: []string{
-					"Reject",
-					"Weak",
-					"Adequate",
-					"Strong",
+					"<0.25: no usable alignment",
+					"0.25-0.35: typical consolidation strength",
+					"0.35-0.50: decent alignment",
+					">0.50: strong alignment (rare)",
 				},
 				Instructions: map[string]interface{}{
-					"question": "Technical confluence acceptance score threshold",
+					"question":           "Minimum indicator-confluence score (0-1) required to accept this setup",
+					"current_confluence": cur,
+					"scale_note":         "Score = |normalized directional alignment| of 6 weighted indicators; live markets read 0.25-0.50. Answer a threshold on THIS same 0-1 scale — it will be compared directly against current_confluence.",
 				},
 			}
 		},
 		Clamp: func(raw interface{}, bounds Bounds) (interface{}, bool, map[string]interface{}, error) {
-			val, err := extractNumeric(raw)
-			if err != nil {
-				return nil, false, nil, fmt.Errorf("param confluence schema error: %w", err)
+			// Docs-shaped answers → EV over rubric bands. Undistributed raw:
+			// outside the 0-1 indicator scale = semantic value (bound drill);
+			// inside = level index (scores can land between levels).
+			val, ok := rawScoreOnly(raw)
+			if ok && val >= 0 && val <= 1 {
+				ok = false
+			}
+			if !ok {
+				var err error
+				val, _, err = answerValue(raw, confLevels)
+				if err != nil {
+					return nil, false, nil, fmt.Errorf("param confluence schema error: %w", err)
+				}
 			}
 			if val < bounds.Min {
 				return bounds.Min, true, map[string]interface{}{
@@ -615,6 +666,88 @@ func extractNumeric(raw interface{}) (float64, error) {
 		return strconv.ParseFloat(strings.TrimSpace(v), 64)
 	}
 	return 0, fmt.Errorf("cannot extract numeric value from %T", raw)
+}
+
+// evFromAnswer converts a TypeSafe Score answer to the parameter's semantic
+// value: EV = Σ probability(level) × LevelValues[level]. The raw `score`
+// field is a probability-weighted LEVEL INDEX (0..n-1), never the semantic
+// value — using it directly vetoed every BUY via a clamped confluence
+// threshold of 1.0 (2026-09-29). Falls back to index interpolation when the
+// answer carries no distribution; out-of-range indices clamp visibly.
+func evFromAnswer(ans *ai.JevAnswer, levelVals []float64) (float64, bool, error) {
+	if ans == nil {
+		return 0, false, fmt.Errorf("nil score answer")
+	}
+	if len(levelVals) == 0 {
+		return 0, false, fmt.Errorf("no level values configured for score parameter")
+	}
+	if len(ans.Probabilities) > 0 {
+		var ev, psum float64
+		for k, pr := range ans.Probabilities {
+			idx, err := strconv.Atoi(strings.TrimSpace(k))
+			if err != nil || idx < 0 || idx >= len(levelVals) {
+				return 0, false, fmt.Errorf("score level key %q outside [0,%d]", k, len(levelVals)-1)
+			}
+			ev += pr * levelVals[idx]
+			psum += pr
+		}
+		if psum < 0.97 || psum > 1.03 {
+			return 0, false, fmt.Errorf("score probabilities sum %.4f != 1", psum)
+		}
+		return ev, false, nil
+	}
+	if ans.Score == nil {
+		return 0, false, fmt.Errorf("score answer carries neither probabilities nor score")
+	}
+	idx := *ans.Score
+	// Outside the level-index range = a raw semantic value (legacy fixtures
+	// and forced bound-drills): pass through so the parameter's bounds clamp
+	// applies, exactly as before.
+	if idx < 0 || idx > float64(len(levelVals)-1) {
+		return idx, false, nil
+	}
+	lo := int(idx)
+	if lo >= len(levelVals)-1 {
+		return levelVals[len(levelVals)-1], false, nil
+	}
+	frac := idx - float64(lo)
+	return levelVals[lo] + frac*(levelVals[lo+1]-levelVals[lo]), false, nil
+}
+
+// rawScoreOnly returns the raw `score` field when the answer carries NO
+// probability distribution (legacy fixtures / forced drills that state the
+// semantic value directly instead of a docs-shaped level distribution).
+func rawScoreOnly(raw interface{}) (float64, bool) {
+	var ans *ai.JevAnswer
+	switch v := raw.(type) {
+	case ai.JevAnswer:
+		ans = &v
+	case *ai.JevAnswer:
+		ans = v
+	default:
+		return 0, false
+	}
+	if ans == nil || len(ans.Probabilities) > 0 || ans.Score == nil {
+		return 0, false
+	}
+	return *ans.Score, true
+}
+
+// answerValue dispatches: Score answers → level-value EV; anything else →
+// legacy numeric extraction (raw floats used by direct-clamp tests).
+func answerValue(raw interface{}, levelVals []float64) (float64, bool, error) {
+	switch v := raw.(type) {
+	case ai.JevAnswer:
+		return evFromAnswer(&v, levelVals)
+	case *ai.JevAnswer:
+		if v == nil {
+			return 0, false, fmt.Errorf("nil answer")
+		}
+		return evFromAnswer(v, levelVals)
+	default:
+		x, err := extractNumeric(raw)
+		return x, false, err
+	}
 }
 
 func extractChoiceString(raw interface{}) (string, error) {

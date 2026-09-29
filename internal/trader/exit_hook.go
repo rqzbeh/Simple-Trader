@@ -15,7 +15,7 @@ func ExitQuestion(atrSL, atrTP, current float64) map[string]ai.JevQuestion {
 		"exit_now": {
 			Type: "noul",
 			Instructions: map[string]interface{}{
-				"question": "Should this open futures position be closed NOW?",
+				"question":      "Should this open futures position be closed NOW?",
 				"atr_stop_loss": atrSL, "atr_take_profit": atrTP, "current_price": current,
 			},
 			Criteria: map[string]string{

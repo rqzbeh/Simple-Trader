@@ -35,10 +35,10 @@ func TestEarlyExitLiveSmoke(t *testing.T) {
 	}
 
 	cluster := &market.NewsCluster{
-		ID:        "9999",
-		Headline:  "SEC files emergency enforcement action against major exchange",
+		ID:         "9999",
+		Headline:   "SEC files emergency enforcement action against major exchange",
 		StoryCount: 8,
-		FirstSeen: now.Add(-10 * time.Minute),
+		FirstSeen:  now.Add(-10 * time.Minute),
 	}
 
 	questions := BuildEarlyExitQuestions([]*db.Trade{pos}, cluster, now)

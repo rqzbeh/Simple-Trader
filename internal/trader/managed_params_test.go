@@ -34,9 +34,9 @@ func TestManagedParams_QuestionsOnlyForManaged(t *testing.T) {
 	}
 
 	state := map[string]interface{}{
-		"symbol": "ETHUSDT",
+		"symbol":  "ETHUSDT",
 		"atr_pct": 2.1,
-		"regime": "EXPANSION",
+		"regime":  "EXPANSION",
 	}
 
 	questions := BuildManagedEntryQuestions(cfg, state)
@@ -202,8 +202,10 @@ func TestClampDrillIntegration(t *testing.T) {
 	}
 	reg := NewParamRegistry(cfg)
 
-	// 1. Min R:R low clamp: answer 0.2 < 0.5 -> clamp to 0.5
-	lowRR := 0.2
+	// 1. Min R:R low clamp: raw semantic answer -0.5 (outside level-index
+	// range) < 0.5 -> clamp to 0.5 (in-range scores are level indices per
+	// TypeSafe docs and convert via EV, never directly clamped)
+	lowRR := -0.5
 	resLowRR, err := reg.Resolve("min_rr", &ai.JevAnswer{Type: "score", Score: &lowRR}, "drill-1")
 	if err != nil {
 		t.Fatalf("resolve min_rr low failed: %v", err)

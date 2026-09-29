@@ -31,10 +31,14 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 1. Load Configuration
+	// 1. Load Configuration — zero-fallback (spec-017 FR-401/FR-402):
+	// missing/invalid required env keys abort boot with the full list.
 	cfg, err := config.Load()
 	if err != nil {
-		log.Printf("[WARN] Failed to load full env config, using defaults: %v", err)
+		log.Fatalf("[FATAL] configuration: %v", err)
+	}
+	if _, terr := config.LoadTimeframeConfig(); terr != nil {
+		log.Fatalf("[FATAL] timeframe configuration: %v", terr)
 	}
 
 	// 2. Initialize Database Store (optional fallback for non-DB container boot)
@@ -134,10 +138,7 @@ func main() {
 	aiClient := ai.NewClient(aiCfg)
 
 	// 5. Initialize Trading & Risk Allocator & Execution Engine
-	initialCap := cfg.InitialCapital
-	if initialCap <= 0 {
-		initialCap = 10000.0
-	}
+	initialCap := cfg.InitialCapital // required env, validated > 0 (spec-017)
 	if store != nil {
 		// Ground initial capital strictly in the PostgreSQL investor ledger.
 		// Bounded so a stalled database degrades to the configured initial
@@ -173,11 +174,8 @@ func main() {
 	allocator := trader.NewAllocator(allocatorConfig)
 	execEngine := trader.NewExecutionEngine(initialCap)
 	if cfg != nil {
-		impact := cfg.ImpactFactor
-		if impact <= 0 {
-			impact = 0.05
-		}
-		execEngine.SetFrictionModel(trader.NewFrictionModel(cfg.MakerFeeRate, cfg.TakerFeeRate, impact, cfg.MaxSlippagePct))
+		// spec-017: friction values come from required env — no in-code defaults.
+		execEngine.SetFrictionModel(trader.NewFrictionModel(cfg.MakerFeeRate, cfg.TakerFeeRate, cfg.ImpactFactor, cfg.MaxSlippagePct))
 	}
 
 	// 6. Initialize HTTP & SSE Broadcaster Server

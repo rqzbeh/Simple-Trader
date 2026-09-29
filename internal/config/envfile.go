@@ -138,16 +138,15 @@ func UpsertEnv(path string, kv map[string]string) error {
 	return nil
 }
 
-// ApplyEnvFile loads KEY=VALUE lines from the ENV_FILE path into the process
-// environment. The .env file is the single source of truth (the settings UI
-// writes there): compose interpolates only a subset of keys, so without this
-// load EARLY_EXIT_*/TIMEFRAME_SET_*/UPSTREAM_PROXY_URL edits would silently
-// vanish on container restart. File entries win over process env. No-op when
-// ENV_FILE is unset or the file does not exist.
+// ApplyEnvFile hydrates the process environment from the .env file (the
+// single source of truth, spec-017). Standard dotenv semantics: an EXISTING
+// process value wins (compose-built DATABASE_URL/PORT/REDIS_URL must survive);
+// every other key comes from the file. Path: ENV_FILE, else ".env" in the
+// working directory. Missing file = no-op.
 func ApplyEnvFile() {
 	path := os.Getenv("ENV_FILE")
 	if path == "" {
-		return
+		path = ".env"
 	}
 	f, err := os.Open(path)
 	if err != nil {
@@ -167,6 +166,9 @@ func ApplyEnvFile() {
 		key = strings.TrimSpace(key)
 		if key == "" {
 			continue
+		}
+		if _, exists := os.LookupEnv(key); exists {
+			continue // process env wins
 		}
 		val = strings.TrimSpace(val)
 		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {

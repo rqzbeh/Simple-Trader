@@ -127,14 +127,14 @@ func (a *Allocator) Get3TierBreakdown() map[string]interface{} {
 	tactical := total * a.config.AlphaTargetPct
 
 	return map[string]interface{}{
-		"total_equity":               total,
-		"tier1_cash":                 math.Round(a.tier1Cash*100) / 100,
-		"tier1_target_pct":           a.config.Tier1TargetPct,
-		"tier2_core":                 math.Round(core*100) / 100,
-		"tier2_target_pct":           a.config.CoreTargetPct,
-		"tier3_tactical":             math.Round(tactical*100) / 100,
-		"tier3_target_pct":           a.config.AlphaTargetPct,
-		"available_for_withdrawal":   math.Round(a.tier1Cash*100) / 100,
+		"total_equity":             total,
+		"tier1_cash":               math.Round(a.tier1Cash*100) / 100,
+		"tier1_target_pct":         a.config.Tier1TargetPct,
+		"tier2_core":               math.Round(core*100) / 100,
+		"tier2_target_pct":         a.config.CoreTargetPct,
+		"tier3_tactical":           math.Round(tactical*100) / 100,
+		"tier3_target_pct":         a.config.AlphaTargetPct,
+		"available_for_withdrawal": math.Round(a.tier1Cash*100) / 100,
 	}
 }
 

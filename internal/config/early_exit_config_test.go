@@ -1,12 +1,13 @@
 package config
 
 import (
+	"strings"
 	"os"
 	"testing"
 )
 
-func TestLoadEarlyExitConfig_Defaults(t *testing.T) {
-	// Clear env vars
+func TestLoadEarlyExitConfig_MissingIsExplicitError(t *testing.T) {
+	// spec-017 FR-401: no struct defaults — every key required in env.
 	keys := []string{
 		"EARLY_EXIT_ENABLED",
 		"EARLY_EXIT_MIN_HOLD_MIN",
@@ -18,24 +19,12 @@ func TestLoadEarlyExitConfig_Defaults(t *testing.T) {
 		os.Unsetenv(k)
 	}
 
-	cfg, err := LoadEarlyExitConfig()
-	if err != nil {
-		t.Fatalf("expected nil error with defaults, got %v", err)
+	_, err := LoadEarlyExitConfig()
+	if err == nil {
+		t.Fatalf("expected explicit error when early-exit keys are missing")
 	}
-	if !cfg.Enabled {
-		t.Errorf("expected Enabled=true, got %v", cfg.Enabled)
-	}
-	if cfg.MinHoldMin != 30 {
-		t.Errorf("expected MinHoldMin=30, got %d", cfg.MinHoldMin)
-	}
-	if cfg.MaxPerDay != 3 {
-		t.Errorf("expected MaxPerDay=3, got %d", cfg.MaxPerDay)
-	}
-	if cfg.CooldownMin != 60 {
-		t.Errorf("expected CooldownMin=60, got %d", cfg.CooldownMin)
-	}
-	if cfg.ConfFloor != 0.75 {
-		t.Errorf("expected ConfFloor=0.75, got %f", cfg.ConfFloor)
+	if !strings.Contains(err.Error(), "EARLY_EXIT_ENABLED") {
+		t.Errorf("error must name the missing key, got: %v", err)
 	}
 }
 
@@ -76,6 +65,11 @@ func TestLoadEarlyExitConfig_CustomValid(t *testing.T) {
 
 func TestLoadEarlyExitConfig_KillSwitchParsing(t *testing.T) {
 	defer os.Unsetenv("EARLY_EXIT_ENABLED")
+	// remaining required keys present (spec-017: no struct defaults)
+	t.Setenv("EARLY_EXIT_MIN_HOLD_MIN", "30")
+	t.Setenv("EARLY_EXIT_MAX_PER_DAY", "3")
+	t.Setenv("EARLY_EXIT_COOLDOWN_MIN", "60")
+	t.Setenv("EARLY_EXIT_CONF_FLOOR", "0.75")
 
 	valid := []struct {
 		val      string

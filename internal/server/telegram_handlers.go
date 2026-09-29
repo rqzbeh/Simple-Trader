@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/rqzbeh/simple-trader/internal/config"
 	"github.com/rqzbeh/simple-trader/internal/telegram"
 )
 
@@ -66,6 +68,8 @@ func (s *Server) UpdateTelegramConfigHandler(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	mustToken := req.BotToken
+	mustChat := req.ChatID
 	if s.telegramBot == nil {
 		s.telegramBot = telegram.NewBotClient(telegram.BotConfig{
 			BotToken: req.BotToken,
@@ -74,23 +78,55 @@ func (s *Server) UpdateTelegramConfigHandler(w http.ResponseWriter, r *http.Requ
 		})
 	} else {
 		currentCfg := s.telegramBot.GetConfig()
-		newToken := req.BotToken
-		if newToken == "" {
-			newToken = currentCfg.BotToken
+		if mustToken == "" {
+			mustToken = currentCfg.BotToken
 		}
-		newChatID := req.ChatID
-		if newChatID == "" {
-			newChatID = currentCfg.ChatID
+		if mustChat == "" {
+			mustChat = currentCfg.ChatID
 		}
 
 		s.telegramBot.UpdateConfig(telegram.BotConfig{
-			BotToken: newToken,
-			ChatID:   newChatID,
+			BotToken: mustToken,
+			ChatID:   mustChat,
 			Enabled:  req.Enabled,
 		})
 	}
 
+	// spec-017 FR-405: persist to .env (single source of truth) — without
+	// this, values lived only in-process and fell back on every restart.
+	persist := map[string]string{
+		"TELEGRAM_BOT_TOKEN": mustToken,
+		"TELEGRAM_CHAT_ID":   mustChat,
+	}
+	if err := config.UpsertEnv(config.DefaultEnvPath(), persist); err != nil {
+		http.Error(w, `{"error":"persist telegram settings to .env failed: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	_ = os.Setenv("TELEGRAM_BOT_TOKEN", mustToken)
+	_ = os.Setenv("TELEGRAM_CHAT_ID", mustChat)
+	if s.cfg != nil {
+		s.cfg.TelegramBotToken = mustToken
+		s.cfg.TelegramChatID = mustChat
+	}
+
 	s.GetTelegramConfigHandler(w, r)
+}
+
+// applyTelegramLive re-applies telegram config to the live bot client.
+func (s *Server) applyTelegramLive() {
+	if s.telegramBot == nil {
+		s.telegramBot = telegram.NewBotClient(telegram.BotConfig{
+			BotToken: s.cfg.TelegramBotToken,
+			ChatID:   s.cfg.TelegramChatID,
+			Enabled:  s.cfg.TelegramBotToken != "" && s.cfg.TelegramChatID != "",
+		})
+		return
+	}
+	s.telegramBot.UpdateConfig(telegram.BotConfig{
+		BotToken: s.cfg.TelegramBotToken,
+		ChatID:   s.cfg.TelegramChatID,
+		Enabled:  s.cfg.TelegramBotToken != "" && s.cfg.TelegramChatID != "",
+	})
 }
 
 // TestTelegramHandler handles POST /api/v1/telegram/test

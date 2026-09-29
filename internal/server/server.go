@@ -67,10 +67,11 @@ func NewServer(
 	if os.Getenv("JEV_DISABLE") == "" {
 		thr, terr := cfg.RoutingThreshold()
 		if terr != nil {
-			log.Printf("[FATAL] decision core not configured: %v", terr)
+			// spec-017 FR-402: no continue-with-degraded-core — boot aborts.
+			log.Fatalf("[FATAL] decision core not configured: %v", terr)
 		} else {
 			decisionRouter = &trader.DecisionRouter{
-				Jev:       ai.NewJevClient("https://api.typesafe.ai", os.Getenv("TYPESAFE_API_KEY"), 12*time.Second),
+				Jev:       ai.NewJevClient(os.Getenv("JEV_BASE_URL"), os.Getenv("TYPESAFE_API_KEY"), 12*time.Second),
 				Threshold: thr,
 				Escalate: func(ctx context.Context, payload interface{}) (trader.DecisionOutcome, error) {
 					// 9Router escalation: slow brain answers when Jev low-confidence (FR-003).
@@ -107,12 +108,9 @@ func NewServer(
 	shadow.SetEnabled("news", os.Getenv("SHADOW_NEWS") != "false")
 	binanceFetcher := market.NewBinanceFetcher()
 	screenerCfg := market.DefaultScreenerConfig()
-	if cfg.ScreenerMin24hVolume > 0 {
-		screenerCfg.Min24hVolume = cfg.ScreenerMin24hVolume
-	}
-	if cfg.ScreenerMaxSpreadBps > 0 {
-		screenerCfg.MaxSpreadBps = cfg.ScreenerMaxSpreadBps
-	}
+	// spec-017: liquidity thresholds come from required env, not code samples.
+	screenerCfg.Min24hVolume = cfg.ScreenerMin24hVolume
+	screenerCfg.MaxSpreadBps = cfg.ScreenerMaxSpreadBps
 	screener := market.NewDynamicCryptoScreener(screenerCfg, binanceFetcher, redisClient, dbStore)
 
 	tgBot := telegram.NewBotClient(telegram.BotConfig{
@@ -133,12 +131,11 @@ func NewServer(
 		execEngine.SetPriceProvider(marketData)
 	}
 
-	haltWindow := 15 * time.Minute
+	// spec-017: value comes from required env CALENDAR_HALT_MINUTES (0 = disabled).
+	var haltWindow time.Duration
 	calURL := ""
 	if cfg != nil {
-		if cfg.CalendarHaltMinutes > 0 {
-			haltWindow = time.Duration(cfg.CalendarHaltMinutes) * time.Minute
-		}
+		haltWindow = time.Duration(cfg.CalendarHaltMinutes) * time.Minute
 		calURL = cfg.EconomicCalendarURL
 	}
 	calendar := market.NewEconomicCalendar(haltWindow)

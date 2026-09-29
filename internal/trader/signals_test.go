@@ -1,9 +1,9 @@
 package trader_test
 
 import (
-	"github.com/rqzbeh/simple-trader/internal/market"
 	"context"
 	"encoding/json"
+	"github.com/rqzbeh/simple-trader/internal/market"
 	"testing"
 
 	"github.com/rqzbeh/simple-trader/internal/ai"

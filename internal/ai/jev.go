@@ -1,14 +1,14 @@
 package ai
 
 import (
-	"os"
-	"net/url"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -25,16 +25,13 @@ type JevClient struct {
 }
 
 func NewJevClient(baseURL, apiKey string, timeout time.Duration) *JevClient {
-	if baseURL == "" {
-		baseURL = "https://api.typesafe.ai"
-	}
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
 	return &JevClient{
 		baseURL: strings.TrimRight(baseURL, "/"),
 		apiKey:  apiKey,
-		model:   "jev-latest",
+		model:   os.Getenv("JEV_MODEL"), // required env (spec-017) — no in-code default
 		http:    &http.Client{Timeout: timeout, Transport: upstreamTransport()},
 	}
 }
@@ -59,23 +56,23 @@ func (j *JevClient) GetAPIKey() string {
 	return j.apiKey
 }
 
-// BaseURL returns the configured base URL.
+// BaseURL returns the configured base URL (JEV_BASE_URL — spec-017 FR-403:
+// no in-code default; empty = misconfiguration, callers must fail loud).
 func (j *JevClient) BaseURL() string {
 	if j == nil {
-		return "https://api.typesafe.ai"
+		return ""
 	}
 	j.mu.RLock()
 	defer j.mu.RUnlock()
-	if j.baseURL == "" {
-		return "https://api.typesafe.ai"
-	}
 	return j.baseURL
 }
 
 func (j *JevClient) Model() string {
-	if j == nil || j.model == "" {
-		return "jev-latest"
+	if j == nil {
+		return ""
 	}
+	j.mu.RLock()
+	defer j.mu.RUnlock()
 	return j.model
 }
 
@@ -98,8 +95,8 @@ type JevAnswer struct {
 }
 
 type jevRequest struct {
-	State     interface{}           `json:"state"`
-	Model     string                `json:"model"`
+	State     interface{}            `json:"state"`
+	Model     string                 `json:"model"`
 	Questions map[string]JevQuestion `json:"questions"`
 }
 
@@ -140,6 +137,9 @@ func (j *JevClient) Evaluate(ctx context.Context, cycleID string, state interfac
 	apiKey := j.GetAPIKey()
 	if apiKey == "" {
 		return nil, JevUsage{}, WrapDecision("jev", cycleID, ErrJevAuth, "TYPESAFE_API_KEY missing")
+	}
+	if j.BaseURL() == "" {
+		return nil, JevUsage{}, WrapDecision("jev", cycleID, ErrConfigMissing, "JEV_BASE_URL missing")
 	}
 	body, err := json.Marshal(jevRequest{State: state, Model: j.model, Questions: questions})
 	if err != nil {
@@ -228,7 +228,6 @@ func ValidateChoice(ans JevAnswer, allowed map[string]bool, cycleID string) erro
 	}
 	return nil
 }
-
 
 // upstreamTransport applies optional UPSTREAM_PROXY_URL (socks5:// or http://)
 // to decision-core outbound traffic. Default is a DIRECT connection: the

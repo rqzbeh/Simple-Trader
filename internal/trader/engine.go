@@ -33,7 +33,7 @@ type PriceProvider interface {
 
 // ExecutionEngine simulates paper order execution and tracks open/closed positions in-memory.
 type ExecutionEngine struct {
-	shadowExit func(trade *db.Trade, reason string) // spec-013 T041: core exit judgment hook
+	shadowExit    func(trade *db.Trade, reason string) // spec-013 T041: core exit judgment hook
 	mu            sync.RWMutex
 	initialEquity float64
 	cash          float64

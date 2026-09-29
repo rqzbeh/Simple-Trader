@@ -10,7 +10,7 @@ import (
 )
 
 type memSink struct {
-	mu sync.Mutex
+	mu   sync.Mutex
 	rows []db.ShadowDecision
 }
 

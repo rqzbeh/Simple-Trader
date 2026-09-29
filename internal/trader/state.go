@@ -15,14 +15,14 @@ type FeedState struct {
 // StateObject is the single per-cycle context payload fed to the decision
 // core. Feeders contribute fields; nothing in here decides.
 type StateObject struct {
-	Symbol        string                 `json:"symbol"`
-	Timestamp     string                 `json:"timestamp"`
-	Indicators    map[string]float64     `json:"indicators"`
-	News          FeedState               `json:"news"`
-	LSTMStats     FeedState               `json:"lstm_stats"`
-	ATR           map[string]float64     `json:"atr_levels"`
-	Gates         map[string]string      `json:"gates_as_fields"`
-	Extra         map[string]interface{} `json:"extra,omitempty"`
+	Symbol     string                 `json:"symbol"`
+	Timestamp  string                 `json:"timestamp"`
+	Indicators map[string]float64     `json:"indicators"`
+	News       FeedState              `json:"news"`
+	LSTMStats  FeedState              `json:"lstm_stats"`
+	ATR        map[string]float64     `json:"atr_levels"`
+	Gates      map[string]string      `json:"gates_as_fields"`
+	Extra      map[string]interface{} `json:"extra,omitempty"`
 }
 
 // BuildState assembles the state object. Empty candles ⇒ explicit error

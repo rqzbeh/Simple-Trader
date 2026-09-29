@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"path/filepath"
 	"bytes"
 	"encoding/json"
 	"net/http"
@@ -12,6 +13,8 @@ import (
 )
 
 func TestTelegramConfigHandlers(t *testing.T) {
+	// spec-017 FR-405: settings persist to ENV_FILE — point at a temp file.
+	t.Setenv("ENV_FILE", filepath.Join(t.TempDir(), ".env"))
 	cfg := &config.Config{
 		TelegramBotToken: "123456789:ABCDefghIJKLmnOPQRstuvwxyz",
 		TelegramChatID:   "987654321",

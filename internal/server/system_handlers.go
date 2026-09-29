@@ -1,12 +1,12 @@
 package server
 
 import (
-	"net/url"
 	"context"
 	"encoding/json"
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -180,7 +180,7 @@ func (s *Server) systemConfigResponse() map[string]interface{} {
 		}
 	}
 
-	typesafeBaseURL := "https://api.typesafe.ai"
+	typesafeBaseURL := os.Getenv("JEV_BASE_URL")
 	if s.decisionRouter != nil && s.decisionRouter.Jev != nil {
 		typesafeBaseURL = s.decisionRouter.Jev.BaseURL()
 	}
@@ -327,6 +327,9 @@ var allowedConfigKeys = map[string]bool{
 	"TP_ATR_MULT":                  true,
 	"CLUSTER_DECAY_MODE":           true,
 	"CONFLUENCE_MIN":               true,
+	"TELEGRAM_BOT_TOKEN":           true,
+	"TELEGRAM_CHAT_ID":             true,
+	"AI_BASE_URL":                  true,
 }
 
 func parseNumericFloat(val interface{}) (float64, error) {
@@ -434,7 +437,7 @@ func (s *Server) ensureDecisionRouter(thr float64) {
 		typesafeKey = os.Getenv("TYPESAFE_API_KEY")
 	}
 	s.decisionRouter = &trader.DecisionRouter{
-		Jev:       ai.NewJevClient("https://api.typesafe.ai", typesafeKey, 12*time.Second),
+		Jev:       ai.NewJevClient(os.Getenv("JEV_BASE_URL"), typesafeKey, 12*time.Second),
 		Threshold: thr,
 		Escalate: func(ctx context.Context, payload interface{}) (trader.DecisionOutcome, error) {
 			if s.aiClient == nil {
@@ -627,6 +630,36 @@ func validateAndBuildEnvUpdates(rawMap map[string]interface{}) (map[string]strin
 		envUpdates["CALENDAR_HALT_MINUTES"] = strconv.Itoa(i)
 	}
 
+	if v, exists := rawMap["TELEGRAM_BOT_TOKEN"]; exists {
+		t := parseString(v)
+		if t != "" && (strings.ContainsAny(t, " \t\r\n") || len(t) > 200) {
+			return nil, fmt.Errorf("TELEGRAM_BOT_TOKEN invalid: unexpected characters or length")
+		}
+		envUpdates["TELEGRAM_BOT_TOKEN"] = t
+	}
+
+	if v, exists := rawMap["TELEGRAM_CHAT_ID"]; exists {
+		c := parseString(v)
+		if c != "" {
+			if !strings.HasPrefix(c, "-") && !strings.HasPrefix(c, "+") {
+				return nil, fmt.Errorf("TELEGRAM_CHAT_ID invalid: digits with optional sign")
+			}
+			if _, err := strconv.ParseInt(c, 10, 64); err != nil {
+				return nil, fmt.Errorf("TELEGRAM_CHAT_ID invalid: digits with optional sign")
+			}
+		}
+		envUpdates["TELEGRAM_CHAT_ID"] = c
+	}
+
+	if v, exists := rawMap["AI_BASE_URL"]; exists {
+		u := strings.TrimRight(parseString(v), "/")
+		pu, err := url.Parse(u)
+		if err != nil || pu.Host == "" || (pu.Scheme != "http" && pu.Scheme != "https") {
+			return nil, fmt.Errorf("AI_BASE_URL invalid: need http(s)://host")
+		}
+		envUpdates["AI_BASE_URL"] = u
+	}
+
 	if v, exists := rawMap["UPSTREAM_PROXY_URL"]; exists {
 		s := parseString(v)
 		if s != "" {
@@ -781,6 +814,23 @@ func (s *Server) applyLiveConfigUpdates(envUpdates map[string]string) {
 	if v, ok := envUpdates["AI_MODEL_ID"]; ok {
 		s.cfg.AIModelID = v
 		_ = os.Setenv("AI_MODEL_ID", v)
+	}
+	if v, ok := envUpdates["AI_BASE_URL"]; ok {
+		s.cfg.AIBaseURL = v
+		_ = os.Setenv("AI_BASE_URL", v)
+		if s.aiClient != nil {
+			s.aiClient.SetBaseURL(v)
+		}
+	}
+	if v, ok := envUpdates["TELEGRAM_BOT_TOKEN"]; ok {
+		s.cfg.TelegramBotToken = v
+		_ = os.Setenv("TELEGRAM_BOT_TOKEN", v)
+		s.applyTelegramLive()
+	}
+	if v, ok := envUpdates["TELEGRAM_CHAT_ID"]; ok {
+		s.cfg.TelegramChatID = v
+		_ = os.Setenv("TELEGRAM_CHAT_ID", v)
+		s.applyTelegramLive()
 	}
 	if v, ok := envUpdates["AI_TEMPERATURE"]; ok {
 		f, _ := strconv.ParseFloat(v, 64)
@@ -942,14 +992,13 @@ func (s *Server) applyLiveConfigUpdates(envUpdates map[string]string) {
 	}
 }
 
-
 // probeTypeSafe validates a candidate API key with one cheap live call so a
 // rejected key never lands in .env (explicit save-time error, FR-007).
 func probeTypeSafe(ctx context.Context, key string) error {
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	body := `{"state":"key probe","model":"jev-latest","questions":{"ok":{"type":"noul","instructions":"ok?"}}}`
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.typesafe.ai/v1/systemone", strings.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(os.Getenv("JEV_BASE_URL"), "/")+"/v1/systemone", strings.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("TYPESAFE_API_KEY validation could not run: %w", err)
 	}

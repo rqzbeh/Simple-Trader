@@ -17,9 +17,9 @@ const (
 
 // MacroIndicators represents the quantitative inputs for real-world stress calculation.
 type MacroIndicators struct {
-	GeopoliticalIndex float64  `json:"geopolitical_index"` // 0.0 (peace) to 1.0 (war/blockade)
-	InflationIndex    float64  `json:"inflation_index"`    // 0.0 (sub-target) to 1.0 (hyperinflation/supply shock)
-	InterestRateIndex float64  `json:"interest_rate_index"`// 0.0 (zero-rate dovish) to 1.0 (extreme hawkish tightening)
+	GeopoliticalIndex float64  `json:"geopolitical_index"`  // 0.0 (peace) to 1.0 (war/blockade)
+	InflationIndex    float64  `json:"inflation_index"`     // 0.0 (sub-target) to 1.0 (hyperinflation/supply shock)
+	InterestRateIndex float64  `json:"interest_rate_index"` // 0.0 (zero-rate dovish) to 1.0 (extreme hawkish tightening)
 	ActiveConflicts   []string `json:"active_conflicts,omitempty"`
 	InflationRateYoY  float64  `json:"inflation_rate_yoy,omitempty"`
 	BenchmarkRate     float64  `json:"benchmark_rate,omitempty"`

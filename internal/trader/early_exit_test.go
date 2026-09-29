@@ -100,12 +100,12 @@ func TestBuildEarlyExitQuestions(t *testing.T) {
 	positions := []*db.Trade{p1, p2}
 
 	cluster := &market.NewsCluster{
-		ID:          "cluster-abc-1",
-		Headline:    "SEC files lawsuit against exchange",
-		StoryCount:  5,
-		FirstSeen:   now.Add(-10 * time.Minute),
-		LastSeen:    now.Add(-5 * time.Minute),
-		Headlines:   []string{"SEC files lawsuit against exchange", "Exchange sued by SEC"},
+		ID:         "cluster-abc-1",
+		Headline:   "SEC files lawsuit against exchange",
+		StoryCount: 5,
+		FirstSeen:  now.Add(-10 * time.Minute),
+		LastSeen:   now.Add(-5 * time.Minute),
+		Headlines:  []string{"SEC files lawsuit against exchange", "Exchange sued by SEC"},
 	}
 
 	questions := BuildEarlyExitQuestions(positions, cluster, now)
@@ -402,7 +402,7 @@ func TestEarlyExitGuardsOrderAndReasons(t *testing.T) {
 		PositionAgeMin:  10, // would fail min_hold too
 		LastExitAgeMin:  10, // would fail cooldown too
 		HasPriorExit:    true,
-		ExitsTodayCount: 5,  // would fail budget too
+		ExitsTodayCount: 5, // would fail budget too
 		Confidence:      0.5,
 	})
 	if passed || reason != "kill_switch" {
@@ -415,7 +415,7 @@ func TestEarlyExitGuardsOrderAndReasons(t *testing.T) {
 		PositionAgeMin:  15, // < 30
 		LastExitAgeMin:  10, // would fail cooldown too
 		HasPriorExit:    true,
-		ExitsTodayCount: 5,  // would fail budget too
+		ExitsTodayCount: 5, // would fail budget too
 		Confidence:      0.5,
 	})
 	if passed || reason != "min_hold" {
@@ -454,7 +454,7 @@ func TestEarlyExitGuardsOrderAndReasons(t *testing.T) {
 		PositionAgeMin:  45, // >= 30 OK
 		LastExitAgeMin:  90, // >= 60 OK
 		HasPriorExit:    true,
-		ExitsTodayCount: 1, // < 3 OK
+		ExitsTodayCount: 1,    // < 3 OK
 		Confidence:      0.70, // < 0.75
 	})
 	if passed || reason != "conf_floor" {

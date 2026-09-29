@@ -257,3 +257,25 @@ func TestParamRegistry_RuntimeFlip_OverrideToManaged(t *testing.T) {
 		t.Errorf("expected value 3.2, got %v", resManaged.Value)
 	}
 }
+
+// TestConfluenceQuestion_AnchoredToLiveScale: the acceptance threshold must
+// ride the ACTUAL indicator-confluence scale (0.25-0.50 in live markets) —
+// label-based 0.6-0.75 answers vetoed 100% of BUY decisions on 2026-09-29.
+func TestConfluenceQuestion_AnchoredToLiveScale(t *testing.T) {
+	reg := NewParamRegistry(&config.Config{})
+	spec, ok := reg.Get("confluence")
+	if !ok {
+		t.Fatalf("confluence spec missing")
+	}
+	q := spec.Question(map[string]interface{}{"confluence": 0.34})
+	instr, ok := q.Instructions.(map[string]interface{})
+	if !ok {
+		t.Fatalf("instructions type = %T", q.Instructions)
+	}
+	if cur, ok := instr["current_confluence"].(float64); !ok || cur != 0.34 {
+		t.Errorf("question must carry the live confluence score, got %v", instr["current_confluence"])
+	}
+	if _, ok := instr["scale_note"]; !ok {
+		t.Errorf("question must explain the 0-1 scale (pre-computed inputs rule)")
+	}
+}

@@ -6,12 +6,12 @@ import (
 
 // CircuitBreaker monitors portfolio equity and automatically halts trading if max drawdown is breached.
 type CircuitBreaker struct {
-	mu           sync.RWMutex
-	peakEquity   float64
-	currEquity   float64
-	maxDDPct     float64 // Maximum allowable drawdown as fraction (e.g. 0.10 for 10%)
-	isHalted     bool
-	haltReason   string
+	mu         sync.RWMutex
+	peakEquity float64
+	currEquity float64
+	maxDDPct   float64 // Maximum allowable drawdown as fraction (e.g. 0.10 for 10%)
+	isHalted   bool
+	haltReason string
 }
 
 // NewCircuitBreaker creates a circuit breaker instance.

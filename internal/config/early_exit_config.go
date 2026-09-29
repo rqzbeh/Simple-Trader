@@ -19,12 +19,12 @@ type EarlyExitConfig struct {
 // LoadEarlyExitConfig loads and strictly validates early exit guard settings from environment variables.
 // Invalid values produce explicit startup errors (FR-104 / FR-007, no silent defaults or clamping).
 func LoadEarlyExitConfig() (EarlyExitConfig, error) {
-	cfg := EarlyExitConfig{
-		Enabled:     true,
-		MinHoldMin:  30,
-		MaxPerDay:   3,
-		CooldownMin: 60,
-		ConfFloor:   0.75,
+	// spec-017 FR-401: no in-code defaults — every key must be present in env.
+	var cfg EarlyExitConfig
+	for _, k := range []string{"EARLY_EXIT_ENABLED", "EARLY_EXIT_MIN_HOLD_MIN", "EARLY_EXIT_MAX_PER_DAY", "EARLY_EXIT_COOLDOWN_MIN", "EARLY_EXIT_CONF_FLOOR"} {
+		if _, ok := os.LookupEnv(k); !ok {
+			return cfg, fmt.Errorf("config: required env key missing (no in-code default): %s", k)
+		}
 	}
 
 	if val := strings.TrimSpace(os.Getenv("EARLY_EXIT_ENABLED")); val != "" {

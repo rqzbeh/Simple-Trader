@@ -21,6 +21,13 @@ type Client struct {
 }
 
 // SetParams dynamically updates AI model parameters live.
+// SetBaseURL updates the OpenAI-compatible gateway base URL live (settings, spec-017).
+func (c *Client) SetBaseURL(base string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cfg.BaseURL = base
+}
+
 func (c *Client) SetParams(modelID, reasoningEffort string, temperature float64, timeoutSec int) {
 	if c == nil {
 		return
@@ -67,7 +74,7 @@ func NewClient(cfg ClientConfig) *Client {
 		cfg: cfg,
 		httpClient: &http.Client{
 			Transport: upstreamTransport(),
-			Timeout: timeout,
+			Timeout:   timeout,
 		},
 	}
 }
@@ -396,4 +403,3 @@ func (c *Client) Analyze(ctx context.Context, req DecisionRequest) (respOut *Dec
 
 	return &decision, nil
 }
-

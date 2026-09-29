@@ -42,31 +42,37 @@ func NewStore(ctx context.Context, dbURL string) (*Store, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse pgx config: %w", err)
 	}
-	host := "postgres"
-	if config.ConnConfig != nil && config.ConnConfig.Host != "" {
+	host := ""
+	if config.ConnConfig != nil {
 		host = config.ConnConfig.Host
 	}
 
-	maxConns := int32(25)
-	if val := os.Getenv("DB_MAX_CONNS"); val != "" {
-		if n, err := strconv.Atoi(val); err == nil && n > 0 {
-			maxConns = int32(n)
-		}
-	} else if val := os.Getenv("DATABASE_MAX_CONNS"); val != "" {
-		if n, err := strconv.Atoi(val); err == nil && n > 0 {
-			maxConns = int32(n)
+	maxConnsRaw, maxOK := os.LookupEnv("DB_MAX_CONNS")
+	if !maxOK {
+		if alt, altOK := os.LookupEnv("DATABASE_MAX_CONNS"); altOK {
+			maxConnsRaw, maxOK = alt, altOK
 		}
 	}
-	minConns := int32(5)
-	if val := os.Getenv("DB_MIN_CONNS"); val != "" {
-		if n, err := strconv.Atoi(val); err == nil && n > 0 {
-			minConns = int32(n)
-		}
+	if !maxOK {
+		return nil, fmt.Errorf("db: required env key missing (no in-code default): DB_MAX_CONNS")
 	}
+	max64, perr := strconv.ParseInt(maxConnsRaw, 10, 32)
+	if perr != nil || max64 <= 0 {
+		return nil, fmt.Errorf("db: DB_MAX_CONNS invalid: %q", maxConnsRaw)
+	}
+	maxConns := int32(max64)
+	minRaw, minOK := os.LookupEnv("DB_MIN_CONNS")
+	if !minOK {
+		return nil, fmt.Errorf("db: required env key missing (no in-code default): DB_MIN_CONNS")
+	}
+	min64, perr := strconv.ParseInt(minRaw, 10, 32)
+	if perr != nil || min64 <= 0 {
+		return nil, fmt.Errorf("db: DB_MIN_CONNS invalid: %q", minRaw)
+	}
+	minConns := int32(min64)
 	if minConns > maxConns {
 		minConns = maxConns
 	}
-
 	config.MaxConns = maxConns
 	config.MinConns = minConns
 	config.MaxConnLifetime = 1 * time.Hour

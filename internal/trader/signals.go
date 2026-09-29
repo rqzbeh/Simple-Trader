@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
@@ -59,18 +60,21 @@ type SignalConfig struct {
 	MaxTradeMarginPct  float64 // Max margin per trade as fraction of total equity (e.g. 0.20 = 20%)
 }
 
-// DefaultSignalConfig returns baseline parameters. These are used ONLY when
-// no .env override is provided. In production, all values come from config.Load().
-func DefaultSignalConfig() SignalConfig {
+// SampleSignalConfig builds a SignalConfig from config.SampleRequiredEnv —
+// bootstrap/test sample ONLY (spec-017 FR-409). Production values come from
+// config.Load via SetAppConfig; there is no runtime default substitution.
+func SampleSignalConfig() SignalConfig {
+	m := config.SampleRequiredEnv()
+	f := func(k string) float64 { v, _ := strconv.ParseFloat(m[k], 64); return v }
 	return SignalConfig{
-		MinRiskRewardRatio: 2.5,
-		DefaultLeverage:    8,
-		MinStopLossPct:     0.6,
-		MaxStopLossPct:     2.5,
-		MinTakeProfitPct:   1.5,
-		MaxTakeProfitPct:   8.0,
-		MaxRiskPerTradePct: 0.015,
-		MaxTradeMarginPct:  0.20,
+		MinRiskRewardRatio: 2.5, // spec-015 optional key — sample value for tests
+		DefaultLeverage:    8,   // spec-015 optional key — sample value for tests
+		MinStopLossPct:     f("MIN_STOP_LOSS_PCT"),
+		MaxStopLossPct:     f("MAX_STOP_LOSS_PCT"),
+		MinTakeProfitPct:   f("MIN_TAKE_PROFIT_PCT"),
+		MaxTakeProfitPct:   f("MAX_TAKE_PROFIT_PCT"),
+		MaxRiskPerTradePct: 0.015, // spec-015 optional key — sample value for tests
+		MaxTradeMarginPct:  f("MAX_TRADE_MARGIN_PCT"),
 	}
 }
 
@@ -124,11 +128,10 @@ func (s *SignalService) getAppConfig() *config.Config {
 	if cfg, err := config.Load(); err == nil {
 		return cfg
 	}
-	return &config.Config{
-		MinRiskRewardRatio: s.config.MinRiskRewardRatio,
-		DefaultLeverage:    s.config.DefaultLeverage,
-		MaxRiskPerTradePct: s.config.MaxRiskPerTradePct,
-	}
+	// spec-017 FR-409: no hardcoded fallback values. In production SetAppConfig
+	// always ran (boot is fatal without config); in tests a zero Config means
+	// all spec-015 params stay core_managed.
+	return &config.Config{}
 }
 
 // SetDecisionRouter installs the spec-013 decision core for entry judgments.
@@ -151,7 +154,7 @@ func (s *SignalService) SetSlotGuard(guard func(symbol string) (*db.FuturesTrade
 
 // NewSignalService initializes a new two-sided futures signal service with dynamic configuration.
 func NewSignalService(store SignalStoreInterface, aiClient AIAnalyzer, cfgs ...SignalConfig) *SignalService {
-	cfg := DefaultSignalConfig()
+	cfg := SampleSignalConfig()
 	if len(cfgs) > 0 {
 		provided := cfgs[0]
 		if provided.MinRiskRewardRatio > 0 {
@@ -510,7 +513,8 @@ func (s *SignalService) EvaluateMarketSignal(
 		maxRiskPct = s.config.MaxRiskPerTradePct
 	}
 	if maxRiskPct <= 0 {
-		maxRiskPct = 0.015
+		return nil, aiResp, ai.WrapDecision("config", symbol, ai.ErrConfigMissing,
+			"MAX_RISK_PER_TRADE_PCT zero/absent and no conviction answer (spec-017: no in-code fallback)")
 	}
 	// Quantity is intentionally discarded: the execution engine derives
 	// position size from the final clamped margin (see OpenPositionFromSignal),
@@ -624,9 +628,9 @@ func (s *SignalService) EvaluateMarketSignal(
 		// FR-012: confidence is NOT sentiment — model confidence always
 		// recorded separately; catalyst_sentiment carries the fused cluster
 		// score when a Catalyst Event exists, else the heuristic above.
-		ModelConfidence:     &modelConfidence,
-		ATRAtEntry:          &atrPrice,
-		TP1CloseFraction:    &closeFrac,
+		ModelConfidence:  &modelConfidence,
+		ATRAtEntry:       &atrPrice,
+		TP1CloseFraction: &closeFrac,
 	}
 
 	if aiResp != nil {
@@ -924,12 +928,12 @@ func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req a
 		decision = "SELL"
 	}
 	resp := &ai.DecisionResponse{
-		Decision:              decision,
-		Confidence:            entryConf,
-		Reasoning:             fmt.Sprintf("route=%s", route),
-		Timeframe:             tfAns.Choice,
-		TimeframeDistribution: tfAns.Probabilities,
-		TimeframeConfidence:   tfAns.Confidence,
+		Decision:               decision,
+		Confidence:             entryConf,
+		Reasoning:              fmt.Sprintf("route=%s", route),
+		Timeframe:              tfAns.Choice,
+		TimeframeDistribution:  tfAns.Probabilities,
+		TimeframeConfidence:    tfAns.Confidence,
 		ParameterModes:         modesJSON,
 		ParameterValues:        valsJSON,
 		ParameterDistributions: distsJSON,

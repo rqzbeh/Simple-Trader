@@ -99,9 +99,8 @@ ROUTING_CONFIDENCE_THRESHOLD=0.75
 	}
 }
 
-// TestApplyEnvFile verifies the startup .env hydration: keys from ENV_FILE
-// reach the process env (settings persistence across restarts, spec-015
-// convergence 2026-09-29 — compose interpolates only a subset of keys).
+// TestApplyEnvFile: standard dotenv semantics — existing process env wins
+// (compose-built DATABASE_URL survives), file fills everything else.
 func TestApplyEnvFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, ".env")
@@ -118,18 +117,18 @@ func TestApplyEnvFile(t *testing.T) {
 	}
 
 	t.Setenv("ENV_FILE", path)
-	t.Setenv("EARLY_EXIT_ENABLED", "true") // file must win
-	t.Setenv("TIMEFRAME_SET_ALPHA", "")
+	t.Setenv("EARLY_EXIT_ENABLED", "true") // process env must win
+	t.Setenv("TIMEFRAME_SET_ALPHA", "")    // present-but-empty also wins (explicit)
 	ApplyEnvFile()
 
-	if v := os.Getenv("EARLY_EXIT_ENABLED"); v != "false" {
-		t.Errorf("EARLY_EXIT_ENABLED = %q, want file value false (file is source of truth)", v)
+	if v := os.Getenv("EARLY_EXIT_ENABLED"); v != "true" {
+		t.Errorf("EARLY_EXIT_ENABLED = %q, want process env true to win (dotenv semantics)", v)
 	}
-	if v := os.Getenv("TIMEFRAME_SET_ALPHA"); v != "15m,4h" {
-		t.Errorf("TIMEFRAME_SET_ALPHA = %q, want 15m,4h from file", v)
+	if v := os.Getenv("TIMEFRAME_SET_ALPHA"); v != "" {
+		t.Errorf("TIMEFRAME_SET_ALPHA = %q, want process env empty to win", v)
 	}
 	if v := os.Getenv("UPSTREAM_PROXY_URL"); v != "socks5://127.0.0.1:1080" {
-		t.Errorf("UPSTREAM_PROXY_URL = %q, want file value", v)
+		t.Errorf("UPSTREAM_PROXY_URL = %q, want file value (absent in process)", v)
 	}
 	if v := os.Getenv("QUOTED_KEY"); v != "quoted value" {
 		t.Errorf("QUOTED_KEY = %q, want unquoted file value", v)
@@ -139,7 +138,7 @@ func TestApplyEnvFile(t *testing.T) {
 	}
 }
 
-// TestApplyEnvFile_NoFileNoop: no ENV_FILE / missing file = no crash, env untouched.
+// TestApplyEnvFile_CwdFallback + no-file noop.
 func TestApplyEnvFile_NoFileNoop(t *testing.T) {
 	t.Setenv("ENV_FILE", "")
 	ApplyEnvFile()
