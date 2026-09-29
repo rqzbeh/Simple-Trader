@@ -112,3 +112,5 @@ Every trade records, per parameter, whether the value was `user_override` or `co
 - Regression: `TestResolveEntry_DefersDecayAnswer`.
 
 **Evidence**: full suite 11/11, `-race` clean, targeted tests 5 PASS.
+
+**Addendum (2026-09-29, settings→.env persistence)**: `docker-compose*.yml` injected `MIN_RISK_TO_REWARD_RATIO:-2.5`, `DEFAULT_LEVERAGE:-8`, `MAX_RISK_PER_TRADE_PCT:-0.02` — an unset .env key still became a user override inside the container. Compose defaults for all 7 spec-015 keys removed (unset ⇒ genuinely unset). Additionally the process never read `ENV_FILE` (only wrote it), so `EARLY_EXIT_*`, `TIMEFRAME_SET_*`, `UPSTREAM_PROXY_URL`, `SHADOW_*` edits survived only until container restart. Added `config.ApplyEnvFile()` (stdlib parser, called in `main()` and `Load()`): .env file entries hydrate the process env before any key is read — file wins, missing file = no-op. Tests: `TestApplyEnvFile`, `TestApplyEnvFile_NoFileNoop`.

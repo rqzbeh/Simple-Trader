@@ -67,3 +67,55 @@ func TestValidateChoiceVocabularyAndSum(t *testing.T) {
 		t.Fatal("BUY must fail validation (FR-005)")
 	}
 }
+
+// TestUpstreamTransport_DirectByDefault: proxy is optional — no
+// UPSTREAM_PROXY_URL in .env means a DIRECT connection even when ambient
+// HTTP_PROXY/ALL_PROXY variables exist (2026-09-29 requirement).
+func TestUpstreamTransport_DirectByDefault(t *testing.T) {
+	t.Setenv("UPSTREAM_PROXY_URL", "")
+	t.Setenv("HTTP_PROXY", "http://ambient-proxy:3128")
+	t.Setenv("HTTPS_PROXY", "http://ambient-proxy:3128")
+
+	tr, ok := upstreamTransport().(*http.Transport)
+	if !ok {
+		t.Fatalf("upstreamTransport returned %T, want *http.Transport", upstreamTransport())
+	}
+	if tr.Proxy != nil {
+		// Force evaluation: ambient proxy must NOT engage by default.
+		req, _ := http.NewRequest(http.MethodGet, "https://api.typesafe.ai/v1", nil)
+		u, err := tr.Proxy(req)
+		if err != nil {
+			t.Fatalf("proxy func error: %v", err)
+		}
+		if u != nil {
+			t.Errorf("default must be DIRECT, ambient proxy resolved to %s", u)
+		}
+	}
+}
+
+// TestUpstreamTransport_ProxyWhenSet: user-provided socks5/http proxy engages.
+func TestUpstreamTransport_ProxyWhenSet(t *testing.T) {
+	t.Setenv("UPSTREAM_PROXY_URL", "socks5://127.0.0.1:1080")
+	tr, ok := upstreamTransport().(*http.Transport)
+	if !ok || tr.Proxy == nil {
+		t.Fatalf("proxy must be configured when UPSTREAM_PROXY_URL is set")
+	}
+	req, _ := http.NewRequest(http.MethodGet, "https://api.typesafe.ai/v1", nil)
+	u, err := tr.Proxy(req)
+	if err != nil {
+		t.Fatalf("proxy func error: %v", err)
+	}
+	if u == nil || u.Scheme != "socks5" {
+		t.Errorf("proxy = %v, want socks5://127.0.0.1:1080", u)
+	}
+}
+
+// TestUpstreamTransport_InvalidValueStaysDirect: malformed value cannot route
+// traffic somewhere unintended (startup validation rejects it loudly in config).
+func TestUpstreamTransport_InvalidValueStaysDirect(t *testing.T) {
+	t.Setenv("UPSTREAM_PROXY_URL", "ftp://bad-scheme")
+	tr := upstreamTransport().(*http.Transport)
+	if tr.Proxy != nil {
+		t.Errorf("invalid scheme must not configure a proxy")
+	}
+}

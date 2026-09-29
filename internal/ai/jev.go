@@ -231,11 +231,15 @@ func ValidateChoice(ans JevAnswer, allowed map[string]bool, cycleID string) erro
 
 
 // upstreamTransport applies optional UPSTREAM_PROXY_URL (socks5:// or http://)
-// to decision-core outbound traffic; nil-safe stdlib default otherwise.
+// to decision-core outbound traffic. Default is a DIRECT connection: the
+// proxy engages only when the user sets UPSTREAM_PROXY_URL in .env (the
+// stdlib ProxyFromEnvironment default would otherwise silently honor ambient
+// HTTP_PROXY/ALL_PROXY variables).
 func upstreamTransport() http.RoundTripper {
 	base := http.DefaultTransport.(*http.Transport).Clone()
+	base.Proxy = nil // direct unless UPSTREAM_PROXY_URL is set
 	if p := strings.TrimSpace(os.Getenv("UPSTREAM_PROXY_URL")); p != "" {
-		if u, err := url.Parse(p); err == nil && u.Scheme != "" {
+		if u, err := url.Parse(p); err == nil && (u.Scheme == "socks5" || u.Scheme == "http" || u.Scheme == "https") && u.Host != "" {
 			base.Proxy = http.ProxyURL(u)
 		}
 	}

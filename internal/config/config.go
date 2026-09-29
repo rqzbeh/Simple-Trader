@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -88,6 +89,20 @@ func getEnvInt(key string, defaultVal int) int {
 
 // Load parses environment variables and returns a validated Config.
 func Load() (*Config, error) {
+	// .env file is the single source of truth: load it into the process env
+	// before any key is read (settings UI persists there; compose interpolates
+	// only a subset of keys).
+	ApplyEnvFile()
+
+	// UPSTREAM_PROXY_URL is optional: unset = DIRECT connection. A set-but-
+	// invalid value is a startup error — never a silent direct fallback.
+	if p := strings.TrimSpace(os.Getenv("UPSTREAM_PROXY_URL")); p != "" {
+		u, err := url.Parse(p)
+		if err != nil || (u.Scheme != "socks5" && u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return nil, fmt.Errorf("config: UPSTREAM_PROXY_URL invalid: need socks5://host:port or http://host:port, got %q", p)
+		}
+	}
+
 	earlyExit, err := LoadEarlyExitConfig()
 	if err != nil {
 		return nil, err

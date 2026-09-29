@@ -24,6 +24,10 @@ func main() {
 	log.Println("Simple-Trader v3.1 • Autonomous Go & Decision Core Engine Starting...")
 	log.Println("==========================================================")
 
+	// The .env file is the single source of truth — hydrate the process env
+	// before anything reads configuration keys.
+	config.ApplyEnvFile()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

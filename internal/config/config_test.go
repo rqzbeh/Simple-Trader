@@ -50,3 +50,20 @@ func TestLoadConfig_EnvOverrides(t *testing.T) {
 		t.Errorf("expected AIBaseURL http://localhost:11434/v1, got %s", cfg.AIBaseURL)
 	}
 }
+
+// TestLoadConfig_ProxyOptional: unset = direct (no error); invalid = startup
+// error (zero-fallback — never a silent direct).
+func TestLoadConfig_ProxyOptional(t *testing.T) {
+	t.Setenv("UPSTREAM_PROXY_URL", "")
+	if _, err := config.Load(); err != nil {
+		t.Errorf("unset proxy must be valid (direct): %v", err)
+	}
+	t.Setenv("UPSTREAM_PROXY_URL", "socks5://127.0.0.1:1080")
+	if _, err := config.Load(); err != nil {
+		t.Errorf("valid socks5 proxy must load: %v", err)
+	}
+	t.Setenv("UPSTREAM_PROXY_URL", "ftp://nope")
+	if _, err := config.Load(); err == nil {
+		t.Errorf("invalid proxy scheme must fail loud at startup")
+	}
+}

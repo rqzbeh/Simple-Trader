@@ -120,7 +120,7 @@ Spec: [`specs/013-jev-shadow-eval/spec.md`](specs/013-jev-shadow-eval/spec.md) �
 git clone https://github.com/rqzbeh/Simple-Trader.git
 cd Simple-Trader
 cp .env.example .env
-# Edit .env: TYPESAFE_API_KEY (Jev), NINEROUTER_URL/KEY (9Router), admin password, risk bounds
+# Edit .env: TYPESAFE_API_KEY (Jev), AI_API_KEY/AI_BASE_URL/AI_MODEL_ID (gateway), ROUTING_CONFIDENCE_THRESHOLD, ADMIN_PASSWORD
 docker compose up -d
 ```
 
@@ -204,31 +204,55 @@ No ML runs inside the serving backend. ML Engine UI, GPU trainers, training hand
 
 **Settings → `.env`**: Decision Core threshold, risk bounds, guard keys (`EARLY_EXIT_*`), timeframe sets (`TIMEFRAME_SET_*`) — edited in UI, persisted atomically, applied live.
 
-```env
-# Decision Core (Jev) + Early Exit + Timeframe
-TYPESAFE_API_KEY=
-ROUTING_CONFIDENCE_THRESHOLD=0.75
-EARLY_EXIT_ENABLED=true
-EARLY_EXIT_MIN_HOLD_MIN=30
-EARLY_EXIT_MAX_PER_DAY=3
-EARLY_EXIT_COOLDOWN_MIN=60
-EARLY_EXIT_CONF_FLOOR=0.75
-TIMEFRAME_SET_ALPHA=15m,1h,4h
-TIMEFRAME_SET_CORE=1h,4h,12h
+### Required — app fails or core features break without these
 
-# 9Router gateway
-NINEROUTER_URL=https://your-gateway/v1
-NINEROUTER_KEY=
-AI_MODEL_ID=
+| Key | Purpose |
+|---|---|
+| `TYPESAFE_API_KEY` | Jev (System One) auth — boot FATAL if missing and `JEV_DISABLE` unset |
+| `ROUTING_CONFIDENCE_THRESHOLD` | Jev → 9Router escalation cutoff (0..1). No default by design (spec-013 FR-016) |
+| `AI_API_KEY` · `AI_BASE_URL` · `AI_MODEL_ID` | OpenAI-compatible gateway (news classify + escalation) — unset key = explicit per-cycle `llm-classifier` error |
+| `ADMIN_PASSWORD` | UI access gate — required in production |
+| `APP_SECRET` | session-token signing |
+| `POSTGRES_USER` · `POSTGRES_PASSWORD` · `POSTGRES_DB` | database (compose builds `DATABASE_URL`) |
 
-# Server & risk
-PORT=8080
-DATABASE_URL=postgres://trader:REDACTED_DB_PASSWORD@localhost:5432/simple_trader?sslmode=disable
-REDIS_URL=redis://localhost:6379/0
-MAX_CONCURRENT_SIGNALS=5
-MIN_RISK_TO_REWARD_RATIO=2.5
-ADMIN_PASSWORD=your_secure_admin_password
-```
+### Optional — unset = decision core manages (spec-015)
+
+Judgment parameters. **Unset/empty → Jev picks the value each cycle** (clamped to hard mechanical bounds). **Set a value → user override wins, core is never asked.** The mode used is recorded per signal and shown in System Stats.
+
+`MIN_RISK_TO_REWARD_RATIO` · `DEFAULT_LEVERAGE` · `MAX_RISK_PER_TRADE_PCT` · `SL_ATR_MULT` · `TP_ATR_MULT` · `CLUSTER_DECAY_MODE` · `CONFLUENCE_MIN`
+
+### Optional — built-in defaults
+
+Delete any of these lines; code uses the default. An invalid value = explicit startup error (never a silent fallback).
+
+| Key | Default |
+|---|---|
+| `PORT` | `8080` |
+| `AI_TEMPERATURE` / `AI_TIMEOUT_SECONDS` / `AI_REASONING_EFFORT` | `0.2` / `30` / `high` |
+| `INITIAL_CAPITAL` | `10000` |
+| `CORE_TARGET_PCT` / `ALPHA_TARGET_PCT` | `0.50` / `0.50` |
+| `KELLY_FRACTION` / `IMPACT_FACTOR` | `0.50` / `0.05` |
+| `MIN_RISK_PER_TRADE_PCT` / `MAX_DRAWDOWN_LIMIT_PCT` | `0.005` / `0.08` |
+| `MAX_CONCURRENT_SIGNALS` | `5` |
+| `MIN_STOP_LOSS_PCT` / `MAX_STOP_LOSS_PCT` | `0.6` / `2.5` |
+| `MIN_TAKE_PROFIT_PCT` / `MAX_TAKE_PROFIT_PCT` | `1.5` / `8.0` |
+| `MAKER_FEE_RATE` / `TAKER_FEE_RATE` | `0.0002` / `0.0005` |
+| `MAX_SLIPPAGE_PCT` / `MAX_TRADE_MARGIN_PCT` | `0.05` / `0.20` |
+| `SIGNAL_MAX_AGE_MINUTES` | `60` |
+| `CALENDAR_HALT_MINUTES` / `ECONOMIC_CALENDAR_URL` | `15` / faireconomy weekly JSON |
+| `SCREENER_MIN_24H_VOLUME` / `SCREENER_MAX_SPREAD_BPS` | `50000000` / `10` |
+
+### Optional — feature keys
+
+| Key | Behavior when unset |
+|---|---|
+| `EARLY_EXIT_ENABLED`, `EARLY_EXIT_MIN_HOLD_MIN`, `EARLY_EXIT_MAX_PER_DAY`, `EARLY_EXIT_COOLDOWN_MIN`, `EARLY_EXIT_CONF_FLOOR` | built-in defaults (spec-014); invalid value = boot error |
+| `TIMEFRAME_SET_ALPHA` / `TIMEFRAME_SET_CORE` | built-in sets `15m,1h,4h` / `1h,4h,12h` (spec-016) |
+| `SHADOW_ENTRY` / `SHADOW_EXIT` / `SHADOW_NEWS` | enabled (`false` disables a channel) |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Telegram notifications off |
+| `UPSTREAM_PROXY_URL` | direct connection (`socks5://host:port` or `http://host:port` routes Jev/9Router traffic) |
+| `JEV_DISABLE` | decision core on |
+| `ENV` | `development` |
 
 **Fail-fast**: missing threshold/key at boot = startup error. Feeder failure = named error in state. Nothing silently pretends to be healthy.
 

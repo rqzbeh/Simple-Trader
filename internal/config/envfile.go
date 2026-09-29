@@ -137,3 +137,41 @@ func UpsertEnv(path string, kv map[string]string) error {
 	_ = os.Chmod(path, 0600)
 	return nil
 }
+
+// ApplyEnvFile loads KEY=VALUE lines from the ENV_FILE path into the process
+// environment. The .env file is the single source of truth (the settings UI
+// writes there): compose interpolates only a subset of keys, so without this
+// load EARLY_EXIT_*/TIMEFRAME_SET_*/UPSTREAM_PROXY_URL edits would silently
+// vanish on container restart. File entries win over process env. No-op when
+// ENV_FILE is unset or the file does not exist.
+func ApplyEnvFile() {
+	path := os.Getenv("ENV_FILE")
+	if path == "" {
+		return
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		line := strings.TrimSpace(sc.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		key, val, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		if key == "" {
+			continue
+		}
+		val = strings.TrimSpace(val)
+		if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+			val = val[1 : len(val)-1]
+		}
+		_ = os.Setenv(key, val)
+	}
+}

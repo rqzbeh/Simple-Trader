@@ -98,3 +98,51 @@ ROUTING_CONFIDENCE_THRESHOLD=0.75
 		t.Errorf("expected NEW_KEY=new_value")
 	}
 }
+
+// TestApplyEnvFile verifies the startup .env hydration: keys from ENV_FILE
+// reach the process env (settings persistence across restarts, spec-015
+// convergence 2026-09-29 — compose interpolates only a subset of keys).
+func TestApplyEnvFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, ".env")
+	content := "" +
+		"# comment line\n" +
+		"\n" +
+		"EARLY_EXIT_ENABLED=false\n" +
+		"TIMEFRAME_SET_ALPHA=15m,4h\n" +
+		"UPSTREAM_PROXY_URL=socks5://127.0.0.1:1080\n" +
+		"QUOTED_KEY=\"quoted value\"\n" +
+		"BROKEN_LINE_NO_EQUALS\n"
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write temp env: %v", err)
+	}
+
+	t.Setenv("ENV_FILE", path)
+	t.Setenv("EARLY_EXIT_ENABLED", "true") // file must win
+	t.Setenv("TIMEFRAME_SET_ALPHA", "")
+	ApplyEnvFile()
+
+	if v := os.Getenv("EARLY_EXIT_ENABLED"); v != "false" {
+		t.Errorf("EARLY_EXIT_ENABLED = %q, want file value false (file is source of truth)", v)
+	}
+	if v := os.Getenv("TIMEFRAME_SET_ALPHA"); v != "15m,4h" {
+		t.Errorf("TIMEFRAME_SET_ALPHA = %q, want 15m,4h from file", v)
+	}
+	if v := os.Getenv("UPSTREAM_PROXY_URL"); v != "socks5://127.0.0.1:1080" {
+		t.Errorf("UPSTREAM_PROXY_URL = %q, want file value", v)
+	}
+	if v := os.Getenv("QUOTED_KEY"); v != "quoted value" {
+		t.Errorf("QUOTED_KEY = %q, want unquoted file value", v)
+	}
+	if v := os.Getenv("BROKEN_LINE_NO_EQUALS"); v != "" {
+		t.Errorf("line without = must be skipped, got %q", v)
+	}
+}
+
+// TestApplyEnvFile_NoFileNoop: no ENV_FILE / missing file = no crash, env untouched.
+func TestApplyEnvFile_NoFileNoop(t *testing.T) {
+	t.Setenv("ENV_FILE", "")
+	ApplyEnvFile()
+	t.Setenv("ENV_FILE", filepath.Join(t.TempDir(), "does-not-exist.env"))
+	ApplyEnvFile()
+}
