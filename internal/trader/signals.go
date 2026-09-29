@@ -204,6 +204,7 @@ func (s *SignalService) EvaluateMarketSignal(
 	headlines []string,
 	totalEquity float64,
 	availableAlphaCapital float64,
+	preGates map[string]string,
 	catalysts ...CatalystMeta,
 ) (*db.FuturesTradeSignal, *ai.DecisionResponse, error) {
 	if quote.Price <= 0 {
@@ -233,6 +234,18 @@ func (s *SignalService) EvaluateMarketSignal(
 	if decProfErr == nil && decProf.HorizonMin > 0 {
 		horizonMin = decProf.HorizonMin
 	}
+	// Real pre-AI gate outcomes (spec-018 FR-501) + facts this layer owns.
+	gates := make(map[string]string, len(preGates)+3)
+	for k, v := range preGates {
+		gates[k] = v
+	}
+	if len(headlines) > 0 {
+		gates["catalyst_headlines"] = "present"
+	} else {
+		gates["catalyst_headlines"] = "absent"
+	}
+	gates["capital_available"] = "clear"
+
 	decReq := ai.DecisionRequest{
 		Symbol:         symbol,
 		Bucket:         bucket,
@@ -241,6 +254,7 @@ func (s *SignalService) EvaluateMarketSignal(
 		Weights:        weights,
 		NewsHeadlines:  headlines,
 		HorizonMinutes: horizonMin,
+		Gates:          gates,
 	}
 
 	// Core-classified sentiment packet (semantic, Jev+9Router). Failure is an
@@ -276,6 +290,8 @@ func (s *SignalService) EvaluateMarketSignal(
 	// confidence are stored as separate values (FR-012).
 	var catMeta *CatalystMeta
 	if len(catalysts) > 0 {
+		gates["catalyst_cluster"] = "present"
+		decReq.Gates = gates
 		catMeta = &catalysts[0]
 		decReq.CatalystEvents = []ai.CatalystEventInput{{
 			Headline:   catMeta.Headline,
@@ -827,10 +843,10 @@ func (s *SignalService) settleAndClose(ctx context.Context, sig *db.FuturesTrade
 // consumed by signal assembly (position intent → BUY/SELL mapping unchanged).
 // Timeframe choice rides the same batched request (spec-016 FR-201).
 func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req ai.DecisionRequest) (*ai.DecisionResponse, error) {
-	state, err := BuildState(symbol, time.Now().UTC().Format(time.RFC3339),
-		snapToMap(req.IndicatorSnap), 1.5, 3.0,
-		market.NewsSentimentReport{HeadlineCount: len(req.NewsHeadlines)},
-		FeedState{}, map[string]string{})
+	// spec-018 FR-501: evidence-complete state from the REAL request data
+	// (headlines, catalysts, buckets, hydrated gates). The old builder fed a
+	// headline COUNT and fabricated ATR levels — both deleted.
+	state, err := BuildEntryState(symbol, time.Now().UTC().Format(time.RFC3339), req, req.Gates)
 	if err != nil {
 		return nil, err
 	}
@@ -876,13 +892,27 @@ func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req a
 		return nil, err
 	}
 
-	// Validate entry choice ∈ entryVocab
-	entryAns, ok := answers["entry"]
+	// spec-018 FR-502/503: validate the split answers, then compose.
+	dirAns, ok := answers["direction"]
 	if !ok {
-		return nil, ai.WrapDecision("entry", cycle, ai.ErrJevSchema, "missing entry answer in batch")
+		return nil, ai.WrapDecision("direction", cycle, ai.ErrJevSchema, "missing direction answer in batch")
 	}
-	if err := ai.ValidateChoice(entryAns, entryVocab, cycle); err != nil {
+	if err := ai.ValidateChoice(dirAns, directionVocab, cycle); err != nil {
 		return nil, err
+	}
+	edgeAns, ok := answers["edge"]
+	if !ok || edgeAns.Noul == nil {
+		return nil, ai.WrapDecision("edge", cycle, ai.ErrJevSchema, "missing edge noul answer in batch")
+	}
+	edgeProb := *edgeAns.Noul
+	if edgeProb < 0 || edgeProb > 1 {
+		return nil, ai.WrapDecision("edge", cycle, ai.ErrJevSchema, fmt.Sprintf("edge noul out of range: %v", edgeProb))
+	}
+	composedChoice := "NO_TRADE"
+	composedConf := 1 - edgeProb
+	if edgeProb >= edgeConfirmFloor {
+		composedChoice = dirAns.Choice
+		composedConf = math.Min(dirAns.Confidence, edgeProb)
 	}
 
 	// Resolve managed trade parameters (spec-015 FR-302, FR-307). Entry batch
@@ -898,32 +928,42 @@ func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req a
 		return nil, fmt.Errorf("component=managed-params cycle=%s: package params: %w", cycle, err)
 	}
 
-	entryChoice := entryAns.Choice
-	entryConf := entryAns.Confidence
+	entryChoice := composedChoice
+	entryConf := composedConf
 	route := "jev_direct"
 	baseline := ""
 
-	if entryAns.Confidence < thr {
+	if composedConf < thr {
 		if s.router.Escalate == nil {
 			return nil, ai.WrapDecision("router", cycle, ai.ErrLLMClassify, "confidence below threshold but no escalation path configured")
 		}
 		// Pass the full request: escalation judges the same symbols,
 		// indicators and headlines the entry cycle saw (spec-013 FR-003).
-		// Passing `state` here previously produced an empty dummy payload.
 		esc, err := s.router.Escalate(ctx, req)
 		if err != nil {
 			return nil, ai.WrapDecision("router", cycle, ai.ErrLLMClassify, "escalation failed: "+err.Error())
 		}
-		entryChoice = esc.Choice
-		entryConf = esc.Confidence
-		route = "escalated"
-		baseline = entryAns.Choice
+		if !entryVocab[esc.Choice] {
+			return nil, ai.WrapDecision("router", cycle, ai.ErrJevSchema, "escalated choice outside vocabulary: "+esc.Choice)
+		}
+		// spec-018 FR-504: trust the NUMBERS — the higher-confidence answer
+		// wins. A 0.15 HOLD must not silently beat a 0.76 direction.
+		baseline = composedChoice
+		if esc.Confidence > composedConf {
+			entryChoice = esc.Choice
+			entryConf = esc.Confidence
+			route = "escalated"
+		} else {
+			entryChoice = composedChoice
+			entryConf = composedConf
+			route = "escalated_jev_kept"
+		}
 	}
 
 	// Decision telemetry (2026-09-29 research): both brains, the threshold,
 	// and feed sizes in one line — the evidence trail for confidence work.
-	log.Printf("[DECISION] cycle=%s route=%s jev=%s/%.2f final=%s/%.2f thr=%.2f batch_q=%d headlines=%d",
-		cycle, route, entryAns.Choice, entryAns.Confidence, entryChoice, entryConf, thr, len(questions), len(req.NewsHeadlines))
+	log.Printf("[DECISION] cycle=%s route=%s jev=%s/%.2f edge=%.2f final=%s/%.2f thr=%.2f batch_q=%d headlines=%d",
+		cycle, route, composedChoice, composedConf, edgeProb, entryChoice, entryConf, thr, len(questions), len(req.NewsHeadlines))
 
 	// Position intent only — execution layer maps to order sides (FR-005).
 	decision := "HOLD"
@@ -946,12 +986,22 @@ func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req a
 		ParameterClamps:        clampsJSON,
 	}
 	if s.shadow != nil {
-		s.shadow.JudgeEntry(cycle, symbol, state, questions, entryVocab, baseline)
+		s.shadow.JudgeEntry(cycle, symbol, state, questions, directionVocab, baseline)
 	}
 	return resp, nil
 }
 
 var entryVocab = map[string]bool{"LONG": true, "SHORT": true, "NO_TRADE": true}
+
+// directionVocab: the relative direction Choice — deliberately WITHOUT
+// NO_TRADE (docs: a catch-all option absorbs probability and starves
+// confidence; NO_TRADE is composed in code, FR-503).
+var directionVocab = map[string]bool{"LONG": true, "SHORT": true}
+
+// edgeConfirmFloor: probability at which the absolute edge Noul confirms a
+// setup (0.5 = more likely than not). Policy constant (code), not tunable
+// config — documented in TradingPolicyText.
+const edgeConfirmFloor = 0.5
 
 // snapToMap flattens the snapshot into context fields (pre-computed — the
 // core never does arithmetic, research.md rule).
@@ -970,17 +1020,41 @@ func EntryQuestions(bucketOpt ...string) map[string]ai.JevQuestion {
 	if len(bucketOpt) > 0 && bucketOpt[0] != "" {
 		bucket = bucketOpt[0]
 	}
+	// spec-018 FR-502: the mega-choice is split per TypeSafe docs — a
+	// RELATIVE direction Choice (no NO_TRADE attractor, no numeric clauses,
+	// rubrics reference only state fields that exist) plus an ABSOLUTE edge
+	// Noul. Code composes NO_TRADE (FR-503).
 	return map[string]ai.JevQuestion{
-		"entry": {
+		"direction": {
 			Type: "choice",
 			Instructions: map[string]interface{}{
-				"question": "Position intent for this perpetual futures symbol given the state.",
-				"not_for":  "order sides; execution layer owns BUY/SELL conversion",
+				"question": "Which direction do `headlines`, `catalysts`, `semantic` and `indicators` support for this setup?",
+				"not_for":  "trade viability — the `edge` answer decides whether to trade; order sides belong to the execution layer",
+				"evidence": "`headlines`, `catalysts`, `semantic.supertrend`, `semantic.trend`, `semantic.confluence_band`, `indicators`",
 			},
-			Criteria: map[string]string{
-				"LONG":     "Enter long: uptrend confirmed (Price > EMA, RSI 40-70, SuperTrend green), catalyst aligns, risk gate passes",
-				"SHORT":    "Enter short: downtrend confirmed (Price < EMA, RSI 30-60, SuperTrend red), catalyst aligns, risk gate passes",
-				"NO_TRADE": "No edge, mixed signals, or gate failure",
+			Criteria: map[string]interface{}{
+				"LONG": map[string]interface{}{
+					"covers":   "upward directional opportunity the visible evidence supports",
+					"basis":    "`semantic.supertrend` bull or `semantic.trend` above_vwap, agreeing with supportive `catalysts` and `headlines`",
+					"not_for":  "weak, mixed, or downside-leaning evidence",
+					"examples": []string{"supertrend bull plus a positive catalyst cluster", "above_vwap momentum confirmed by bullish headlines"},
+				},
+				"SHORT": map[string]interface{}{
+					"covers":   "downward directional opportunity the visible evidence supports",
+					"basis":    "`semantic.supertrend` bear or `semantic.trend` below_vwap, agreeing with negative `catalysts` and `headlines`",
+					"not_for":  "weak, mixed, or upside-leaning evidence",
+					"examples": []string{"supertrend bear plus a negative catalyst cluster", "below_vwap weakness confirmed by bearish headlines"},
+				},
+			},
+		},
+		"edge": {
+			Type: "noul",
+			Instructions: map[string]interface{}{
+				"question": "Do `headlines`/`catalysts` together with `semantic` and `indicators` show a confirmed setup worth a paper trade right now?",
+			},
+			Criteria: map[string]interface{}{
+				"true":  "a credible catalyst story exists and the technical picture agrees; `gates_as_fields` show checks cleared",
+				"false": "no credible catalyst, contradictory evidence, or gates not cleared",
 			},
 		},
 		"timeframe": TimeframeQuestion(bucket),

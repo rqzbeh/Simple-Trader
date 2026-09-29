@@ -101,6 +101,7 @@ func runGate(t *testing.T, store *recordingStore, snap cache.IndicatorSnapshot, 
 		nil,
 		100000.0,
 		40000.0,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("EvaluateMarketSignal failed: %v", err)

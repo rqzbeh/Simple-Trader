@@ -626,6 +626,29 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol string, headli
 		}
 	}
 
+	// Pre-AI gate outcomes (spec-018 FR-501): every guard listed here either
+	// ran and passed above, or is honestly marked not_applicable. Failures
+	// already returned HOLD before this point — these are REAL outcomes.
+	preGates := map[string]string{
+		"polarization":         "clear",
+		"calendar_halt":        "clear",
+		"correlated_positions": "clear",
+		"capital_available":    "clear",
+	}
+	if prof.WeekendFlat {
+		preGates["weekend_gap"] = "clear"
+		preGates["event_blackout"] = "clear"
+	} else {
+		preGates["weekend_gap"] = "not_applicable"
+		preGates["event_blackout"] = "not_applicable"
+	}
+	if s.calendar == nil {
+		preGates["calendar_halt"] = "not_applicable"
+	}
+	if s.catalystClusterer == nil {
+		preGates["polarization"] = "not_applicable"
+	}
+
 	signalSvc := s.newSignalService(ctx)
 	sig, decision, err := signalSvc.EvaluateMarketSignal(
 		ctx,
@@ -637,6 +660,7 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol string, headli
 		headlines,
 		totalEquity,
 		unreservedAlphaCapital,
+		preGates,
 		metaSlice(catalystMeta)...,
 	)
 	if err != nil {

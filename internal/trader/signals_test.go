@@ -59,6 +59,7 @@ func TestSignalService_EvaluateMarketSignal(t *testing.T) {
 
 	sig, _, err := service.EvaluateMarketSignal(
 		ctx, "BTC/USD", "ALPHA", quote, snap, nil, headlines, 100000.0, 40000.0,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -101,6 +102,7 @@ func TestSignalService_EvaluateMarketSignal(t *testing.T) {
 
 	sigBear, _, err := serviceBear.EvaluateMarketSignal(
 		ctx, "BTC/USD", "ALPHA", quote, snap, nil, []string{"Whale deposit of 45k BTC to Binance detected."}, 100000.0, 40000.0,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -129,6 +131,7 @@ func TestSignalService_EvaluateMarketSignal(t *testing.T) {
 	serviceHold.SetNewsClassifier(stubClassifier())
 	sigHold, decisionHold, err := serviceHold.EvaluateMarketSignal(
 		ctx, "BTC/USD", "ALPHA", quote, snap, nil, nil, 100000.0, 40000.0,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error on hold: %v", err)
@@ -224,6 +227,7 @@ func TestSignalService_DynamicConfigEnforcement(t *testing.T) {
 
 	sig, _, err := service.EvaluateMarketSignal(
 		ctx, "ETH/USDT", "ALPHA", quote, snap, nil, []string{"Federal Reserve liquidity announcement"}, 100000.0, 40000.0,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

@@ -20,6 +20,12 @@ func mockJevServerWithBatch(answers map[string]interface{}) *httptest.Server {
 		fullAnswers := map[string]interface{}{
 			// Docs-shaped Score answers: probability-weighted LEVEL INDEX via
 			// probabilities keyed by level index (docs.typesafe.ai/api).
+			"direction": map[string]interface{}{
+				"type": "choice", "choice": "LONG", "confidence": 0.9,
+				"probabilities": map[string]float64{"LONG": 0.9, "SHORT": 0.1},
+				"legend":        map[string]string{},
+			},
+			"edge": map[string]interface{}{"type": "noul", "noul": 0.9},
 			"min_rr_accept": map[string]interface{}{"type": "score", "score": 2.3, "confidence": 0.8,
 				"probabilities": map[string]float64{"1": 0.3, "2": 0.7},
 				"legend":        map[string]string{"0": "Reject <1.5", "1": "Marginal 1.5-2.5", "2": "Accept 2.5-4", "3": "Strong >4"}},
@@ -97,6 +103,7 @@ func TestEntryPath_TimeframeValid(t *testing.T) {
 
 	sig, resp, err := service.EvaluateMarketSignal(
 		ctx, "BTC/USD", "ALPHA", quote, snap, nil, headlines, 100000.0, 40000.0,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -182,6 +189,7 @@ func TestEntryPath_TimeframeInvalid_AbortsLoud(t *testing.T) {
 
 	sig, _, err := service.EvaluateMarketSignal(
 		ctx, "BTC/USD", "ALPHA", quote, snap, nil, headlines, 100000.0, 40000.0,
+		nil,
 	)
 	if err == nil {
 		t.Fatalf("expected error for invalid timeframe choice, got nil")
@@ -234,6 +242,7 @@ func TestEntryPath_TimeframeMissing_AbortsLoud(t *testing.T) {
 
 	sig, _, err := service.EvaluateMarketSignal(
 		ctx, "BTC/USD", "ALPHA", quote, snap, nil, headlines, 100000.0, 40000.0,
+		nil,
 	)
 	if err == nil {
 		t.Fatalf("expected error for missing timeframe answer, got nil")
@@ -259,10 +268,11 @@ func TestEntryPath_TimeframeMissing_AbortsLoud(t *testing.T) {
 func TestEntryPath_EscalationReceivesRealPayload(t *testing.T) {
 	ctx := context.Background()
 	answers := map[string]interface{}{
-		"entry": map[string]interface{}{
+		"direction": map[string]interface{}{
 			"type": "choice", "choice": "LONG", "confidence": 0.50,
-			"probabilities": map[string]float64{"LONG": 0.50, "NO_TRADE": 0.30, "SHORT": 0.20},
+			"probabilities": map[string]float64{"LONG": 0.50, "SHORT": 0.50},
 		},
+		"edge": map[string]interface{}{"type": "noul", "noul": 0.9}, // composed conf = min(0.50,0.9)=0.50 < 0.70
 		"timeframe": map[string]interface{}{
 			"type": "choice", "choice": "1h", "confidence": 0.88,
 			"probabilities": map[string]float64{"15m": 0.10, "1h": 0.80, "4h": 0.10},
@@ -291,6 +301,7 @@ func TestEntryPath_EscalationReceivesRealPayload(t *testing.T) {
 
 	sig, resp, err := service.EvaluateMarketSignal(
 		ctx, "BTC/USD", "ALPHA", quote, snap, nil, headlines, 100000.0, 40000.0,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

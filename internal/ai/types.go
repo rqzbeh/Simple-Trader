@@ -22,12 +22,12 @@ type ClientConfig struct {
 // headlines attached to a DecisionRequest, so the model reasons from scored
 // evidence instead of raw text alone.
 type NewsSentimentInput struct {
-	Score         float64  // -1.0 (bearish) to +1.0 (bullish)
-	Polarity      string   // BULLISH, BEARISH, NEUTRAL
-	HeadlineCount int      // Headlines scored
-	BullishCount  int      // Headlines leaning bullish
-	BearishCount  int      // Headlines leaning bearish
-	KeyPhrases    []string // Trigger phrases detected
+	Score         float64  `json:"score"`          // -1.0 (bearish) to +1.0 (bullish)
+	Polarity      string   `json:"polarity"`       // BULLISH, BEARISH, NEUTRAL
+	HeadlineCount int      `json:"headline_count"` // Headlines scored
+	BullishCount  int      `json:"bullish_count"`  // Headlines leaning bullish
+	BearishCount  int      `json:"bearish_count"`  // Headlines leaning bearish
+	KeyPhrases    []string `json:"key_phrases,omitempty"` // Trigger phrases detected
 }
 
 // DecisionRequest bundles market state, indicators, and dynamic weights for LLM inference.
@@ -41,6 +41,9 @@ type DecisionRequest struct {
 	NewsSentiment  *NewsSentimentInput
 	CatalystEvents []CatalystEventInput // clustered events (US3 T036)
 	HorizonMinutes int                 // profile holding horizon for the bucket (US4 T040)
+	// Gates: real outcomes of the pre-AI entry guards that already ran
+	// (spec-018 FR-501) — hydrated state, never an empty placeholder.
+	Gates map[string]string
 }
 
 // CatalystEventInput is the clustered Catalyst Event payload sent to the
