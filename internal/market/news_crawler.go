@@ -25,7 +25,7 @@ type RSSItem struct {
 }
 
 type RSSFeed struct {
-	XMLName xml.Name  `xml:"rss"`
+	XMLName xml.Name `xml:"rss"`
 	Channel struct {
 		Title string    `xml:"title"`
 		Items []RSSItem `xml:"item"`
@@ -44,14 +44,14 @@ func DefaultNewsFeedConfig() NewsFeedConfig {
 	return NewsFeedConfig{
 		PollInterval: 60 * time.Second,
 		FeedURLs: map[string]string{
-			"YahooFinance":            "https://finance.yahoo.com/news/rssindex",
-			"CoinDesk":                "https://www.coindesk.com/arc/outboundfeeds/rss/",
-			"CoinTelegraph":           "https://cointelegraph.com/rss",
-			"Decrypt":                 "https://decrypt.co/feed",
-			"WhaleAlerts":             "https://news.google.com/rss/search?q=crypto+whale+trades+OR+whale+alert+OR+%22large+transfer%22&hl=en-US&gl=US&ceid=US:en",
-			"OnChainWhales":           "https://news.google.com/rss/search?q=arkham+crypto+whale+transfer+OR+lookonchain+alert&hl=en-US&gl=US&ceid=US:en",
-			"PoliticianTrades":        "https://news.google.com/rss/search?q=%22congress+trading%22+OR+%22capitol+trades%22+OR+%22pelosi+trade%22+OR+%22senate+crypto%22&hl=en-US&gl=US&ceid=US:en",
-			"TrumpCryptoVentures":     "https://news.google.com/rss/search?q=%22world+liberty+financial%22+OR+%22donald+trump+crypto%22+OR+%22trump+son%22+crypto&hl=en-US&gl=US&ceid=US:en",
+			"YahooFinance":        "https://finance.yahoo.com/news/rssindex",
+			"CoinDesk":            "https://www.coindesk.com/arc/outboundfeeds/rss/",
+			"CoinTelegraph":       "https://cointelegraph.com/rss",
+			"Decrypt":             "https://decrypt.co/feed",
+			"WhaleAlerts":         "https://news.google.com/rss/search?q=crypto+whale+trades+OR+whale+alert+OR+%22large+transfer%22&hl=en-US&gl=US&ceid=US:en",
+			"OnChainWhales":       "https://news.google.com/rss/search?q=arkham+crypto+whale+transfer+OR+lookonchain+alert&hl=en-US&gl=US&ceid=US:en",
+			"PoliticianTrades":    "https://news.google.com/rss/search?q=%22congress+trading%22+OR+%22capitol+trades%22+OR+%22pelosi+trade%22+OR+%22senate+crypto%22&hl=en-US&gl=US&ceid=US:en",
+			"TrumpCryptoVentures": "https://news.google.com/rss/search?q=%22world+liberty+financial%22+OR+%22donald+trump+crypto%22+OR+%22trump+son%22+crypto&hl=en-US&gl=US&ceid=US:en",
 		},
 	}
 }
@@ -59,16 +59,25 @@ func DefaultNewsFeedConfig() NewsFeedConfig {
 // NewsCrawler continuously polls financial news feeds, deduplicates headlines with SHA-256,
 // scores sentiment via financial NLP, and maintains the latest sentiment state.
 type NewsCrawler struct {
-	mu           sync.RWMutex
-	cfg          NewsFeedConfig
-	httpClient   *http.Client
-	redisClient  *cache.Client
-	dbStore      *db.Store
-	seenHashes   map[string]time.Time
-	articles     []db.NewsArticle
-	running      bool
-	stopChan     chan struct{}
-	classifier   NewsClassifier
+	mu          sync.RWMutex
+	cfg         NewsFeedConfig
+	httpClient  *http.Client
+	redisClient *cache.Client
+	dbStore     *db.Store
+	seenHashes  map[string]time.Time
+	articles    []db.NewsArticle
+	running     bool
+	stopChan    chan struct{}
+	classifier  NewsClassifier
+	onArticle   func(*db.NewsArticle)
+}
+
+// SetOnArticle registers a callback fired for every FRESH ingested headline
+// (spec-020 US-A1 event trigger). Never called for the DB seed backfill.
+func (c *NewsCrawler) SetOnArticle(fn func(*db.NewsArticle)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.onArticle = fn
 }
 
 // SetClassifier injects the core-backed classifier (spec-013, explicit-error).
@@ -274,12 +283,20 @@ func (c *NewsCrawler) FetchFeed(ctx context.Context, source, feedURL string) (in
 				pubTime, _ = time.Parse(time.RFC1123, item.PubDate)
 			}
 		}
-		_, ok, err := c.IngestHeadline(ctx, source, item.Title, item.Link, pubTime)
+		art, ok, err := c.IngestHeadline(ctx, source, item.Title, item.Link, pubTime)
 		if err != nil {
 			return 0, fmt.Errorf("component=news_crawler cycle=%s: ingest failed: %w", source, err)
 		}
 		if ok {
 			ingested++
+			// Fire AFTER IngestHeadline released the crawler lock (callback
+			// may call GetLatestArticles without deadlocking).
+			c.mu.Lock()
+			hook := c.onArticle
+			c.mu.Unlock()
+			if hook != nil && art != nil {
+				hook(art)
+			}
 		}
 	}
 

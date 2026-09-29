@@ -1,10 +1,10 @@
 # Tasks: spec-020
 
 ## Part A — event-driven (after Part B verified)
-- [ ] TA01 cluster-triggered evaluation queue (dedupe + 60s debounce) wired from catalyst insert
-- [ ] TA02 SCAN_INTERVAL_MINUTES optional (unset = event-driven only); main.go stops hardcoding 2m
-- [ ] TA03 per-symbol overlap guard in scanner
-- [ ] TA04 tests: trigger enqueues once, debounce, no double-run
+- [X] TA01 cluster-triggered evaluation queue (dedupe + 60s debounce) wired from catalyst insert
+- [X] TA02 SCAN_INTERVAL_MINUTES optional (unset = event-driven only); main.go stops hardcoding 2m
+- [X] TA03 per-symbol overlap guard in scanner
+- [X] TA04 tests: trigger enqueues once, debounce, no double-run
 
 ## Part B — staged targets & legacy sweep (in progress)
 - [X] TB001 signals.go: fix ATR units (drop /100), document fraction semantics

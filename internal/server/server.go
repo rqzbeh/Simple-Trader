@@ -46,6 +46,12 @@ type Server struct {
 	shadow            *trader.ShadowOrchestrator
 	earlyExitManager  *trader.EarlyExitManager
 	startTime         time.Time
+
+	// spec-020 event-driven scanner: per-symbol overlap guard, evaluation
+	// timestamps for debouncing, and the news-triggered work queue.
+	evalBusy  sync.Map
+	lastEval  sync.Map
+	newsQueue chan string
 }
 
 // NewServer configures routes and dependency injection.

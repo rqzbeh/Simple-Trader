@@ -1505,7 +1505,17 @@ func (s *Server) runBackgroundScan(ctx context.Context) {
 			}
 		}
 
+		// spec-020 US-A3: never evaluate the same symbol concurrently with a
+		// news-triggered run (and vice versa).
+		unlock := s.lockSymbol(sym)
+		if unlock == nil {
+			log.Printf("[BackgroundScan] %s busy (news-triggered eval running) — skip", sym)
+			continue
+		}
+
+		s.markEvaluated(sym)
 		_, holdReason, scanErr := s.EvaluateSymbolSignal(ctx, sym, newsHeadlines)
+		unlock() // evaluation finished — release the symbol (overlap guard)
 		if scanErr != nil {
 			log.Printf("[BackgroundScan] %s error: %v", sym, scanErr)
 		} else if holdReason != "" {

@@ -193,3 +193,13 @@ Scope: full production-readiness audit of spec-013 decision core.
   CHECK: bash -c 'go test -count=1 -v -run "TestFormatterShowsRealTimeframe|TestTakeProfitBoundsClamp" ./internal/telegram/ ./internal/trader/ 2>&1 | grep -E "^--- PASS" | grep -c .'
   EXPECT: 2
   EVIDENCE: automatic-evidence=v1; definition-sha256=197074829f79a8fc5b66c5cee5f365d2b71b9758f0126b983f995bb072477863; exit=0; EXPECT=matched; output-sha256=53c234e5e8472b6ac51c1ae1cab3fe06fad053beb8ebfd8977b010655bfdd3c3; output-bytes=2; shell=/bin/sh; cwd=/home/redsnow/Simple-Trader; path=74ec9c2f5f35/41 entries
+
+- [x] G40: event-driven scanner tests green (3 PASS)
+  CHECK: bash -c 'go test -count=1 -v -run "TestScanIntervalOptional|TestNewsEventDebounceAndOverlap|TestEnqueueNewsArticleMatchesSymbols" ./internal/server/ 2>&1 | grep -E "^--- PASS" | grep -c .'
+  EXPECT: 3
+  EVIDENCE: automatic-evidence=v1; definition-sha256=718a1855eacbb2033da1ccbcbb616e81f27143627f87b68991f1165a745407e7; exit=0; EXPECT=matched; output-sha256=1121cfccd5913f0a63fec40a6ffd44ea64f9dc135c66634ba001d10bcf4302a2; output-bytes=2; shell=/bin/sh; cwd=/home/redsnow/Simple-Trader; path=74ec9c2f5f35/41 entries
+
+- [x] G41: no hardcoded scan cadence in main
+  CHECK: bash -c 'n=$(grep -c "StartBackgroundSignalScanner(ctx, 2\\*time.Minute)" cmd/trader/main.go || true); echo "HARDCODED_SCAN_CADENCE=$n"'
+  EXPECT: HARDCODED_SCAN_CADENCE=0
+  EVIDENCE: automatic-evidence=v1; definition-sha256=8f56dd04b511bcc77889c18cb9431ce93d14b335e59d5b441ba73c22ec3dac20; exit=0; EXPECT=matched; output-sha256=ada0b3406dc872626c3261d96c36f11914e16f335ed73d8699b610a20999fbdc; output-bytes=25; shell=/bin/sh; cwd=/home/redsnow/Simple-Trader; path=74ec9c2f5f35/41 entries

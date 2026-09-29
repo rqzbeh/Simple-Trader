@@ -181,6 +181,15 @@ func main() {
 	// 6. Initialize HTTP & SSE Broadcaster Server
 	srv := server.NewServer(cfg, store, rCache, aiClient, allocator, execEngine)
 
+	// spec-020 US-A1/US-A2: wire the news-event trigger BEFORE the crawler
+	// starts so no fresh headline can slip past unqueued. SCAN_INTERVAL_MINUTES
+	// optionally adds a periodic backstop; unset ⇒ event-driven only.
+	if crawler := srv.NewsCrawler(); crawler != nil {
+		crawler.SetOnArticle(srv.EnqueueNewsArticle)
+	}
+	srv.StartNewsDrivenScanner(ctx)
+	log.Println("[INFO] News-driven scanner started (fresh headline → immediate evaluation).")
+
 	// 6b. Start Autonomous News Crawler, Dynamic Crypto Screener, and Transparent Background Signal Scanner
 	if srv.NewsCrawler() != nil {
 		srv.NewsCrawler().Start(ctx)
@@ -190,9 +199,16 @@ func main() {
 		srv.Screener().Start(ctx)
 		log.Println("[INFO] Dynamic Liquid Crypto Screener started (evaluating $50M volume / 10bps spread).")
 	}
-	// Transparent background scanning across all assets every 2 minutes
-	srv.StartBackgroundSignalScanner(ctx, 2*time.Minute)
-	log.Println("[INFO] Transparent Background Signal Scanner started (evaluating news catalysts across full universe).")
+	scanInterval, scanErr := server.ScanIntervalMinutes(os.Getenv("SCAN_INTERVAL_MINUTES"))
+	if scanErr != nil {
+		log.Fatalf("[FATAL] %v", scanErr)
+	}
+	if scanInterval > 0 {
+		srv.StartBackgroundSignalScanner(ctx, scanInterval)
+		log.Printf("[INFO] Backstop sweep every %s (SCAN_INTERVAL_MINUTES).", scanInterval)
+	} else {
+		log.Println("[INFO] No SCAN_INTERVAL_MINUTES set — event-driven evaluation only.")
+	}
 
 	// 6c. Start News-Driven Early Trade Exit Worker (spec-014)
 	srv.StartEarlyExitWorker(ctx, 30*time.Second)
