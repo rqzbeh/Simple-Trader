@@ -76,6 +76,12 @@ type DecisionResponse struct {
 	Timeframe             string             `json:"timeframe,omitempty"`
 	TimeframeDistribution map[string]float64 `json:"timeframe_distribution,omitempty"`
 	TimeframeConfidence   float64            `json:"timeframe_confidence,omitempty"`
+
+	// Managed trade parameters (spec-015)
+	ParameterModes         []byte `json:"parameter_modes,omitempty"`
+	ParameterValues        []byte `json:"parameter_values,omitempty"`
+	ParameterDistributions []byte `json:"parameter_distributions,omitempty"`
+	ParameterClamps        []byte `json:"parameter_clamps,omitempty"`
 }
 
 // TradeOutcome captures execution and exit results for adaptive weight tuning.

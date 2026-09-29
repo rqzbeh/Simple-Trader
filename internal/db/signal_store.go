@@ -26,6 +26,7 @@ const futuresSignalColumns = `s.id, s.symbol, s.direction, s.status, s.catalyst_
 		s.profile, s.model_confidence, s.catalyst_event_id, s.atr_at_entry, s.tp1_close_fraction,
 		s.recomputed, s.decay_state, s.rejected_reason, s.indicator_snapshot,
 		s.timeframe, s.timeframe_distribution, s.timeframe_confidence,
+		s.parameter_modes, s.parameter_values, s.parameter_distributions, s.parameter_clamps,
 		e.story_count, e.sources, e.created_at`
 
 // futuresSignalFrom joins futures_trade_signals to its catalyst_events row
@@ -42,6 +43,14 @@ func defaultString(v, fallback string) string {
 		return fallback
 	}
 	return v
+}
+
+// defaultJSON returns fallback when raw is empty.
+func defaultJSON(raw json.RawMessage, fallback []byte) []byte {
+	if len(raw) == 0 {
+		return fallback
+	}
+	return raw
 }
 
 // nullableJSON renders an empty snapshot as SQL NULL so legacy rows stay
@@ -64,6 +73,7 @@ func scanFuturesSignal(row pgx.Row) (FuturesTradeSignal, error) {
 		&sig.Profile, &sig.ModelConfidence, &sig.CatalystEventID, &sig.ATRAtEntry, &sig.TP1CloseFraction,
 		&sig.Recomputed, &sig.DecayState, &sig.RejectedReason, &sig.IndicatorSnapshot,
 		&sig.Timeframe, &sig.TimeframeDistribution, &sig.TimeframeConfidence,
+		&sig.ParameterModes, &sig.ParameterValues, &sig.ParameterDistributions, &sig.ParameterClamps,
 		&sig.CatalystEventStoryCount, &sig.CatalystEventSources, &sig.CatalystEventAt,
 	)
 	return sig, err
@@ -119,6 +129,12 @@ type FuturesTradeSignal struct {
 	Timeframe             *string         `json:"timeframe,omitempty"`
 	TimeframeDistribution json.RawMessage `json:"timeframe_distribution,omitempty"`
 	TimeframeConfidence   *float64        `json:"timeframe_confidence,omitempty"`
+
+	// Managed Trade Parameters (spec-015)
+	ParameterModes         json.RawMessage `json:"parameter_modes"`
+	ParameterValues        json.RawMessage `json:"parameter_values"`
+	ParameterDistributions json.RawMessage `json:"parameter_distributions,omitempty"`
+	ParameterClamps        json.RawMessage `json:"parameter_clamps,omitempty"`
 }
 
 // IndicatorSnapshotRecord is the persisted copy of the decision-time
@@ -177,7 +193,8 @@ func (s *Store) InsertFuturesSignal(ctx context.Context, sig *FuturesTradeSignal
 			telegram_dispatched, telegram_resolved,
 			profile, model_confidence, catalyst_event_id, atr_at_entry, tp1_close_fraction, decay_state,
 			indicator_snapshot,
-			timeframe, timeframe_distribution, timeframe_confidence
+			timeframe, timeframe_distribution, timeframe_confidence,
+			parameter_modes, parameter_values, parameter_distributions, parameter_clamps
 		) VALUES (
 			$1, $2, $3, $4, $5, $6,
 			$7, $8, $9, $10, $11,
@@ -185,7 +202,8 @@ func (s *Store) InsertFuturesSignal(ctx context.Context, sig *FuturesTradeSignal
 			$15, $16,
 			$17, $18, $19, $20, $21, $22,
 			$23,
-			$24, $25, $26
+			$24, $25, $26,
+			$27, $28, $29, $30
 		)
 		RETURNING id, created_at
 	`,
@@ -197,6 +215,8 @@ func (s *Store) InsertFuturesSignal(ctx context.Context, sig *FuturesTradeSignal
 		sig.ATRAtEntry, sig.TP1CloseFraction, defaultString(sig.DecayState, "NONE"),
 		nullableJSON(sig.IndicatorSnapshot),
 		sig.Timeframe, nullableJSON(sig.TimeframeDistribution), sig.TimeframeConfidence,
+		defaultJSON(sig.ParameterModes, []byte("{}")), defaultJSON(sig.ParameterValues, []byte("{}")),
+		nullableJSON(sig.ParameterDistributions), nullableJSON(sig.ParameterClamps),
 	)
 
 	err := row.Scan(&sig.ID, &sig.CreatedAt)

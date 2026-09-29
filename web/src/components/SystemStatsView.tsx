@@ -79,6 +79,28 @@ function formatLastOK(isoString: string | null): string {
   return `${Math.floor(diffSec / 3600)}h ago`;
 }
 
+const managedParamsList = [
+  { key: 'min_rr', label: 'Min Risk/Reward', envKey: 'MIN_RISK_TO_REWARD_RATIO' },
+  { key: 'leverage', label: 'Default Leverage', envKey: 'DEFAULT_LEVERAGE' },
+  { key: 'conviction', label: 'Position Conviction', envKey: 'MAX_RISK_PER_TRADE_PCT' },
+  { key: 'atr_regime', label: 'ATR Regime', envKey: 'SL_ATR_MULT / TP_ATR_MULT' },
+  { key: 'decay', label: 'News Cluster Decay', envKey: 'CLUSTER_DECAY_MODE' },
+  { key: 'confluence', label: 'Confluence Acceptance', envKey: 'CONFLUENCE_MIN' },
+];
+
+function formatParamValue(key: string, val: any): string {
+  if (val === undefined || val === null) return '';
+  if (typeof val === 'object') {
+    if (val.sl_atr_mult !== undefined && val.tp_atr_mult !== undefined) {
+      return `${val.sl_atr_mult}x / ${val.tp_atr_mult}x`;
+    }
+    return JSON.stringify(val);
+  }
+  if (key === 'leverage') return `${val}x`;
+  if (key === 'conviction') return `${(Number(val) * 100).toFixed(1)}%`;
+  return `${val}`;
+}
+
 export const SystemStatsView: React.FC = () => {
   const [stats, setStats] = useState<SystemStatsResponse | null>(null);
   const [config, setConfig] = useState<SystemConfigResponse | null>(null);
@@ -527,6 +549,50 @@ export const SystemStatsView: React.FC = () => {
             <span>{configFeedback.message}</span>
           </div>
         )}
+
+        {/* Managed Parameters Dynamic Governance (spec-015) */}
+        <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 space-y-3">
+          <div className="flex items-center justify-between">
+            <h5 className="text-xs font-bold text-slate-800 dark:text-slate-200">
+              Jev-Managed Trade Parameters
+            </h5>
+            <span className="text-[10px] text-slate-400">
+              Unset in .env = core-managed • Set = user override
+            </span>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {managedParamsList.map((param) => {
+              const info = config?.parameter_modes?.[param.key];
+              const isManaged = !info || info.mode === 'core_managed';
+              return (
+                <div
+                  key={param.key}
+                  className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex items-center justify-between"
+                >
+                  <div className="min-w-0 pr-2">
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
+                      {param.label}
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-mono truncate">
+                      {param.envKey}
+                    </p>
+                  </div>
+                  <div>
+                    {isManaged ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20 whitespace-nowrap">
+                        core-managed
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 whitespace-nowrap font-mono">
+                        = {formatParamValue(param.key, info.value)}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
 
         <form onSubmit={handleSaveDecisionCore} className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

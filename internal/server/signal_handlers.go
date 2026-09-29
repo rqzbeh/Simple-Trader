@@ -51,6 +51,9 @@ func (s *Server) newSignalService(optCtx ...context.Context) *trader.SignalServi
 		store = s.dbStore
 	}
 	svc := trader.NewSignalService(store, s.aiClient, sigCfg)
+	if s.cfg != nil {
+		svc.SetAppConfig(s.cfg)
+	}
 	if s.decisionRouter != nil {
 		svc.SetDecisionRouter(s.decisionRouter)
 	}
@@ -351,15 +354,51 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol string, headli
 			}
 		}
 
+		// News decay resolution: FAST_BREAKING vs MACRO_THEMATIC drives freshness half-life (spec-015 FR-302)
+		decayHalfLife := prof.FreshnessHalfLifeMin
+		reg := trader.NewParamRegistry(s.cfg)
+		if decaySpec, ok := reg.Get("decay"); ok {
+			if decaySpec.Mode() == trader.ModeOverride {
+				if s.cfg != nil && s.cfg.OverrideClusterDecayMode == "MACRO_THEMATIC" {
+					decayHalfLife = 120.0
+				} else if s.cfg != nil && s.cfg.OverrideClusterDecayMode == "FAST_BREAKING" {
+					decayHalfLife = 15.0
+				}
+			} else if dominant != nil && s.decisionRouter != nil && s.decisionRouter.Jev != nil {
+				q := decaySpec.Question(map[string]interface{}{
+					"headline":    dominant.Headline,
+					"story_count": dominant.StoryCount,
+				})
+				cycleID := fmt.Sprintf("decay-%s-%d", symbol, time.Now().UnixNano())
+				decayAnswers, _, err := s.decisionRouter.Jev.Evaluate(ctx, cycleID, map[string]interface{}{
+					"headline":    dominant.Headline,
+					"story_count": dominant.StoryCount,
+					"symbol":      symbol,
+				}, map[string]ai.JevQuestion{"decay": q})
+				if err == nil {
+					if dAns, ok := decayAnswers["decay"]; ok {
+						res, rerr := reg.Resolve("decay", &dAns, cycleID)
+						if rerr == nil {
+							if res.Value == "MACRO_THEMATIC" {
+								decayHalfLife = 120.0
+							} else {
+								decayHalfLife = 15.0
+							}
+						}
+					}
+				}
+			}
+		}
+
 		// Persist each covering event; keep the dominant event id (T034).
 		var dominantID int64
 		if s.dbStore != nil {
 			for _, cl := range covering {
-				fresh := market.FreshnessWeight(time.Since(cl.LastSeen), prof.FreshnessHalfLifeMin)
+				fresh := market.FreshnessWeight(time.Since(cl.LastSeen), decayHalfLife)
 				id, err := s.dbStore.InsertCatalystEvent(
 					ctx, cl.Fingerprint, cl.Headline, cl.Sources, []string{symbol},
 					cl.StoryCount, cl.FusedSentiment, cl.Polarization, fresh,
-					int(prof.FreshnessHalfLifeMin),
+					int(decayHalfLife),
 				)
 				if err != nil {
 					log.Printf("[US3] insert catalyst event for %s: %v", symbol, err)

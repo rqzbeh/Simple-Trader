@@ -312,4 +312,75 @@ func TestSystemConfigEndpoints(t *testing.T) {
 	if cfg.EarlyExit.ConfFloor != 0.80 {
 		t.Errorf("expected cfg.EarlyExit.ConfFloor=0.80, got %f", cfg.EarlyExit.ConfFloor)
 	}
+
+	// 8. Test Managed Parameter Overrides (spec-015 contracts §4 and §5)
+	// (a) Verify GET returns parameter_modes map
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/system/config", nil)
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for GET config, got %d", rec.Code)
+	}
+	var cfgResp map[string]interface{}
+	_ = json.NewDecoder(rec.Body).Decode(&cfgResp)
+	paramModes, ok := cfgResp["parameter_modes"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected parameter_modes map in GET config response, got %v", cfgResp["parameter_modes"])
+	}
+	for _, k := range []string{"min_rr", "leverage", "conviction", "atr_regime", "decay", "confluence"} {
+		if _, exists := paramModes[k]; !exists {
+			t.Errorf("expected key %q in parameter_modes map", k)
+		}
+	}
+
+	// (b) PUT valid overrides for all 7 keys
+	overridePayload, _ := json.Marshal(map[string]interface{}{
+		"MIN_RISK_TO_REWARD_RATIO": 3.0,
+		"DEFAULT_LEVERAGE":         10,
+		"MAX_RISK_PER_TRADE_PCT":   0.015,
+		"SL_ATR_MULT":              1.8,
+		"TP_ATR_MULT":              3.6,
+		"CLUSTER_DECAY_MODE":       "MACRO_THEMATIC",
+		"CONFLUENCE_MIN":           0.70,
+	})
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/system/config", bytes.NewReader(overridePayload))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for override PUT, got %d, body: %s", rec.Code, rec.Body.String())
+	}
+
+	// (c) PUT empty string to clear overrides back to core_managed
+	clearPayload, _ := json.Marshal(map[string]interface{}{
+		"MIN_RISK_TO_REWARD_RATIO": "",
+		"DEFAULT_LEVERAGE":         "",
+		"MAX_RISK_PER_TRADE_PCT":   "",
+		"SL_ATR_MULT":              "",
+		"TP_ATR_MULT":              "",
+		"CLUSTER_DECAY_MODE":       "",
+		"CONFLUENCE_MIN":           "",
+	})
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/system/config", bytes.NewReader(clearPayload))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for clear PUT, got %d, body: %s", rec.Code, rec.Body.String())
+	}
+
+	var clearedResp map[string]interface{}
+	_ = json.NewDecoder(rec.Body).Decode(&clearedResp)
+	clearedModes, ok := clearedResp["parameter_modes"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected parameter_modes in response after clear, got %v", clearedResp["parameter_modes"])
+	}
+	for _, k := range []string{"min_rr", "leverage", "conviction", "atr_regime", "decay", "confluence"} {
+		item, ok := clearedModes[k].(map[string]interface{})
+		if !ok || item["mode"] != "core_managed" {
+			t.Errorf("expected param %q mode to be core_managed after clear, got %v", k, item)
+		}
+	}
 }

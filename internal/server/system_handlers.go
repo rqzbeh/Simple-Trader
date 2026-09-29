@@ -244,6 +244,19 @@ func (s *Server) systemConfigResponse() map[string]interface{} {
 		earlyExitConfFloor = s.cfg.EarlyExit.ConfFloor
 	}
 
+	var paramModes map[string]map[string]interface{}
+	var slAtrMult *float64
+	var tpAtrMult *float64
+	var clusterDecayMode string
+	var confluenceMin *float64
+	if s.cfg != nil {
+		paramModes = s.cfg.GetParamModes()
+		slAtrMult = s.cfg.OverrideSLAtrMult
+		tpAtrMult = s.cfg.OverrideTPAtrMult
+		clusterDecayMode = s.cfg.OverrideClusterDecayMode
+		confluenceMin = s.cfg.OverrideConfluenceMin
+	}
+
 	return map[string]interface{}{
 		"ai_base_url_configured":       aiBaseURLConfigured,
 		"ai_model_id":                  aiModelID,
@@ -275,6 +288,11 @@ func (s *Server) systemConfigResponse() map[string]interface{} {
 		"early_exit_cooldown_min":      earlyExitCooldownMin,
 		"early_exit_conf_floor":        earlyExitConfFloor,
 		"env_file":                     envFile,
+		"parameter_modes":              paramModes,
+		"sl_atr_mult":                  slAtrMult,
+		"tp_atr_mult":                  tpAtrMult,
+		"cluster_decay_mode":           clusterDecayMode,
+		"confluence_min":               confluenceMin,
 	}
 }
 
@@ -306,6 +324,10 @@ var allowedConfigKeys = map[string]bool{
 	"EARLY_EXIT_MAX_PER_DAY":       true,
 	"EARLY_EXIT_COOLDOWN_MIN":      true,
 	"EARLY_EXIT_CONF_FLOOR":        true,
+	"SL_ATR_MULT":                  true,
+	"TP_ATR_MULT":                  true,
+	"CLUSTER_DECAY_MODE":           true,
+	"CONFLUENCE_MIN":               true,
 }
 
 func parseNumericFloat(val interface{}) (float64, error) {
@@ -384,6 +406,16 @@ func isMaskedPlaceholder(val string) bool {
 		return true
 	}
 	if strings.Contains(v, "...") && len(v) <= 16 {
+		return true
+	}
+	return false
+}
+
+func isEmptyValue(val interface{}) bool {
+	if val == nil {
+		return true
+	}
+	if s, ok := val.(string); ok && strings.TrimSpace(s) == "" {
 		return true
 	}
 	return false
@@ -530,19 +562,27 @@ func validateAndBuildEnvUpdates(rawMap map[string]interface{}) (map[string]strin
 	}
 
 	if v, exists := rawMap["DEFAULT_LEVERAGE"]; exists {
-		i, err := parseNumericInt(v)
-		if err != nil || i < 1 || i > 125 {
-			return nil, fmt.Errorf("DEFAULT_LEVERAGE invalid: must be between 1 and 125")
+		if isEmptyValue(v) {
+			envUpdates["DEFAULT_LEVERAGE"] = ""
+		} else {
+			i, err := parseNumericInt(v)
+			if err != nil || i < 1 || i > 125 {
+				return nil, fmt.Errorf("DEFAULT_LEVERAGE invalid: must be between 1 and 125")
+			}
+			envUpdates["DEFAULT_LEVERAGE"] = strconv.Itoa(i)
 		}
-		envUpdates["DEFAULT_LEVERAGE"] = strconv.Itoa(i)
 	}
 
 	if v, exists := rawMap["MIN_RISK_TO_REWARD_RATIO"]; exists {
-		f, err := parseNumericFloat(v)
-		if err != nil || f < 1.0 || f > 20.0 {
-			return nil, fmt.Errorf("MIN_RISK_TO_REWARD_RATIO invalid: must be between 1.0 and 20.0")
+		if isEmptyValue(v) {
+			envUpdates["MIN_RISK_TO_REWARD_RATIO"] = ""
+		} else {
+			f, err := parseNumericFloat(v)
+			if err != nil || f < 0.5 || f > 20.0 {
+				return nil, fmt.Errorf("MIN_RISK_TO_REWARD_RATIO invalid: must be between 0.5 and 20.0")
+			}
+			envUpdates["MIN_RISK_TO_REWARD_RATIO"] = strconv.FormatFloat(f, 'f', -1, 64)
 		}
-		envUpdates["MIN_RISK_TO_REWARD_RATIO"] = strconv.FormatFloat(f, 'f', -1, 64)
 	}
 
 	if v, exists := rawMap["MAX_CONCURRENT_SIGNALS"]; exists {
@@ -554,11 +594,15 @@ func validateAndBuildEnvUpdates(rawMap map[string]interface{}) (map[string]strin
 	}
 
 	if v, exists := rawMap["MAX_RISK_PER_TRADE_PCT"]; exists {
-		f, err := parseNumericFloat(v)
-		if err != nil || f <= 0 || f > 1.0 {
-			return nil, fmt.Errorf("MAX_RISK_PER_TRADE_PCT invalid: must be between 0 (exclusive) and 1 (inclusive)")
+		if isEmptyValue(v) {
+			envUpdates["MAX_RISK_PER_TRADE_PCT"] = ""
+		} else {
+			f, err := parseNumericFloat(v)
+			if err != nil || f <= 0 || f > 1.0 {
+				return nil, fmt.Errorf("MAX_RISK_PER_TRADE_PCT invalid: must be between 0 (exclusive) and 1 (inclusive)")
+			}
+			envUpdates["MAX_RISK_PER_TRADE_PCT"] = strconv.FormatFloat(f, 'f', -1, 64)
 		}
-		envUpdates["MAX_RISK_PER_TRADE_PCT"] = strconv.FormatFloat(f, 'f', -1, 64)
 	}
 
 	if v, exists := rawMap["MAX_DRAWDOWN_LIMIT_PCT"]; exists {
@@ -667,6 +711,54 @@ func validateAndBuildEnvUpdates(rawMap map[string]interface{}) (map[string]strin
 		envUpdates["EARLY_EXIT_CONF_FLOOR"] = strconv.FormatFloat(f, 'f', -1, 64)
 	}
 
+	if v, exists := rawMap["SL_ATR_MULT"]; exists {
+		if isEmptyValue(v) {
+			envUpdates["SL_ATR_MULT"] = ""
+		} else {
+			f, err := parseNumericFloat(v)
+			if err != nil || f <= 0 || f > 20.0 {
+				return nil, fmt.Errorf("SL_ATR_MULT invalid: must be between 0 (exclusive) and 20.0")
+			}
+			envUpdates["SL_ATR_MULT"] = strconv.FormatFloat(f, 'f', -1, 64)
+		}
+	}
+
+	if v, exists := rawMap["TP_ATR_MULT"]; exists {
+		if isEmptyValue(v) {
+			envUpdates["TP_ATR_MULT"] = ""
+		} else {
+			f, err := parseNumericFloat(v)
+			if err != nil || f <= 0 || f > 20.0 {
+				return nil, fmt.Errorf("TP_ATR_MULT invalid: must be between 0 (exclusive) and 20.0")
+			}
+			envUpdates["TP_ATR_MULT"] = strconv.FormatFloat(f, 'f', -1, 64)
+		}
+	}
+
+	if v, exists := rawMap["CLUSTER_DECAY_MODE"]; exists {
+		if isEmptyValue(v) {
+			envUpdates["CLUSTER_DECAY_MODE"] = ""
+		} else {
+			s := strings.ToUpper(strings.TrimSpace(parseString(v)))
+			if s != "FAST_BREAKING" && s != "MACRO_THEMATIC" {
+				return nil, fmt.Errorf("CLUSTER_DECAY_MODE invalid: must be FAST_BREAKING or MACRO_THEMATIC")
+			}
+			envUpdates["CLUSTER_DECAY_MODE"] = s
+		}
+	}
+
+	if v, exists := rawMap["CONFLUENCE_MIN"]; exists {
+		if isEmptyValue(v) {
+			envUpdates["CONFLUENCE_MIN"] = ""
+		} else {
+			f, err := parseNumericFloat(v)
+			if err != nil || f < 0.0 || f > 1.0 {
+				return nil, fmt.Errorf("CONFLUENCE_MIN invalid: must be between 0.0 and 1.0")
+			}
+			envUpdates["CONFLUENCE_MIN"] = strconv.FormatFloat(f, 'f', -1, 64)
+		}
+	}
+
 	return envUpdates, nil
 }
 
@@ -699,14 +791,28 @@ func (s *Server) applyLiveConfigUpdates(envUpdates map[string]string) {
 		_ = os.Setenv("AI_TIMEOUT_SECONDS", v)
 	}
 	if v, ok := envUpdates["DEFAULT_LEVERAGE"]; ok {
-		i, _ := strconv.Atoi(v)
-		s.cfg.DefaultLeverage = i
-		_ = os.Setenv("DEFAULT_LEVERAGE", v)
+		if v == "" {
+			s.cfg.OverrideDefaultLeverage = nil
+			s.cfg.DefaultLeverage = 8
+			_ = os.Unsetenv("DEFAULT_LEVERAGE")
+		} else {
+			i, _ := strconv.Atoi(v)
+			s.cfg.OverrideDefaultLeverage = &i
+			s.cfg.DefaultLeverage = i
+			_ = os.Setenv("DEFAULT_LEVERAGE", v)
+		}
 	}
 	if v, ok := envUpdates["MIN_RISK_TO_REWARD_RATIO"]; ok {
-		f, _ := strconv.ParseFloat(v, 64)
-		s.cfg.MinRiskRewardRatio = f
-		_ = os.Setenv("MIN_RISK_TO_REWARD_RATIO", v)
+		if v == "" {
+			s.cfg.OverrideMinRiskRewardRatio = nil
+			s.cfg.MinRiskRewardRatio = 2.5
+			_ = os.Unsetenv("MIN_RISK_TO_REWARD_RATIO")
+		} else {
+			f, _ := strconv.ParseFloat(v, 64)
+			s.cfg.OverrideMinRiskRewardRatio = &f
+			s.cfg.MinRiskRewardRatio = f
+			_ = os.Setenv("MIN_RISK_TO_REWARD_RATIO", v)
+		}
 	}
 	if v, ok := envUpdates["MAX_CONCURRENT_SIGNALS"]; ok {
 		i, _ := strconv.Atoi(v)
@@ -714,9 +820,55 @@ func (s *Server) applyLiveConfigUpdates(envUpdates map[string]string) {
 		_ = os.Setenv("MAX_CONCURRENT_SIGNALS", v)
 	}
 	if v, ok := envUpdates["MAX_RISK_PER_TRADE_PCT"]; ok {
-		f, _ := strconv.ParseFloat(v, 64)
-		s.cfg.MaxRiskPerTradePct = f
-		_ = os.Setenv("MAX_RISK_PER_TRADE_PCT", v)
+		if v == "" {
+			s.cfg.OverrideMaxRiskPerTradePct = nil
+			s.cfg.MaxRiskPerTradePct = 0.02
+			_ = os.Unsetenv("MAX_RISK_PER_TRADE_PCT")
+		} else {
+			f, _ := strconv.ParseFloat(v, 64)
+			s.cfg.OverrideMaxRiskPerTradePct = &f
+			s.cfg.MaxRiskPerTradePct = f
+			_ = os.Setenv("MAX_RISK_PER_TRADE_PCT", v)
+		}
+	}
+	if v, ok := envUpdates["SL_ATR_MULT"]; ok {
+		if v == "" {
+			s.cfg.OverrideSLAtrMult = nil
+			_ = os.Unsetenv("SL_ATR_MULT")
+		} else {
+			f, _ := strconv.ParseFloat(v, 64)
+			s.cfg.OverrideSLAtrMult = &f
+			_ = os.Setenv("SL_ATR_MULT", v)
+		}
+	}
+	if v, ok := envUpdates["TP_ATR_MULT"]; ok {
+		if v == "" {
+			s.cfg.OverrideTPAtrMult = nil
+			_ = os.Unsetenv("TP_ATR_MULT")
+		} else {
+			f, _ := strconv.ParseFloat(v, 64)
+			s.cfg.OverrideTPAtrMult = &f
+			_ = os.Setenv("TP_ATR_MULT", v)
+		}
+	}
+	if v, ok := envUpdates["CLUSTER_DECAY_MODE"]; ok {
+		if v == "" {
+			s.cfg.OverrideClusterDecayMode = ""
+			_ = os.Unsetenv("CLUSTER_DECAY_MODE")
+		} else {
+			s.cfg.OverrideClusterDecayMode = v
+			_ = os.Setenv("CLUSTER_DECAY_MODE", v)
+		}
+	}
+	if v, ok := envUpdates["CONFLUENCE_MIN"]; ok {
+		if v == "" {
+			s.cfg.OverrideConfluenceMin = nil
+			_ = os.Unsetenv("CONFLUENCE_MIN")
+		} else {
+			f, _ := strconv.ParseFloat(v, 64)
+			s.cfg.OverrideConfluenceMin = &f
+			_ = os.Setenv("CONFLUENCE_MIN", v)
+		}
 	}
 	if v, ok := envUpdates["MAX_DRAWDOWN_LIMIT_PCT"]; ok {
 		f, _ := strconv.ParseFloat(v, 64)

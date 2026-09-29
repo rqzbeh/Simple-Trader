@@ -109,6 +109,26 @@ type SignalService struct {
 	router *DecisionRouter
 	// shadow records decisions post-commit (spec-013 FR-002).
 	shadow *ShadowOrchestrator
+
+	// appConfig holds global configuration including Jev managed param overrides (spec-015).
+	appConfig *config.Config
+}
+
+// SetAppConfig injects global configuration.
+func (s *SignalService) SetAppConfig(cfg *config.Config) { s.appConfig = cfg }
+
+func (s *SignalService) getAppConfig() *config.Config {
+	if s.appConfig != nil {
+		return s.appConfig
+	}
+	if cfg, err := config.Load(); err == nil {
+		return cfg
+	}
+	return &config.Config{
+		MinRiskRewardRatio: s.config.MinRiskRewardRatio,
+		DefaultLeverage:    s.config.DefaultLeverage,
+		MaxRiskPerTradePct: s.config.MaxRiskPerTradePct,
+	}
 }
 
 // SetDecisionRouter installs the spec-013 decision core for entry judgments.
@@ -325,13 +345,83 @@ func (s *SignalService) EvaluateMarketSignal(
 
 	stopLoss, slPctFromATR := CalculateATRStop(entryPrice, 0, 0, atrPrice, dir, profile)
 	slPct = slPctFromATR
+
+	// Managed trade parameters resolution & dynamic adjustments (spec-015)
+	var paramValues map[string]interface{}
+	var paramClamps map[string]interface{}
+	if aiResp != nil {
+		if len(aiResp.ParameterValues) > 0 {
+			_ = json.Unmarshal(aiResp.ParameterValues, &paramValues)
+		}
+		if len(aiResp.ParameterClamps) > 0 {
+			_ = json.Unmarshal(aiResp.ParameterClamps, &paramClamps)
+		}
+	}
+	if paramClamps == nil {
+		paramClamps = make(map[string]interface{})
+	}
+	if paramValues == nil {
+		reg := NewParamRegistry(s.getAppConfig())
+		resolved, _ := reg.ResolveAll(nil, "fallback")
+		modesJSON, valsJSON, distsJSON, clampsJSON, _ := PackageParamRecord(resolved)
+		if aiResp != nil {
+			aiResp.ParameterModes = modesJSON
+			aiResp.ParameterValues = valsJSON
+			aiResp.ParameterDistributions = distsJSON
+			aiResp.ParameterClamps = clampsJSON
+		}
+		_ = json.Unmarshal(valsJSON, &paramValues)
+	}
+
+	// Confluence acceptance gate (spec-015 FR-302)
+	if confVal, ok := paramValues["confluence"]; ok {
+		var confMin float64
+		if cf, ok := confVal.(float64); ok {
+			confMin = cf
+		}
+		if confMin > 0 && snap.ConfluenceScore > 0 && snap.ConfluenceScore < confMin {
+			aiResp.GateRejected = "confluence_threshold"
+			aiResp.GateRejectedDetail = map[string]interface{}{
+				"confluence_score": snap.ConfluenceScore,
+				"confluence_min":   confMin,
+			}
+			prefix := "[entry gate: confluence_threshold] "
+			if aiResp.Reasoning == "" {
+				aiResp.Reasoning = prefix + "confluence below threshold"
+			} else {
+				aiResp.Reasoning = prefix + aiResp.Reasoning
+			}
+			return nil, aiResp, nil
+		}
+	}
+
+	// ATR regime adjustment (spec-015 FR-302)
+	if atrVal, ok := paramValues["atr_regime"]; ok {
+		if m, ok := atrVal.(map[string]interface{}); ok {
+			if slm, ok := m["sl_atr_mult"].(float64); ok && slm > 0 {
+				profile.SLAtrMult = slm
+			}
+			if tpm, ok := m["tp_atr_mult"].(float64); ok && tpm > 0 {
+				profile.TP1AtrMult = tpm
+			}
+		}
+	}
+
 	tp1Price, tp2Price, closeFrac := CalculateStagedTargets(entryPrice, atrPrice, dir, profile)
+
+	effectiveMinRR := s.config.MinRiskRewardRatio
+	if rrVal, ok := paramValues["min_rr"]; ok {
+		if rrF, ok := rrVal.(float64); ok && rrF > 0 {
+			effectiveMinRR = rrF
+		}
+	}
+
 	// No measured ATR: stretch TP1 to at least the configured minimum R:R
 	// against the effective stop so the fallback target stays reachable and
 	// the R:R contract holds for legacy snapshots.
 	if atrPrice <= 0 {
 		riskDist := math.Abs(entryPrice - stopLoss)
-		minReward := s.config.MinRiskRewardRatio * riskDist
+		minReward := effectiveMinRR * riskDist
 		if math.Abs(tp1Price-entryPrice) < minReward {
 			if dir == DirectionLong {
 				tp1Price = entryPrice + minReward
@@ -363,26 +453,45 @@ func (s *SignalService) EvaluateMarketSignal(
 	// 5. Leverage: vol-target formula from the profile (FR-006) when a
 	// volatility measurement exists; AI suggestion respected only when it
 	// lowers leverage inside the cap. No measurement -> AI/config leverage.
+	effectiveDefaultLev := s.config.DefaultLeverage
+	if levVal, ok := paramValues["leverage"]; ok {
+		if levF, ok := levVal.(float64); ok {
+			effectiveDefaultLev = int(levF)
+		} else if levI, ok := levVal.(int); ok {
+			effectiveDefaultLev = levI
+		}
+	}
 	leverage := aiResp.Leverage
 	if leverage < 1 {
-		leverage = s.config.DefaultLeverage
+		leverage = effectiveDefaultLev
 	}
 	if snap.NATR > 0 {
-		volTargetLev := CalculateVolTargetLeverage(snap.NATR*100.0, s.config.DefaultLeverage, profile)
+		volTargetLev := CalculateVolTargetLeverage(snap.NATR*100.0, effectiveDefaultLev, profile)
 		if leverage > volTargetLev {
 			leverage = volTargetLev
 		}
-	} else if leverage > s.config.DefaultLeverage {
-		leverage = s.config.DefaultLeverage
+	} else if leverage > effectiveDefaultLev {
+		leverage = effectiveDefaultLev
 	}
 
 	// Liquidation-buffer invariant (FR-006): stop must sit far enough from the
 	// liquidation price at the chosen leverage, else widen leverage down.
+	origLev := leverage
 	if !LiquidationBufferOK(entryPrice, slPct, leverage, dir, profile) {
 		for leverage > 1 {
 			leverage--
 			if LiquidationBufferOK(entryPrice, slPct, leverage, dir, profile) {
 				break
+			}
+		}
+		if origLev != leverage {
+			paramClamps["leverage"] = map[string]interface{}{
+				"requested": origLev,
+				"applied":   leverage,
+				"bound":     "liquidation_buffer",
+			}
+			if aiResp != nil {
+				aiResp.ParameterClamps, _ = json.Marshal(paramClamps)
 			}
 		}
 	}
@@ -392,6 +501,11 @@ func (s *SignalService) EvaluateMarketSignal(
 	// position size from the final clamped margin (see OpenPositionFromSignal),
 	// so the persisted allocation and the live position stay consistent.
 	maxRiskPct := profile.RiskPerTradePct
+	if convVal, ok := paramValues["conviction"]; ok {
+		if convF, ok := convVal.(float64); ok && convF > 0 {
+			maxRiskPct = convF
+		}
+	}
 	if maxRiskPct <= 0 {
 		maxRiskPct = s.config.MaxRiskPerTradePct
 	}
@@ -474,19 +588,19 @@ func (s *SignalService) EvaluateMarketSignal(
 		Divergence:    snap.Divergence,
 	})
 	// Risk/reward from the staged structure. The ATR-derived TP1 keeps its
-	// measured reachability, but the configured minimum R:R still wins as the
+	// measured reachability, but the effective minimum R:R still wins as the
 	// hard gate when the final stop distance makes the measured target too
 	// tight (e.g. no measured ATR + a wide AI stop): TP1 stretches, RR floor
 	// holds (FR-003 contract, plan G2).
 	rr, rrErr := CalculateRiskRewardRatio(entryPrice, stopLoss, tp1Price, dir)
-	if rrErr != nil || rr < s.config.MinRiskRewardRatio {
+	if rrErr != nil || rr < effectiveMinRR {
 		riskDist := math.Abs(entryPrice - stopLoss)
 		if dir == DirectionLong {
-			tp1Price = entryPrice + s.config.MinRiskRewardRatio*riskDist
+			tp1Price = entryPrice + effectiveMinRR*riskDist
 		} else {
-			tp1Price = entryPrice - s.config.MinRiskRewardRatio*riskDist
+			tp1Price = entryPrice - effectiveMinRR*riskDist
 		}
-		rr = s.config.MinRiskRewardRatio
+		rr = effectiveMinRR
 	}
 
 	sig := &db.FuturesTradeSignal{
@@ -515,14 +629,37 @@ func (s *SignalService) EvaluateMarketSignal(
 		TP1CloseFraction:    &closeFrac,
 	}
 
-	if aiResp != nil && aiResp.Timeframe != "" {
-		tf := aiResp.Timeframe
-		sig.Timeframe = &tf
-		sig.TimeframeConfidence = &aiResp.TimeframeConfidence
-		if len(aiResp.TimeframeDistribution) > 0 {
-			distBytes, _ := json.Marshal(aiResp.TimeframeDistribution)
-			sig.TimeframeDistribution = distBytes
+	if aiResp != nil {
+		if aiResp.Timeframe != "" {
+			tf := aiResp.Timeframe
+			sig.Timeframe = &tf
+			sig.TimeframeConfidence = &aiResp.TimeframeConfidence
+			if len(aiResp.TimeframeDistribution) > 0 {
+				distBytes, _ := json.Marshal(aiResp.TimeframeDistribution)
+				sig.TimeframeDistribution = distBytes
+			}
 		}
+		if len(aiResp.ParameterModes) > 0 {
+			sig.ParameterModes = aiResp.ParameterModes
+		}
+		if len(aiResp.ParameterValues) > 0 {
+			sig.ParameterValues = aiResp.ParameterValues
+		}
+		if len(aiResp.ParameterDistributions) > 0 {
+			sig.ParameterDistributions = aiResp.ParameterDistributions
+		}
+		if len(aiResp.ParameterClamps) > 0 {
+			sig.ParameterClamps = aiResp.ParameterClamps
+		}
+	}
+	if len(sig.ParameterModes) == 0 {
+		reg := NewParamRegistry(s.getAppConfig())
+		resolved, _ := reg.ResolveAll(nil, "default")
+		modesJSON, valsJSON, distsJSON, clampsJSON, _ := PackageParamRecord(resolved)
+		sig.ParameterModes = modesJSON
+		sig.ParameterValues = valsJSON
+		sig.ParameterDistributions = distsJSON
+		sig.ParameterClamps = clampsJSON
 	}
 
 	if catMeta != nil && catMeta.EventID > 0 {
@@ -698,6 +835,15 @@ func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req a
 		bucket = "ALPHA"
 	}
 	questions := EntryQuestions(bucket)
+	appCfg := s.getAppConfig()
+	managedQs := BuildManagedEntryQuestions(appCfg, map[string]interface{}{
+		"symbol":     symbol,
+		"confluence": req.IndicatorSnap.ConfluenceScore,
+		"atr_pct":    req.IndicatorSnap.NATR,
+	})
+	for qk, q := range managedQs {
+		questions[qk] = q
+	}
 
 	thr := s.router.GetThreshold()
 	if thr <= 0 {
@@ -708,6 +854,9 @@ func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req a
 	if err != nil {
 		if strings.Contains(err.Error(), "timeframe") {
 			return nil, ai.WrapDecision("timeframe", cycle, ai.ErrJevSchema, "missing or invalid timeframe answer in batch: "+err.Error())
+		}
+		if strings.Contains(err.Error(), "component=managed-params") {
+			return nil, err
 		}
 		return nil, err
 	}
@@ -729,6 +878,17 @@ func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req a
 	}
 	if err := ai.ValidateChoice(entryAns, entryVocab, cycle); err != nil {
 		return nil, err
+	}
+
+	// Resolve managed trade parameters (spec-015 FR-302, FR-307)
+	reg := NewParamRegistry(appCfg)
+	resolved, err := reg.ResolveAll(answers, cycle)
+	if err != nil {
+		return nil, err
+	}
+	modesJSON, valsJSON, distsJSON, clampsJSON, err := PackageParamRecord(resolved)
+	if err != nil {
+		return nil, fmt.Errorf("component=managed-params cycle=%s: package params: %w", cycle, err)
 	}
 
 	entryChoice := entryAns.Choice
@@ -765,6 +925,10 @@ func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req a
 		Timeframe:             tfAns.Choice,
 		TimeframeDistribution: tfAns.Probabilities,
 		TimeframeConfidence:   tfAns.Confidence,
+		ParameterModes:         modesJSON,
+		ParameterValues:        valsJSON,
+		ParameterDistributions: distsJSON,
+		ParameterClamps:        clampsJSON,
 	}
 	if s.shadow != nil {
 		s.shadow.JudgeEntry(cycle, symbol, state, questions, entryVocab, baseline)

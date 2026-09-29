@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds all environment settings for the Simple-Trader platform.
@@ -48,6 +49,16 @@ type Config struct {
 	TelegramBotToken    string
 	TelegramChatID      string
 	EarlyExit           EarlyExitConfig
+
+	// Optional Jev-Managed Parameter Overrides (spec-015)
+	// Empty/unset in environment = decision core manages; set value = user override wins verbatim
+	OverrideMinRiskRewardRatio *float64
+	OverrideDefaultLeverage     *int
+	OverrideMaxRiskPerTradePct  *float64
+	OverrideSLAtrMult           *float64
+	OverrideTPAtrMult           *float64
+	OverrideClusterDecayMode    string
+	OverrideConfluenceMin       *float64
 }
 
 func getEnv(key, defaultVal string) string {
@@ -82,6 +93,83 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	// Optional Jev-Managed Parameter Overrides (spec-015)
+	var overrideMinRR *float64
+	if v := os.Getenv("MIN_RISK_TO_REWARD_RATIO"); v != "" {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || f < 0.5 || f > 20.0 {
+			return nil, fmt.Errorf("config: MIN_RISK_TO_REWARD_RATIO invalid: %q", v)
+		}
+		overrideMinRR = &f
+	}
+
+	var overrideDefaultLev *int
+	if v := os.Getenv("DEFAULT_LEVERAGE"); v != "" {
+		i, err := strconv.Atoi(v)
+		if err != nil || i < 1 || i > 125 {
+			return nil, fmt.Errorf("config: DEFAULT_LEVERAGE invalid: %q", v)
+		}
+		overrideDefaultLev = &i
+	}
+
+	var overrideMaxRisk *float64
+	if v := os.Getenv("MAX_RISK_PER_TRADE_PCT"); v != "" {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || f <= 0 || f > 1.0 {
+			return nil, fmt.Errorf("config: MAX_RISK_PER_TRADE_PCT invalid: %q", v)
+		}
+		overrideMaxRisk = &f
+	}
+
+	var overrideSLAtrMult *float64
+	if v := os.Getenv("SL_ATR_MULT"); v != "" {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || f <= 0 || f > 20.0 {
+			return nil, fmt.Errorf("config: SL_ATR_MULT invalid: %q", v)
+		}
+		overrideSLAtrMult = &f
+	}
+
+	var overrideTPAtrMult *float64
+	if v := os.Getenv("TP_ATR_MULT"); v != "" {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || f <= 0 || f > 20.0 {
+			return nil, fmt.Errorf("config: TP_ATR_MULT invalid: %q", v)
+		}
+		overrideTPAtrMult = &f
+	}
+
+	overrideDecayMode := os.Getenv("CLUSTER_DECAY_MODE")
+	if overrideDecayMode != "" {
+		mode := strings.ToUpper(strings.TrimSpace(overrideDecayMode))
+		if mode != "FAST_BREAKING" && mode != "MACRO_THEMATIC" {
+			return nil, fmt.Errorf("config: CLUSTER_DECAY_MODE invalid: must be FAST_BREAKING or MACRO_THEMATIC, got %q", overrideDecayMode)
+		}
+		overrideDecayMode = mode
+	}
+
+	var overrideConfMin *float64
+	if v := os.Getenv("CONFLUENCE_MIN"); v != "" {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil || f < 0.0 || f > 1.0 {
+			return nil, fmt.Errorf("config: CONFLUENCE_MIN invalid: %q", v)
+		}
+		overrideConfMin = &f
+	}
+
+	minRR := 2.5
+	if overrideMinRR != nil {
+		minRR = *overrideMinRR
+	}
+	defaultLev := 8
+	if overrideDefaultLev != nil {
+		defaultLev = *overrideDefaultLev
+	}
+	maxRisk := 0.02
+	if overrideMaxRisk != nil {
+		maxRisk = *overrideMaxRisk
+	}
+
 	return &Config{
 		TypesafeAPIKey:             getEnv("TYPESAFE_API_KEY", ""),
 		RoutingConfidenceThreshold: getEnv("ROUTING_CONFIDENCE_THRESHOLD", ""),
@@ -98,8 +186,8 @@ func Load() (*Config, error) {
 		CoreTargetPct:       getEnvFloat("CORE_TARGET_PCT", 0.50),
 		AlphaTargetPct:      getEnvFloat("ALPHA_TARGET_PCT", 0.50),
 		MaxDrawdownLimitPct: getEnvFloat("MAX_DRAWDOWN_LIMIT_PCT", 0.08),
-		MaxRiskPerTradePct:  getEnvFloat("MAX_RISK_PER_TRADE_PCT", 0.02),
-		MinRiskRewardRatio:  getEnvFloat("MIN_RISK_TO_REWARD_RATIO", 2.5),
+		MaxRiskPerTradePct:  maxRisk,
+		MinRiskRewardRatio:  minRR,
 		KellyFraction:       getEnvFloat("KELLY_FRACTION", 0.50),
 		MinRiskPerTradePct:  getEnvFloat("MIN_RISK_PER_TRADE_PCT", 0.005),
 		MaxConcurrentSignals: getEnvInt("MAX_CONCURRENT_SIGNALS", 5),
@@ -108,7 +196,7 @@ func Load() (*Config, error) {
 		EconomicCalendarURL: getEnv("ECONOMIC_CALENDAR_URL", "https://nfs.faireconomy.media/ff_calendar_thisweek.json"),
 		ScreenerMin24hVolume: getEnvFloat("SCREENER_MIN_24H_VOLUME", 50000000.0),
 		ScreenerMaxSpreadBps: getEnvFloat("SCREENER_MAX_SPREAD_BPS", 10.0),
-		DefaultLeverage:     getEnvInt("DEFAULT_LEVERAGE", 8),
+		DefaultLeverage:     defaultLev,
 		MinStopLossPct:      getEnvFloat("MIN_STOP_LOSS_PCT", 0.6),
 		MaxStopLossPct:      getEnvFloat("MAX_STOP_LOSS_PCT", 2.5),
 		MinTakeProfitPct:    getEnvFloat("MIN_TAKE_PROFIT_PCT", 1.5),
@@ -123,7 +211,102 @@ func Load() (*Config, error) {
 		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:      getEnv("TELEGRAM_CHAT_ID", ""),
 		EarlyExit:           earlyExit,
+
+		OverrideMinRiskRewardRatio: overrideMinRR,
+		OverrideDefaultLeverage:     overrideDefaultLev,
+		OverrideMaxRiskPerTradePct:  overrideMaxRisk,
+		OverrideSLAtrMult:           overrideSLAtrMult,
+		OverrideTPAtrMult:           overrideTPAtrMult,
+		OverrideClusterDecayMode:    overrideDecayMode,
+		OverrideConfluenceMin:       overrideConfMin,
 	}, nil
+}
+
+// GetParamMode returns "user_override" or "core_managed" for the given parameter key.
+func (c *Config) GetParamMode(param string) string {
+	if c == nil {
+		return "core_managed"
+	}
+	switch strings.ToLower(strings.TrimSpace(param)) {
+	case "min_rr", "min_risk_to_reward_ratio":
+		if c.OverrideMinRiskRewardRatio != nil {
+			return "user_override"
+		}
+	case "leverage", "default_leverage":
+		if c.OverrideDefaultLeverage != nil {
+			return "user_override"
+		}
+	case "conviction", "max_risk_per_trade_pct":
+		if c.OverrideMaxRiskPerTradePct != nil {
+			return "user_override"
+		}
+	case "atr_regime", "sl_atr_mult", "tp_atr_mult":
+		if c.OverrideSLAtrMult != nil || c.OverrideTPAtrMult != nil {
+			return "user_override"
+		}
+	case "decay", "cluster_decay_mode", "cluster_decay":
+		if c.OverrideClusterDecayMode != "" {
+			return "user_override"
+		}
+	case "confluence", "confluence_min":
+		if c.OverrideConfluenceMin != nil {
+			return "user_override"
+		}
+	}
+	return "core_managed"
+}
+
+// GetParamModes returns the per-param mode map for the 6 phase-1 parameters per contracts §5.
+func (c *Config) GetParamModes() map[string]map[string]interface{} {
+	modes := make(map[string]map[string]interface{})
+	if c == nil {
+		return modes
+	}
+
+	if c.OverrideMinRiskRewardRatio != nil {
+		modes["min_rr"] = map[string]interface{}{"mode": "user_override", "value": *c.OverrideMinRiskRewardRatio}
+	} else {
+		modes["min_rr"] = map[string]interface{}{"mode": "core_managed"}
+	}
+
+	if c.OverrideDefaultLeverage != nil {
+		modes["leverage"] = map[string]interface{}{"mode": "user_override", "value": *c.OverrideDefaultLeverage}
+	} else {
+		modes["leverage"] = map[string]interface{}{"mode": "core_managed"}
+	}
+
+	if c.OverrideMaxRiskPerTradePct != nil {
+		modes["conviction"] = map[string]interface{}{"mode": "user_override", "value": *c.OverrideMaxRiskPerTradePct}
+	} else {
+		modes["conviction"] = map[string]interface{}{"mode": "core_managed"}
+	}
+
+	if c.OverrideSLAtrMult != nil || c.OverrideTPAtrMult != nil {
+		vals := make(map[string]interface{})
+		if c.OverrideSLAtrMult != nil {
+			vals["sl_atr_mult"] = *c.OverrideSLAtrMult
+		}
+		if c.OverrideTPAtrMult != nil {
+			vals["tp_atr_mult"] = *c.OverrideTPAtrMult
+		}
+		modes["atr_regime"] = map[string]interface{}{"mode": "user_override", "value": vals}
+	} else {
+		modes["atr_regime"] = map[string]interface{}{"mode": "core_managed"}
+	}
+
+	if c.OverrideClusterDecayMode != "" {
+		modes["decay"] = map[string]interface{}{"mode": "user_override", "value": c.OverrideClusterDecayMode}
+	} else {
+		modes["decay"] = map[string]interface{}{"mode": "core_managed"}
+	}
+
+	if c.OverrideConfluenceMin != nil {
+		modes["confluence"] = map[string]interface{}{"mode": "user_override", "value": *c.OverrideConfluenceMin}
+	} else {
+		modes["confluence"] = map[string]interface{}{"mode": "core_managed"}
+	}
+
+	return modes
 }
 
 // RoutingThreshold parses ROUTING_CONFIDENCE_THRESHOLD. Missing/invalid is a

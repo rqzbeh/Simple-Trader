@@ -292,7 +292,17 @@ export interface SystemConfigResponse {
   alpha_target_pct: number;
   telegram_bot_configured: boolean;
   telegram_chat_id: string;
+  early_exit_enabled?: boolean;
+  early_exit_min_hold_min?: number;
+  early_exit_max_per_day?: number;
+  early_exit_cooldown_min?: number;
+  early_exit_conf_floor?: number;
   env_file: string;
+  parameter_modes?: Record<string, { mode: 'core_managed' | 'user_override'; value?: any }>;
+  sl_atr_mult?: number;
+  tp_atr_mult?: number;
+  cluster_decay_mode?: string;
+  confluence_min?: number;
 }
 
 

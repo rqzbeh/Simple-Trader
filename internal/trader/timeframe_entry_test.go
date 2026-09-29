@@ -17,9 +17,23 @@ import (
 
 func mockJevServerWithBatch(answers map[string]interface{}) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fullAnswers := map[string]interface{}{
+			"min_rr_accept": map[string]interface{}{"type": "score", "score": 2.5},
+			"leverage":      map[string]interface{}{"type": "choice", "choice": "8x", "probabilities": map[string]float64{"8x": 1.0}},
+			"conviction":    map[string]interface{}{"type": "score", "score": 0.75},
+			"atr_regime":    map[string]interface{}{"type": "choice", "choice": "NORMAL", "probabilities": map[string]float64{"NORMAL": 1.0}},
+			"confluence":    map[string]interface{}{"type": "score", "score": 0.70},
+			"decay":         map[string]interface{}{"type": "choice", "choice": "FAST_BREAKING", "probabilities": map[string]float64{"FAST_BREAKING": 1.0}},
+		}
+		for k, v := range answers {
+			fullAnswers[k] = v
+		}
+		if _, ok := answers["timeframe"]; !ok {
+			delete(fullAnswers, "timeframe")
+		}
 		resp := map[string]interface{}{
 			"model":   "jev-test",
-			"answers": answers,
+			"answers": fullAnswers,
 			"usage":   map[string]int{"input_tokens": 100, "output_tokens": 10},
 		}
 		_ = json.NewEncoder(w).Encode(resp)
