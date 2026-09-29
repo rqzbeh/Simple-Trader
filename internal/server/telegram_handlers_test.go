@@ -1,11 +1,11 @@
 package server_test
 
 import (
-	"path/filepath"
 	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/rqzbeh/simple-trader/internal/config"
