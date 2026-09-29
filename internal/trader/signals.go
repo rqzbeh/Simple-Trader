@@ -210,11 +210,12 @@ func (s *SignalService) EvaluateMarketSignal(
 	if quote.Price <= 0 {
 		return nil, nil, errors.New("invalid quote price: must be positive")
 	}
+	// spec-021: no silent equity baselines — callers always pass real capital.
 	if totalEquity <= 0 {
-		totalEquity = 100.0 // Default baseline equity supporting $100 starting accounts
+		return nil, nil, errors.New("missing totalEquity: sizing needs real capital (no $100 default, spec-021)")
 	}
 	if availableAlphaCapital <= 0 {
-		availableAlphaCapital = totalEquity * 0.40 // 40% Tier 3 Alpha default ($40 on $100 account)
+		return nil, nil, errors.New("missing availableAlphaCapital: pass the real unreserved tier budget (no 40% default, spec-021)")
 	}
 
 	// 1. Check if an ACTIVE signal already exists for this symbol
@@ -230,10 +231,11 @@ func (s *SignalService) EvaluateMarketSignal(
 	// catalysts against the ACTUAL holding frame (4h CORE vs 1h ALPHA)
 	// instead of the historical hardcoded 2-hour swing language.
 	decProf, decProfErr := EffectiveProfile(ProfileNameForBucket(bucket))
-	horizonMin := 60
-	if decProfErr == nil && decProf.HorizonMin > 0 {
-		horizonMin = decProf.HorizonMin
+	if decProfErr != nil || decProf.HorizonMin <= 0 {
+		// spec-021: no hardcoded 60-minute horizon — a broken profile is named.
+		return nil, nil, fmt.Errorf("component=profile cycle=%s: effective risk profile invalid: %w", symbol, decProfErr)
 	}
+	horizonMin := decProf.HorizonMin
 	// Real pre-AI gate outcomes (spec-018 FR-501) + facts this layer owns.
 	gates := make(map[string]string, len(preGates)+3)
 	for k, v := range preGates {
@@ -348,7 +350,10 @@ func (s *SignalService) EvaluateMarketSignal(
 	slPct := aiResp.SuggestedStopLossPct
 	var atrPrice float64
 	if snap.NATR > 0 {
-		atrPrice = snap.NATR * entryPrice / 100.0 // NATR% -> absolute ATR
+		// snapshot.NATR = ATR/Price is a FRACTION (indicators/snapshot.go);
+		// price × fraction = absolute ATR. The former ÷100 undersized every
+		// ATR-derived target 100× (TP2 landed ≈ entry — spec-021 FR-701).
+		atrPrice = snap.NATR * entryPrice
 	}
 
 	profile, profErr := EffectiveProfile(ProfileNameForBucket(bucket))
@@ -415,14 +420,23 @@ func (s *SignalService) EvaluateMarketSignal(
 		}
 	}
 
-	// ATR regime adjustment (spec-015 FR-302)
+	// ATR regime adjustment (spec-015 FR-302). tp_atr_mult describes the
+	// RUNNER target: TP2 takes it directly, TP1 keeps the profile's staged
+	// ratio (≈0.33×TP2) so TP1 < TP2 by construction (spec-021 FR-702).
+	// The old code overrode TP1 only, leaving TP2 at base 2.3 — producing
+	// TP2 below TP1 whenever Jev picked NORMAL/WIDE.
 	if atrVal, ok := paramValues["atr_regime"]; ok {
 		if m, ok := atrVal.(map[string]interface{}); ok {
 			if slm, ok := m["sl_atr_mult"].(float64); ok && slm > 0 {
 				profile.SLAtrMult = slm
 			}
 			if tpm, ok := m["tp_atr_mult"].(float64); ok && tpm > 0 {
-				profile.TP1AtrMult = tpm
+				stagedRatio := 0.33
+				if profile.TP2AtrMult > 0 {
+					stagedRatio = profile.TP1AtrMult / profile.TP2AtrMult
+				}
+				profile.TP2AtrMult = tpm
+				profile.TP1AtrMult = tpm * stagedRatio
 			}
 		}
 	}
@@ -468,6 +482,24 @@ func (s *SignalService) EvaluateMarketSignal(
 		} else {
 			stopLoss = entryPrice * (1.0 + slPct/100.0)
 		}
+	}
+
+	// spec-021: MIN/MAX_STOP_LOSS_PCT from .env were loaded but NEVER applied
+	// (dead enforcement — stops only obeyed the code profile table). The .env
+	// bounds are the user's mechanical limits and win last.
+	stopClamps := map[string]interface{}{}
+	if s.config.MinStopLossPct > 0 && slPct < s.config.MinStopLossPct {
+		stopClamps["stop_loss"] = map[string]interface{}{"requested": slPct, "applied": s.config.MinStopLossPct, "bound": "min_stop_loss_pct"}
+		slPct = s.config.MinStopLossPct
+	}
+	if s.config.MaxStopLossPct > 0 && slPct > s.config.MaxStopLossPct {
+		stopClamps["stop_loss"] = map[string]interface{}{"requested": slPct, "applied": s.config.MaxStopLossPct, "bound": "max_stop_loss_pct"}
+		slPct = s.config.MaxStopLossPct
+	}
+	if dir == DirectionLong {
+		stopLoss = entryPrice * (1.0 - slPct/100.0)
+	} else {
+		stopLoss = entryPrice * (1.0 + slPct/100.0)
 	}
 
 	// 5. Leverage: vol-target formula from the profile (FR-006) when a
@@ -624,6 +656,53 @@ func (s *SignalService) EvaluateMarketSignal(
 		rr = effectiveMinRR
 	}
 
+	// spec-021 FR-703/704: hard take-profit bounds (MIN/MAX_TAKE_PROFIT_PCT,
+	// previously never enforced) + TP2-beyond-TP1 invariant (nil runner when
+	// unreachable within the cap). Mechanical bounds beat the R:R floor
+	// (Constitution VIII); the final target is then re-checked against the
+	// floor — if the bounded target cannot meet min_rr, the candidate is
+	// rejected explicitly instead of shipping a lying R:R.
+	tpClamps, tp2OK := clampTakeProfits(entryPrice, &tp1Price, &tp2Price, dir,
+		s.config.MinTakeProfitPct, s.config.MaxTakeProfitPct)
+	for k, v := range stopClamps {
+		tpClamps[k] = v
+	}
+	if len(tpClamps) > 0 && aiResp != nil {
+		existing := map[string]interface{}{}
+		_ = json.Unmarshal(aiResp.ParameterClamps, &existing)
+		for k, v := range tpClamps {
+			existing[k] = v
+		}
+		if b, err := json.Marshal(existing); err == nil {
+			aiResp.ParameterClamps = b
+		}
+	}
+	var tp2Ptr *float64
+	if tp2OK {
+		tp2Ptr = &tp2Price
+	}
+	rrFinal, rrErrFinal := CalculateRiskRewardRatio(entryPrice, stopLoss, tp1Price, dir)
+	if rrErrFinal == nil {
+		rr = rrFinal
+	}
+	// Float round-trip must not reject a target sitting exactly on the floor
+	// (spec-020: 2.6999999999999966 vs 2.6999999999999997 killed valid signals).
+	if rr+1e-9 < effectiveMinRR {
+		aiResp.GateRejected = "take_profit_bound"
+		aiResp.GateRejectedDetail = map[string]interface{}{
+			"reason":      "bounded take-profit cannot meet min_rr",
+			"rr":          rr,
+			"min_rr":      effectiveMinRR,
+			"take_profit": tp1Price,
+		}
+		if aiResp.Reasoning == "" {
+			aiResp.Reasoning = "[entry gate: take_profit_bound] TP1 within MIN/MAX_TAKE_PROFIT_PCT cannot satisfy min_rr"
+		} else {
+			aiResp.Reasoning = "[entry gate: take_profit_bound] " + aiResp.Reasoning
+		}
+		return nil, aiResp, nil
+	}
+
 	sig := &db.FuturesTradeSignal{
 		Symbol:              symbol,
 		Direction:           string(dir),
@@ -634,7 +713,7 @@ func (s *SignalService) EvaluateMarketSignal(
 		EntryPrice:          entryPrice,
 		StopLoss:            stopLoss,
 		TakeProfit1:         tp1Price,
-		TakeProfit2:         &tp2Price,
+		TakeProfit2:         tp2Ptr,
 		Leverage:            leverage,
 		RiskRewardRatio:     rr,
 		AllocatedCapitalUSD: allocatedCapitalUSD,

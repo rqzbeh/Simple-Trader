@@ -220,3 +220,69 @@ func TestFormatEarlyExit(t *testing.T) {
 	}
 }
 
+
+// TestFormatterShowsRealTimeframe (spec-020 US-C2): the card must state the
+// STORED timeframe — the legacy hardcoded "2-Hour Swing Setup" claimed 2h on
+// 15m signals — and must never fabricate catalyst text or claim fixed R:R.
+func TestFormatterShowsRealTimeframe(t *testing.T) {
+	tf := "15m"
+	tp2 := 175.5
+	sig := &db.FuturesTradeSignal{
+		Symbol:            "AAVE/USDT",
+		Direction:         "LONG",
+		Timeframe:         &tf,
+		Leverage:          3,
+		EntryPrice:        173.02,
+		StopLoss:          171.98,
+		TakeProfit1:       175.15,
+		TakeProfit2:       &tp2,
+		RiskRewardRatio:   2.05,
+		CatalystHeadline:  "BlackRock ETF inflows hit weekly record",
+		CatalystSource:    "cointelegraph",
+	}
+	out := telegram.FormatSignalEntry(sig)
+	if !strings.Contains(out, "15m") {
+		t.Errorf("card must show the real timeframe 15m:\n%s", out)
+	}
+	if strings.Contains(out, "2\\-Hour") || strings.Contains(out, "2-Hour") {
+		t.Errorf("hardcoded 2-Hour claim must be gone:\n%s", out)
+	}
+	if strings.Contains(out, "2\\.5:1 to 3:1") {
+		t.Errorf("hardcoded R:R claim must be gone:\n%s", out)
+	}
+	if !strings.Contains(out, "Take Profit 2") {
+		t.Errorf("TP2 present must render")
+	}
+}
+
+// TestFormatterNoFabrication: missing catalyst data omits the block — never
+// invented headline/source; nil TP2 omits the second target line; nil
+// timeframe omits the claim entirely.
+func TestFormatterNoFabrication(t *testing.T) {
+	sig := &db.FuturesTradeSignal{
+		Symbol:          "XAU/USDT",
+		Direction:       "LONG",
+		Leverage:        1,
+		EntryPrice:      4000,
+		StopLoss:        3960,
+		TakeProfit1:     4100,
+		TakeProfit2:     nil,
+		RiskRewardRatio: 2.5,
+	}
+	out := telegram.FormatSignalEntry(sig)
+	if strings.Contains(out, "Breaking Macro Catalyst Disclosed") {
+		t.Errorf("fabricated headline default must be gone")
+	}
+	if strings.Contains(out, "News Aggregator") {
+		t.Errorf("fabricated source default must be gone")
+	}
+	if strings.Contains(out, "Primary News Catalyst") {
+		t.Errorf("catalyst block must be omitted when no real headline")
+	}
+	if strings.Contains(out, "Take Profit 2") {
+		t.Errorf("nil TP2 must omit the line, got:\n%s", out)
+	}
+	if strings.Contains(out, "Timeframe") {
+		t.Errorf("nil timeframe must omit the claim instead of guessing")
+	}
+}

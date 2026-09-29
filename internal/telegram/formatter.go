@@ -65,18 +65,33 @@ func FormatSignalEntry(sig *db.FuturesTradeSignal) string {
 		dirEmoji = "🔴"
 	}
 
-	headline := sig.CatalystHeadline
-	if headline == "" {
-		headline = "Breaking Macro Catalyst Disclosed"
-	}
-	source := sig.CatalystSource
-	if source == "" {
-		source = "News Aggregator"
+	// spec-021: no fabricated catalyst text — when the signal carries no real
+	// headline, the catalyst block is omitted entirely.
+	catalystBlock := ""
+	if sig.CatalystHeadline != "" {
+		srcLine := ""
+		if sig.CatalystSource != "" {
+			srcLine = fmt.Sprintf("🗞️ *Source:* %s  •  ", EscapeMarkdownV2(sig.CatalystSource))
+		}
+		catalystBlock = fmt.Sprintf(
+			"📰 *Primary News Catalyst:*\n_%s_\n%s*Sentiment:* %s\n\n",
+			EscapeMarkdownV2(sig.CatalystHeadline),
+			srcLine,
+			EscapeMarkdownV2(fmt.Sprintf("%+.2f", sig.CatalystSentiment)),
+		)
 	}
 
 	tp2Line := ""
 	if sig.TakeProfit2 != nil && *sig.TakeProfit2 > 0 {
 		tp2Line = fmt.Sprintf("\n🎯 *Take Profit 2:* $%s", EscapeMarkdownV2(FormatPrice(*sig.TakeProfit2)))
+	}
+
+	// spec-020 FR-705: show the REAL stored timeframe — the legacy hardcoded
+	// horizon label claimed two hours on 15m signals. Legacy rows without a
+	// timeframe omit the claim instead of guessing.
+	tfLine := ""
+	if sig.Timeframe != nil && *sig.Timeframe != "" {
+		tfLine = fmt.Sprintf("*Timeframe:* *%s*\n", EscapeMarkdownV2(*sig.Timeframe))
 	}
 
 	rrFormatted := EscapeMarkdownV2(fmt.Sprintf("1:%.2f", sig.RiskRewardRatio))
@@ -86,7 +101,7 @@ func FormatSignalEntry(sig *db.FuturesTradeSignal) string {
 		"🚨 *NEW TWO\\-SIDED FUTURES SIGNAL* 🚨\n\n"+
 			"*Asset:* `%s`\n"+
 			"*Direction:* %s *%s*\n"+
-			"*Timeframe:* *2\\-Hour Swing Setup*\n"+
+			"%s"+
 			"*Isolated Leverage:* *%dx*\n"+
 			"━━━━━━━━━━━━━━━━━━━━\n"+
 			"📍 *Entry Price:* $%s\n"+
@@ -95,13 +110,12 @@ func FormatSignalEntry(sig *db.FuturesTradeSignal) string {
 			"⚖️ *Risk / Reward:* *%s*\n"+
 			"💵 *Capital Allocation:* $%s \\(%s Equity\\)\n"+
 			"━━━━━━━━━━━━━━━━━━━━\n"+
-			"📰 *Primary News Catalyst:*\n"+
-			"_%s_\n"+
-			"🗞️ *Source:* %s  •  *Sentiment:* %s\n\n"+
-			"⚠️ *Risk Guard:* 2\\.5:1 to 3:1 R:R target with strict stop loss protection\\.",
+			"%s"+
+			"⚠️ *Risk Guard:* min R:R floor enforced with stop-loss protection\\.",
 		EscapeMarkdownV2(sig.Symbol),
 		dirEmoji,
 		EscapeMarkdownV2(sig.Direction),
+		tfLine,
 		sig.Leverage,
 		EscapeMarkdownV2(FormatPrice(sig.EntryPrice)),
 		EscapeMarkdownV2(FormatPrice(sig.StopLoss)),
@@ -110,9 +124,7 @@ func FormatSignalEntry(sig *db.FuturesTradeSignal) string {
 		rrFormatted,
 		EscapeMarkdownV2(fmt.Sprintf("%.2f", sig.AllocatedCapitalUSD)),
 		equityPctFormatted,
-		EscapeMarkdownV2(headline),
-		EscapeMarkdownV2(source),
-		EscapeMarkdownV2(fmt.Sprintf("%+.2f", sig.CatalystSentiment)),
+		catalystBlock,
 	)
 }
 
@@ -296,4 +308,3 @@ func FormatEarlyExit(msg EarlyExitMessage) string {
 		EscapeMarkdownV2(msg.ExitReason),
 	)
 }
-

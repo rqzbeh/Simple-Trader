@@ -15,12 +15,18 @@ import (
 func jevServer(t *testing.T, conf float64, choice string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		other := "SHORT"
+		if choice == "SHORT" {
+			other = "LONG"
+		}
 		resp := map[string]interface{}{
 			"model": "jev-test",
 			"answers": map[string]interface{}{
-				"entry": map[string]interface{}{
+				// spec-018: production asks `direction` (relative Choice,
+				// no NO_TRADE attractor) — fixtures follow the contract.
+				"direction": map[string]interface{}{
 					"type": "choice", "choice": choice, "confidence": conf,
-					"probabilities": map[string]float64{choice: conf, "NO_TRADE": 1 - conf},
+					"probabilities": map[string]float64{choice: conf, other: 1 - conf},
 				},
 			},
 			"usage": map[string]int{"input_tokens": 100, "output_tokens": 10},
@@ -50,7 +56,7 @@ func TestRouterJevDirectAboveThreshold(t *testing.T) {
 		},
 	}
 	out, err := r.Route(context.Background(), "c1", nil,
-		map[string]ai.JevQuestion{"entry": {Type: "choice"}}, entryVocab)
+		map[string]ai.JevQuestion{"direction": {Type: "choice"}}, directionVocab)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +79,7 @@ func TestRouterEscalatesBelowThreshold(t *testing.T) {
 		},
 	}
 	out, err := r.Route(context.Background(), "c1", nil,
-		map[string]ai.JevQuestion{"entry": {Type: "choice"}}, entryVocab)
+		map[string]ai.JevQuestion{"direction": {Type: "choice"}}, directionVocab)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +102,7 @@ func TestRouterEscalationFailureNotDowngraded(t *testing.T) {
 		},
 	}
 	_, err := r.Route(context.Background(), "c1", nil,
-		map[string]ai.JevQuestion{"entry": {Type: "choice"}}, entryVocab)
+		map[string]ai.JevQuestion{"direction": {Type: "choice"}}, directionVocab)
 	if err == nil {
 		t.Fatal("expected explicit escalation failure, got nil")
 	}

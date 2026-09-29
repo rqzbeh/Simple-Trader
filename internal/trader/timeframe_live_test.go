@@ -36,13 +36,16 @@ func TestTimeframeLiveSmoke(t *testing.T) {
 		t.Fatalf("batch evaluate failed: %v", err)
 	}
 
-	// 1. Validate entry answer
-	entryAns, ok := answers["entry"]
+	// 1. Validate direction answer (spec-018 split questions)
+	dirAns, ok := answers["direction"]
 	if !ok {
-		t.Fatalf("missing entry answer in batch response")
+		t.Fatalf("missing direction answer in batch response")
 	}
-	if err := ai.ValidateChoice(entryAns, entryVocab, cycleID); err != nil {
-		t.Fatalf("entry validation failed: %v", err)
+	if err := ai.ValidateChoice(dirAns, directionVocab, cycleID); err != nil {
+		t.Fatalf("direction validation failed: %v", err)
+	}
+	if _, hasEdge := answers["edge"]; !hasEdge {
+		t.Fatalf("missing edge noul answer in batch response")
 	}
 
 	// 2. Validate timeframe answer
@@ -56,5 +59,5 @@ func TestTimeframeLiveSmoke(t *testing.T) {
 	}
 
 	t.Logf("batch success: entry=%s conf=%.2f, timeframe=%s conf=%.2f, latency=%v (usage latency=%v)",
-		entryAns.Choice, entryAns.Confidence, tfAns.Choice, tfAns.Confidence, batchLatency, usage.Latency)
+		dirAns.Choice, dirAns.Confidence, tfAns.Choice, tfAns.Confidence, batchLatency, usage.Latency)
 }

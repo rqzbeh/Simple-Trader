@@ -68,13 +68,9 @@ func TestEntryPath_TimeframeValid(t *testing.T) {
 	ctx := context.Background()
 
 	answers := map[string]interface{}{
-		"entry": map[string]interface{}{
-			"type":       "choice",
-			"choice":     "LONG",
-			"confidence": 0.90,
-			"probabilities": map[string]float64{
-				"LONG": 0.90, "SHORT": 0.05, "NO_TRADE": 0.05,
-			},
+		"direction": map[string]interface{}{
+			"type": "choice", "choice": "LONG", "confidence": 0.90,
+			"probabilities": map[string]float64{"LONG": 0.90, "SHORT": 0.1},
 		},
 		"timeframe": map[string]interface{}{
 			"type":       "choice",
@@ -150,17 +146,18 @@ func TestEntryPath_TimeframeValid(t *testing.T) {
 }
 
 func TestEntryPath_TimeframeInvalid_AbortsLoud(t *testing.T) {
+	_ = config.UpdateTimeframeSet("TIMEFRAME_SET_ALPHA", "15m,1h,4h")
+	defer func() {
+		_ = config.UpdateTimeframeSet("TIMEFRAME_SET_ALPHA", "")
+	}()
+
 	ctx := context.Background()
 
 	// "2h" is not in ALPHA set {15m, 1h, 4h}
 	answers := map[string]interface{}{
-		"entry": map[string]interface{}{
-			"type":       "choice",
-			"choice":     "LONG",
-			"confidence": 0.90,
-			"probabilities": map[string]float64{
-				"LONG": 0.90, "SHORT": 0.05, "NO_TRADE": 0.05,
-			},
+		"direction": map[string]interface{}{
+			"type": "choice", "choice": "LONG", "confidence": 0.90,
+			"probabilities": map[string]float64{"LONG": 0.90, "SHORT": 0.1},
 		},
 		"timeframe": map[string]interface{}{
 			"type":       "choice",
@@ -215,13 +212,9 @@ func TestEntryPath_TimeframeMissing_AbortsLoud(t *testing.T) {
 
 	// Missing timeframe answer
 	answers := map[string]interface{}{
-		"entry": map[string]interface{}{
-			"type":       "choice",
-			"choice":     "LONG",
-			"confidence": 0.90,
-			"probabilities": map[string]float64{
-				"LONG": 0.90, "SHORT": 0.05, "NO_TRADE": 0.05,
-			},
+		"direction": map[string]interface{}{
+			"type": "choice", "choice": "LONG", "confidence": 0.90,
+			"probabilities": map[string]float64{"LONG": 0.90, "SHORT": 0.1},
 		},
 	}
 	srv := mockJevServerWithBatch(answers)

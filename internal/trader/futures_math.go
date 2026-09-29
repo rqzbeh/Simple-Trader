@@ -388,3 +388,84 @@ func EvaluateDecay(ageMin float64, rMultiple float64, currentState string, prof 
 
 	return currentState, ""
 }
+
+// clampTakeProfits enforces the MIN/MAX_TAKE_PROFIT_PCT bounds on both
+// staged targets (spec-021 FR-703 — the config existed but was never applied)
+// and guarantees the staging invariant: TP2 strictly beyond TP1 in the
+// trade's favor (FR-704). When the runner cannot sit beyond TP1 inside the
+// cap, it is omitted (returns false) so the UI/telegram show ONE honest
+// target instead of a misleading second level.
+func clampTakeProfits(entry float64, tp1, tp2 *float64, dir Direction, minPct, maxPct float64) (map[string]interface{}, bool) {
+	if entry <= 0 || minPct <= 0 || maxPct < minPct {
+		return nil, true
+	}
+	var lo, hi float64
+	if dir == DirectionLong {
+		lo = entry * (1 + minPct/100.0)
+		hi = entry * (1 + maxPct/100.0)
+	} else {
+		lo = entry * (1 - maxPct/100.0)
+		hi = entry * (1 - minPct/100.0)
+	}
+	clamps := map[string]interface{}{}
+	bound := func(name string, v *float64) {
+		orig := *v
+		if *v < lo {
+			*v = lo
+		} else if *v > hi {
+			*v = hi
+		}
+		if *v != orig {
+			clamps[name] = map[string]interface{}{
+				"requested": orig,
+				"applied":   *v,
+				"bound":     "take_profit_bounds",
+			}
+		}
+	}
+	bound("take_profit_1", tp1)
+	if tp2 == nil {
+		return clamps, true
+	}
+	bound("take_profit_2", tp2)
+	if dir == DirectionLong {
+		if *tp2 > *tp1 {
+			return clamps, true
+		}
+		want := *tp1 + (*tp1 - entry)
+		if *tp1 > entry && want <= hi {
+			clamps["take_profit_2"] = map[string]interface{}{
+				"requested": *tp2,
+				"applied":   want,
+				"bound":     "tp2_staging",
+			}
+			*tp2 = want
+			return clamps, true
+		}
+		clamps["take_profit_2_omitted"] = map[string]interface{}{
+			"reason": "runner cannot exceed TP1 within MAX_TAKE_PROFIT_PCT",
+		}
+		return clamps, false
+	}
+	// SHORT: runner must sit STRICTLY BELOW TP1 (deeper target). RR-stretch
+	// can push TP1 deeper than the ATR-derived TP2 — then TP2 must be
+	// re-staged beyond TP1 or omitted (spec-020 property suite caught the
+	// equal/above case at low ATR + high min_rr).
+	if *tp2 >= *tp1 {
+		want := 2*(*tp1) - entry
+		if *tp1 < entry && want >= lo {
+			clamps["take_profit_2"] = map[string]interface{}{
+				"requested": *tp2,
+				"applied":   want,
+				"bound":     "tp2_staging",
+			}
+			*tp2 = want
+			return clamps, true
+		}
+		clamps["take_profit_2_omitted"] = map[string]interface{}{
+			"reason": "runner cannot sit below TP1 within take-profit bounds",
+		}
+		return clamps, false
+	}
+	return clamps, true
+}

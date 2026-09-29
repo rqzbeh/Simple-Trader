@@ -32,7 +32,7 @@ func TestChaosAllFailuresExplicit(t *testing.T) {
 					return DecisionOutcome{}, errors.New("9router 500")
 				}}
 			_, err := r.Route(context.Background(), "cyc", nil,
-				map[string]ai.JevQuestion{"entry": {Type: "choice"}}, entryVocab)
+				map[string]ai.JevQuestion{"direction": {Type: "choice"}}, directionVocab)
 			return err
 		}},
 		{"news-classifier-unconfigured", func() error {

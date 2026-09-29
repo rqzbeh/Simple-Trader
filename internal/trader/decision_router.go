@@ -102,10 +102,11 @@ func (r *DecisionRouter) Route(ctx context.Context, cycleID string, state interf
 	if err != nil {
 		return DecisionOutcome{}, err
 	}
-	// Primary answer = "entry"/"direction"/"news_impact" choice, first present.
+	// Primary answer = "direction"/"news_impact" choice, first present
+	// ("entry" removed with the mega-question, spec-018).
 	var primaryID string
 	for id := range questions {
-		if id == "entry" || id == "direction" || id == "news_impact" {
+		if id == "direction" || id == "news_impact" {
 			primaryID = id
 			break
 		}
