@@ -9,7 +9,7 @@
 | parameter_distributions | jsonb | core-mode only: {"leverage":{"5x":0.6,"8x":0.3,...},"confidence":0.8,...} — NULL/absent for override params |
 | parameter_clamps | jsonb | {"leverage":{"requested":25,"applied":12,"bound":"exchange_max"}} — only when clamped |
 
-Validation: parameter_modes covers exactly the 6 phase-1 keys; override mode ⇒ values equal configured env; core mode ⇒ distributions present.
+Validation: parameter_modes covers exactly the 6 phase-1 keys; override mode ⇒ values equal configured env; core mode ⇒ distributions present — EXCEPT decay, which is news-scoped: its answer (and distribution) arrives with the per-cluster news batch, so the entry record carries its mode (and override value if set) only (convergence 2026-09-29).
 
 ## ParamRegistry (Go, single source)
 

@@ -72,9 +72,17 @@ func NewServer(
 			decisionRouter = &trader.DecisionRouter{
 				Jev:       ai.NewJevClient("https://api.typesafe.ai", os.Getenv("TYPESAFE_API_KEY"), 12*time.Second),
 				Threshold: thr,
-				Escalate: func(ctx context.Context, state interface{}) (trader.DecisionOutcome, error) {
+				Escalate: func(ctx context.Context, payload interface{}) (trader.DecisionOutcome, error) {
 					// 9Router escalation: slow brain answers when Jev low-confidence (FR-003).
-					resp, err := aiClient.Analyze(ctx, ai.DecisionRequest{Symbol: "escalated", IndicatorSnap: cache.IndicatorSnapshot{}})
+					// Payload MUST be the real entry request (or a StateObject converted
+					// from it) — an empty dummy body made the LLM answer HOLD for every
+					// escalated candidate (2026-09-29 defect). EscalationPayload rejects
+					// anything else instead of judging an empty context.
+					req, perr := trader.EscalationPayload(payload)
+					if perr != nil {
+						return trader.DecisionOutcome{}, perr
+					}
+					resp, err := aiClient.Analyze(ctx, req)
 					if err != nil {
 						return trader.DecisionOutcome{}, fmt.Errorf("escalation failed: %w", err)
 					}

@@ -123,3 +123,14 @@ Comparison report over ≥14 days / ≥500 records per type: routing distributio
 - Evaluation runs on current paper/simulated flow; thresholds start from research.md defaults and tune only via FR-017 evidence.
 - Migration lands in root `migrations/` (dual-directory rule).
 - Trader-facing UI changes out of scope; admin JSON report only.
+
+## Convergence (2026-09-29) — no-signal defect
+
+**Defect**: escalation closure in `server.go` ignored its payload and sent `Analyze(DecisionRequest{Symbol: "escalated", IndicatorSnap: {}})` — 9Router evaluated an empty body, answered `HOLD`, which mapped to `NO_TRADE` and overwrote Jev's directional choice. With `ROUTING_CONFIDENCE_THRESHOLD=0.75` (set 2026-09-28 12:44) above Jev's max observed confidence (0.64), every candidate escalated → 304 HOLD:route=escalated → zero signals since 2026-09-28 11:17.
+
+**Fix (FR-003/FR-007)**:
+- `trader.EscalationPayload(payload)` normalizes inputs: `ai.DecisionRequest` passes through; `StateObject` (shadow Route path) is converted via `stateToRequest` (inverse of snapToMap); any other type = explicit error — never an empty body.
+- Trade path now passes the FULL entry `req` (symbol, indicators, headlines, bucket, catalysts) to `Escalate`.
+- Regression: `TestEntryPath_EscalationReceivesRealPayload`, `TestEscalationPayload_*`.
+
+**Evidence**: `go test -run "Escalation" ./internal/trader/` → 4 PASS; full suite 11/11.

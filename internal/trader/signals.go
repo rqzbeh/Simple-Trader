@@ -880,9 +880,11 @@ func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req a
 		return nil, err
 	}
 
-	// Resolve managed trade parameters (spec-015 FR-302, FR-307)
+	// Resolve managed trade parameters (spec-015 FR-302, FR-307). Entry batch
+	// carries 5 param questions; decay is answered per cluster by the news
+	// path and folded into the record by ResolveEntry.
 	reg := NewParamRegistry(appCfg)
-	resolved, err := reg.ResolveAll(answers, cycle)
+	resolved, err := reg.ResolveEntry(answers, cycle)
 	if err != nil {
 		return nil, err
 	}
@@ -900,7 +902,10 @@ func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req a
 		if s.router.Escalate == nil {
 			return nil, ai.WrapDecision("router", cycle, ai.ErrLLMClassify, "confidence below threshold but no escalation path configured")
 		}
-		esc, err := s.router.Escalate(ctx, state)
+		// Pass the full request: escalation judges the same symbols,
+		// indicators and headlines the entry cycle saw (spec-013 FR-003).
+		// Passing `state` here previously produced an empty dummy payload.
+		esc, err := s.router.Escalate(ctx, req)
 		if err != nil {
 			return nil, ai.WrapDecision("router", cycle, ai.ErrLLMClassify, "escalation failed: "+err.Error())
 		}

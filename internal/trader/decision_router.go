@@ -2,10 +2,12 @@ package trader
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/rqzbeh/simple-trader/internal/ai"
+	"github.com/rqzbeh/simple-trader/internal/cache"
 )
 
 // DecisionRouter: Jev-first, 9Router-escalated (spec-013 FR-001/FR-003).
@@ -52,6 +54,43 @@ type DecisionOutcome struct {
 
 // ErrThresholdMissing returned when config absent (FR-016 — startup error, no default).
 var ErrThresholdMissing = ai.ErrConfigMissing
+
+// EscalationPayload normalizes the value handed to Escalate into a real
+// DecisionRequest. Escalation judges the SAME evidence as the entry cycle —
+// never an empty body (spec-013 FR-003/FR-007). Unknown payloads are an
+// explicit error, not a degraded request.
+func EscalationPayload(payload interface{}) (ai.DecisionRequest, error) {
+	switch v := payload.(type) {
+	case ai.DecisionRequest:
+		return v, nil
+	case StateObject:
+		return stateToRequest(v), nil
+	default:
+		return ai.DecisionRequest{}, ai.WrapDecision("router", "escalation", ai.ErrLLMClassify,
+			fmt.Sprintf("unsupported escalation payload type %T — refusing empty request", payload))
+	}
+}
+
+// stateToRequest rebuilds the numeric indicator snapshot from a StateObject
+// (inverse of snapToMap) so shadow-side escalation sees the same numbers the
+// entry cycle saw.
+func stateToRequest(v StateObject) ai.DecisionRequest {
+	return ai.DecisionRequest{
+		Symbol: v.Symbol,
+		IndicatorSnap: cache.IndicatorSnapshot{
+			Symbol:          v.Symbol,
+			RSI:             v.Indicators["rsi"],
+			MACD:            v.Indicators["macd"],
+			Signal:          v.Indicators["macd_signal"],
+			Histogram:       v.Indicators["macd_histogram"],
+			UpperBand:       v.Indicators["bb_upper"],
+			MiddleBand:      v.Indicators["bb_middle"],
+			LowerBand:       v.Indicators["bb_lower"],
+			ConfluenceScore: v.Indicators["confluence"],
+			OBI:             v.Indicators["obi"],
+		},
+	}
+}
 
 // Route runs Jev first; escalates when confidence < Threshold.
 func (r *DecisionRouter) Route(ctx context.Context, cycleID string, state interface{}, questions map[string]ai.JevQuestion, allowed map[string]bool) (DecisionOutcome, error) {

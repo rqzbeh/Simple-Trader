@@ -154,26 +154,79 @@ func (r *ParamRegistry) Resolve(key string, ans *ai.JevAnswer, cycleID string) (
 	}, nil
 }
 
-// ResolveAll resolves all 6 parameters for a cycle.
+// ResolveAll resolves all 6 parameters for a cycle. Every managed parameter
+// must carry an answer (FR-307).
 func (r *ParamRegistry) ResolveAll(answers map[string]ai.JevAnswer, cycleID string) (map[string]ResolvedParam, error) {
-	results := make(map[string]ResolvedParam)
-	for _, k := range r.Keys() {
-		spec := r.specs[k]
-		var ansPtr *ai.JevAnswer
-		if answers != nil {
-			if a, ok := answers[spec.QuestionKey]; ok {
-				ansPtr = &a
-			} else if a, ok := answers[spec.Key]; ok {
-				ansPtr = &a
-			}
+	return r.resolveKeys(answers, cycleID, r.Keys())
+}
+
+// EntryParamKeys are the parameters whose questions ride the entry batch
+// (spec-015 research.md: decay is a news-cluster question, not an entry one).
+var EntryParamKeys = []string{"min_rr", "leverage", "conviction", "atr_regime", "confluence"}
+
+// ResolveEntry resolves the entry-batch parameters, then folds the decay
+// record in. decay is answered per cluster by the news path, so its answer is
+// legitimately absent at entry time: override mode records the env value,
+// core_managed mode records the mode only (value applied later per cluster).
+// Every ENTRY-BATCH managed parameter without an answer still fails loud.
+func (r *ParamRegistry) ResolveEntry(answers map[string]ai.JevAnswer, cycleID string) (map[string]ResolvedParam, error) {
+	results, err := r.resolveKeys(answers, cycleID, EntryParamKeys)
+	if err != nil {
+		return nil, err
+	}
+	const decayKey = "decay"
+	spec, ok := r.specs[decayKey]
+	if !ok {
+		return nil, fmt.Errorf("component=managed-params cycle=%s: decay spec missing", cycleID)
+	}
+	if ansPtr := lookupAnswer(answers, spec); ansPtr != nil {
+		res, err := r.Resolve(decayKey, ansPtr, cycleID)
+		if err != nil {
+			return nil, err
 		}
-		res, err := r.Resolve(k, ansPtr, cycleID)
+		results[decayKey] = res
+		return results, nil
+	}
+	// No news-batch answer at entry: record mode (and override value if set).
+	// The per-cluster value comes from the news path (signal_handlers decay loop).
+	decay := ResolvedParam{Key: decayKey, Mode: spec.Mode()}
+	if spec.Mode() == ModeOverride {
+		decay.Value = spec.GetOverride()
+	}
+	results[decayKey] = decay
+	return results, nil
+}
+
+// resolveKeys resolves the given keys; a managed parameter without an answer
+// errors (FR-307 zero-fallback).
+func (r *ParamRegistry) resolveKeys(answers map[string]ai.JevAnswer, cycleID string, keys []string) (map[string]ResolvedParam, error) {
+	results := make(map[string]ResolvedParam, len(keys))
+	for _, k := range keys {
+		spec, ok := r.specs[k]
+		if !ok {
+			return nil, fmt.Errorf("component=managed-params cycle=%s: unknown parameter %q", cycleID, k)
+		}
+		res, err := r.Resolve(k, lookupAnswer(answers, spec), cycleID)
 		if err != nil {
 			return nil, err
 		}
 		results[k] = res
 	}
 	return results, nil
+}
+
+// lookupAnswer finds the Jev answer for a spec by QuestionKey, then canonical key.
+func lookupAnswer(answers map[string]ai.JevAnswer, spec ParamSpec) *ai.JevAnswer {
+	if answers == nil {
+		return nil
+	}
+	if a, ok := answers[spec.QuestionKey]; ok {
+		return &a
+	}
+	if a, ok := answers[spec.Key]; ok {
+		return &a
+	}
+	return nil
 }
 
 func (r *ParamRegistry) registerPhase1Specs() {

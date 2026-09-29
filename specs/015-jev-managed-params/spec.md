@@ -100,3 +100,15 @@ Every trade records, per parameter, whether the value was `user_override` or `co
 - Jev-first/9Router-escalated routing (spec-013) applies to parameter questions; jev_only vs prefilter classification per audit where accuracy requires.
 - Settings persistence (PUT → .env) handles new override keys via the existing allowlist path.
 - Paper/simulated flow during evidence window (SC-305) before any live default changes.
+
+## Convergence (2026-09-29) — managed-params entry defect
+
+**Defect**: `ResolveAll` demanded an answer for ALL 6 registry keys at entry, but the entry batch only asks 5 — `decay` is a news-path question (research.md). Real Jev never returns `decay` for entry batches → every managed entry failed `missing answer for managed parameter "decay" (FR-307)` from 2026-09-29 09:23. The unit tests masked this: `mockJevServerWithBatch` answered every key blindly instead of only the questions asked.
+
+**Fix (FR-302/FR-307)**:
+- `ParamRegistry.ResolveEntry` resolves the 5 `EntryParamKeys` strictly (managed-without-answer still fails loud), then folds the `decay` record: `user_override` ⇒ env value recorded; `core_managed` ⇒ mode only (value applied per cluster by the news path).
+- `data-model.md` corrected: `parameter_distributions` for decay arrives with the news batch, not the entry record.
+- Mock server now answers ONLY requested question IDs (mirrors the real API) — this class of drift fails tests again.
+- Regression: `TestResolveEntry_DefersDecayAnswer`.
+
+**Evidence**: full suite 11/11, `-race` clean, targeted tests 5 PASS.

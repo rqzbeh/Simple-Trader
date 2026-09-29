@@ -352,3 +352,75 @@ func TestChaos_CoreFailureMidBatch(t *testing.T) {
 		t.Errorf("expected out of vocabulary error, got: %v", err)
 	}
 }
+
+// TestResolveEntry_DefersDecayAnswer covers the 2026-09-29 convergence fix:
+// the entry batch never asks "decay" (news path asks per cluster), so
+// ResolveEntry must not demand its answer — while every entry-batch managed
+// parameter without an answer still fails loud (FR-307).
+func TestResolveEntry_DefersDecayAnswer(t *testing.T) {
+	for _, k := range []string{
+		"MIN_RISK_TO_REWARD_RATIO", "DEFAULT_LEVERAGE", "MAX_RISK_PER_TRADE_PCT",
+		"SL_ATR_MULT", "TP_ATR_MULT", "CLUSTER_DECAY_MODE", "CONFLUENCE_MIN",
+	} {
+		t.Setenv(k, "")
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("config.Load failed: %v", err)
+	}
+	reg := NewParamRegistry(cfg)
+
+	score, conv, conf := 2.8, 0.8, 0.7
+	entryAnswers := map[string]ai.JevAnswer{
+		"min_rr_accept": {Type: "score", Score: &score},
+		"leverage":      {Type: "choice", Choice: "8x"},
+		"conviction":    {Type: "score", Score: &conv},
+		"atr_regime":    {Type: "choice", Choice: "NORMAL"},
+		"confluence":    {Type: "score", Score: &conf},
+		// NOTE: no "decay" answer — production batches never request it.
+	}
+
+	resolved, err := reg.ResolveEntry(entryAnswers, "entry-deferred-decay")
+	if err != nil {
+		t.Fatalf("ResolveEntry failed without decay answer (should defer): %v", err)
+	}
+	if len(resolved) != 6 {
+		t.Errorf("expected 6 recorded params (decay mode folded in), got %d", len(resolved))
+	}
+	decay, ok := resolved["decay"]
+	if !ok {
+		t.Fatalf("decay key missing from resolved record")
+	}
+	if decay.Mode != ModeManaged {
+		t.Errorf("decay mode = %q, want core_managed", decay.Mode)
+	}
+	if decay.Value != nil {
+		t.Errorf("managed decay must carry no value at entry (news path applies it), got %v", decay.Value)
+	}
+
+	modesJSON, _, _, _, err := PackageParamRecord(resolved)
+	if err != nil {
+		t.Fatalf("PackageParamRecord failed: %v", err)
+	}
+	var modes map[string]string
+	if err := json.Unmarshal(modesJSON, &modes); err != nil {
+		t.Fatalf("unmarshal modes: %v", err)
+	}
+	if len(modes) != 6 {
+		t.Errorf("parameter_modes must cover 6 keys, got %d: %s", len(modes), string(modesJSON))
+	}
+
+	// Entry-batch managed param without answer still fails loud (FR-307).
+	bad := make(map[string]ai.JevAnswer, len(entryAnswers))
+	for k, v := range entryAnswers {
+		bad[k] = v
+	}
+	delete(bad, "confluence")
+	_, err = reg.ResolveEntry(bad, "entry-missing-confluence")
+	if err == nil {
+		t.Fatalf("expected explicit error for missing entry-batch managed answer")
+	}
+	if !strings.Contains(err.Error(), "confluence") {
+		t.Errorf("error must name the missing parameter, got: %v", err)
+	}
+}

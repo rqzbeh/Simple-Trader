@@ -28,8 +28,18 @@ func mockJevServerWithBatch(answers map[string]interface{}) *httptest.Server {
 		for k, v := range answers {
 			fullAnswers[k] = v
 		}
-		if _, ok := answers["timeframe"]; !ok {
-			delete(fullAnswers, "timeframe")
+		// Answer ONLY the questions actually asked (mirrors the real API).
+		// Pre-spec-015 this mock answered every key blindly, which masked the
+		// missing-decay defect: production batches never request "decay".
+		var req struct {
+			Questions map[string]json.RawMessage `json:"questions"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err == nil && len(req.Questions) > 0 {
+			for k := range fullAnswers {
+				if _, asked := req.Questions[k]; !asked {
+					delete(fullAnswers, k)
+				}
+			}
 		}
 		resp := map[string]interface{}{
 			"model":   "jev-test",
@@ -230,5 +240,74 @@ func TestEntryPath_TimeframeMissing_AbortsLoud(t *testing.T) {
 	}
 	if decErr.Component != "timeframe" {
 		t.Errorf("expected component='timeframe', got %q", decErr.Component)
+	}
+}
+
+// TestEntryPath_EscalationReceivesRealPayload is the 2026-09-29 no-signal
+// regression: with Jev confidence below threshold, Escalate must receive the
+// FULL entry request (symbol, indicators, headlines) — the production closure
+// used to send Symbol:"escalated" + empty snapshot, so 9Router answered HOLD
+// for every sub-threshold candidate and no trade was ever created.
+func TestEntryPath_EscalationReceivesRealPayload(t *testing.T) {
+	ctx := context.Background()
+	answers := map[string]interface{}{
+		"entry": map[string]interface{}{
+			"type": "choice", "choice": "LONG", "confidence": 0.50,
+			"probabilities": map[string]float64{"LONG": 0.50, "NO_TRADE": 0.30, "SHORT": 0.20},
+		},
+		"timeframe": map[string]interface{}{
+			"type": "choice", "choice": "1h", "confidence": 0.88,
+			"probabilities": map[string]float64{"15m": 0.10, "1h": 0.80, "4h": 0.10},
+		},
+	}
+	srv := mockJevServerWithBatch(answers)
+	defer srv.Close()
+
+	var gotPayload interface{}
+	router := &trader.DecisionRouter{
+		Jev:       ai.NewJevClient(srv.URL, "test-key", time.Second),
+		Threshold: 0.70, // 0.50 < 0.70 ⇒ escalation path fires
+		Escalate: func(ctx context.Context, payload interface{}) (trader.DecisionOutcome, error) {
+			gotPayload = payload
+			// Judge the real request the way 9Router would: return SHORT intent.
+			return trader.DecisionOutcome{Choice: "SHORT", Confidence: 0.9}, nil
+		},
+	}
+	service := trader.NewSignalService(nil, nil)
+	service.SetDecisionRouter(router)
+	service.SetNewsClassifier(stubClassifier())
+
+	quote := cache.TickerQuote{Symbol: "BTC/USD", Price: 60000.0}
+	snap := cache.IndicatorSnapshot{Symbol: "BTC/USD", RSI: 55.0, SuperTrend: "BULL"}
+	headlines := []string{"US SEC follows CFTC in staff guidance for crypto"}
+
+	sig, resp, err := service.EvaluateMarketSignal(
+		ctx, "BTC/USD", "ALPHA", quote, snap, nil, headlines, 100000.0, 40000.0,
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if sig == nil {
+		t.Fatalf("escalated candidate must still produce a signal (defect: HOLD killed every entry)")
+	}
+
+	req, ok := gotPayload.(ai.DecisionRequest)
+	if !ok {
+		t.Fatalf("escalation payload type = %T, want ai.DecisionRequest (empty/dummy payload regression)", gotPayload)
+	}
+	if req.Symbol != "BTC/USD" {
+		t.Errorf("escalation symbol = %q, want BTC/USD", req.Symbol)
+	}
+	if req.IndicatorSnap.RSI != 55.0 {
+		t.Errorf("escalation lost indicator evidence: %+v", req.IndicatorSnap)
+	}
+	if len(req.NewsHeadlines) != 1 || req.NewsHeadlines[0] != headlines[0] {
+		t.Errorf("escalation lost headlines: %v", req.NewsHeadlines)
+	}
+	if resp.Reasoning != "route=escalated" {
+		t.Errorf("route = %q, want route=escalated", resp.Reasoning)
+	}
+	if resp.Decision != "SELL" {
+		t.Errorf("escalated SHORT must map to SELL intent, got %q", resp.Decision)
 	}
 }
