@@ -14,7 +14,6 @@ import (
 
 	"github.com/rqzbeh/simple-trader/internal/ai"
 	"github.com/rqzbeh/simple-trader/internal/auth"
-	"github.com/rqzbeh/simple-trader/internal/cache"
 	"github.com/rqzbeh/simple-trader/internal/config"
 	"github.com/rqzbeh/simple-trader/internal/trader"
 )
@@ -437,11 +436,18 @@ func (s *Server) ensureDecisionRouter(thr float64) {
 	s.decisionRouter = &trader.DecisionRouter{
 		Jev:       ai.NewJevClient("https://api.typesafe.ai", typesafeKey, 12*time.Second),
 		Threshold: thr,
-		Escalate: func(ctx context.Context, state interface{}) (trader.DecisionOutcome, error) {
+		Escalate: func(ctx context.Context, payload interface{}) (trader.DecisionOutcome, error) {
 			if s.aiClient == nil {
 				return trader.DecisionOutcome{}, fmt.Errorf("ai client unavailable for escalation")
 			}
-			resp, err := s.aiClient.Analyze(ctx, ai.DecisionRequest{Symbol: "escalated", IndicatorSnap: cache.IndicatorSnapshot{}})
+			// Same contract as the boot-time closure: judge the REAL entry
+			// payload — an empty body made 9Router answer HOLD for every
+			// escalated candidate (2026-09-29 no-signal defect).
+			req, perr := trader.EscalationPayload(payload)
+			if perr != nil {
+				return trader.DecisionOutcome{}, perr
+			}
+			resp, err := s.aiClient.Analyze(ctx, req)
 			if err != nil {
 				return trader.DecisionOutcome{}, fmt.Errorf("escalation failed: %w", err)
 			}
