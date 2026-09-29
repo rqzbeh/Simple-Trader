@@ -65,10 +65,17 @@ func (s *Server) EnqueueNewsArticle(article *db.NewsArticle) {
 		if len(market.HeadlinesForSymbol([]string{article.Title}, sym)) == 0 {
 			continue
 		}
+		// Dedupe BEFORE enqueue (spec-020): a market-wide headline hits every
+		// symbol at once — queueing the same symbol twice only fills the queue
+		// with duplicates and evicts real events. Pending = already queued.
+		if _, loaded := s.newsPending.LoadOrStore(sym, struct{}{}); loaded {
+			continue
+		}
 		select {
 		case s.newsQueue <- sym:
 			log.Printf("[NewsEvent] queued %s for evaluation (%.60s)", sym, article.Title)
 		default:
+			s.newsPending.Delete(sym)
 			log.Printf("[NewsEvent] queue full — dropped %s (explicit)", sym)
 		}
 	}
@@ -77,13 +84,14 @@ func (s *Server) EnqueueNewsArticle(article *db.NewsArticle) {
 // StartNewsDrivenScanner consumes the news queue: debounce → overlap guard →
 // single-symbol evaluation through the SAME pipeline as the periodic scan.
 func (s *Server) StartNewsDrivenScanner(ctx context.Context) {
-	s.newsQueue = make(chan string, 128)
+	s.newsQueue = make(chan string, 512)
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case sym := <-s.newsQueue:
+				s.newsPending.Delete(sym) // dequeued — eligible for future events
 				s.evalSymbolFromNews(ctx, sym)
 			}
 		}

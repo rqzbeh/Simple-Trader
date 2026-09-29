@@ -49,9 +49,10 @@ type Server struct {
 
 	// spec-020 event-driven scanner: per-symbol overlap guard, evaluation
 	// timestamps for debouncing, and the news-triggered work queue.
-	evalBusy  sync.Map
-	lastEval  sync.Map
-	newsQueue chan string
+	evalBusy    sync.Map
+	lastEval    sync.Map
+	newsPending sync.Map
+	newsQueue   chan string
 }
 
 // NewServer configures routes and dependency injection.
