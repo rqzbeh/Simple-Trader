@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"strconv"
 	"strings"
@@ -918,6 +919,11 @@ func (s *SignalService) judgeEntryCore(ctx context.Context, symbol string, req a
 		route = "escalated"
 		baseline = entryAns.Choice
 	}
+
+	// Decision telemetry (2026-09-29 research): both brains, the threshold,
+	// and feed sizes in one line — the evidence trail for confidence work.
+	log.Printf("[DECISION] cycle=%s route=%s jev=%s/%.2f final=%s/%.2f thr=%.2f batch_q=%d headlines=%d",
+		cycle, route, entryAns.Choice, entryAns.Confidence, entryChoice, entryConf, thr, len(questions), len(req.NewsHeadlines))
 
 	// Position intent only — execution layer maps to order sides (FR-005).
 	decision := "HOLD"
