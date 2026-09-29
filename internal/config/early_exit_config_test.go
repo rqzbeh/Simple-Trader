@@ -1,13 +1,12 @@
 package config
 
 import (
-	"strings"
 	"os"
 	"testing"
 )
 
-func TestLoadEarlyExitConfig_MissingIsExplicitError(t *testing.T) {
-	// spec-017 FR-401: no struct defaults — every key required in env.
+func TestLoadEarlyExitConfig_MissingIsManaged(t *testing.T) {
+	// spec-019 FR-603: absent keys are recorded as managed with zero fields.
 	keys := []string{
 		"EARLY_EXIT_ENABLED",
 		"EARLY_EXIT_MIN_HOLD_MIN",
@@ -19,12 +18,24 @@ func TestLoadEarlyExitConfig_MissingIsExplicitError(t *testing.T) {
 		os.Unsetenv(k)
 	}
 
-	_, err := LoadEarlyExitConfig()
-	if err == nil {
-		t.Fatalf("expected explicit error when early-exit keys are missing")
+	cfg, err := LoadEarlyExitConfig()
+	if err != nil {
+		t.Fatalf("expected absent early-exit keys to succeed as managed, got err: %v", err)
 	}
-	if !strings.Contains(err.Error(), "EARLY_EXIT_ENABLED") {
-		t.Errorf("error must name the missing key, got: %v", err)
+	for _, k := range []string{"ENABLED", "MIN_HOLD_MIN", "MAX_PER_DAY", "COOLDOWN_MIN", "CONF_FLOOR"} {
+		if !cfg.Managed[k] {
+			t.Errorf("expected Managed[%q] to be true, got false", k)
+		}
+	}
+	if cfg.Enabled {
+		t.Errorf("expected Enabled field to be zero (false), got true")
+	}
+	if !cfg.IsEnabled() {
+		t.Errorf("expected IsEnabled() to be true under toggle convention")
+	}
+	if cfg.MinHoldMin != 0 || cfg.MaxPerDay != 0 || cfg.CooldownMin != 0 || cfg.ConfFloor != 0 {
+		t.Errorf("expected all fields to be zero, got minHold=%d maxPerDay=%d cooldown=%d confFloor=%f",
+			cfg.MinHoldMin, cfg.MaxPerDay, cfg.CooldownMin, cfg.ConfFloor)
 	}
 }
 

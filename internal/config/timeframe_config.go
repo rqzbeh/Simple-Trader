@@ -19,6 +19,9 @@ var KnownIntervals = map[string]bool{
 	"1d":  true,
 }
 
+// AllKnownIntervals lists all standard intervals in deterministic sorted order (spec-019).
+var AllKnownIntervals = []string{"15m", "30m", "1h", "2h", "4h", "6h", "12h", "1d"}
+
 // TimeframeConfig holds the bucket-scoped timeframe choices.
 type TimeframeConfig struct {
 	AlphaSet []string
@@ -26,9 +29,10 @@ type TimeframeConfig struct {
 }
 
 var (
-	timeframeMu  sync.RWMutex
+	timeframeMu sync.RWMutex
 	// spec-017 FR-402: no in-code default sets — populated by
 	// LoadTimeframeConfig() at boot (env TIMEFRAME_SET_ALPHA/CORE).
+	// spec-019: nil/empty live set indicates unrestricted mode.
 	liveAlphaSet []string
 	liveCoreSet  []string
 )
@@ -71,18 +75,25 @@ func ParseTimeframeSet(key, raw string) ([]string, error) {
 }
 
 // LoadTimeframeConfig parses TIMEFRAME_SET_ALPHA and TIMEFRAME_SET_CORE from environment.
-// Fails loud at boot on empty set or unknown option (FR-203, quickstart V1).
+// An absent or empty env for a set leaves it unrestricted (nil/empty live slice, spec-019).
+// An invalid non-empty value still fails loud at boot (FR-203/FR-601).
 func LoadTimeframeConfig() (*TimeframeConfig, error) {
-	rawAlpha := os.Getenv("TIMEFRAME_SET_ALPHA")
-	alphaSet, err := ParseTimeframeSet("TIMEFRAME_SET_ALPHA", rawAlpha)
-	if err != nil {
-		return nil, err
+	var alphaSet []string
+	if rawAlpha := strings.TrimSpace(os.Getenv("TIMEFRAME_SET_ALPHA")); rawAlpha != "" {
+		var err error
+		alphaSet, err = ParseTimeframeSet("TIMEFRAME_SET_ALPHA", rawAlpha)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	rawCore := os.Getenv("TIMEFRAME_SET_CORE")
-	coreSet, err := ParseTimeframeSet("TIMEFRAME_SET_CORE", rawCore)
-	if err != nil {
-		return nil, err
+	var coreSet []string
+	if rawCore := strings.TrimSpace(os.Getenv("TIMEFRAME_SET_CORE")); rawCore != "" {
+		var err error
+		coreSet, err = ParseTimeframeSet("TIMEFRAME_SET_CORE", rawCore)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	timeframeMu.Lock()
@@ -98,18 +109,43 @@ func LoadTimeframeConfig() (*TimeframeConfig, error) {
 	}, nil
 }
 
-// GetBucketTimeframeSet returns the active timeframe set for a bucket (ALPHA or CORE).
-func GetBucketTimeframeSet(bucket string) []string {
+// TimeframeUnrestricted returns true if both bucket sets are unrestricted (empty/nil).
+func TimeframeUnrestricted() bool {
+	timeframeMu.RLock()
+	defer timeframeMu.RUnlock()
+	return len(liveAlphaSet) == 0 && len(liveCoreSet) == 0
+}
+
+// TimeframeBucketUnrestricted returns true if the specified bucket set is unrestricted.
+func TimeframeBucketUnrestricted(bucket string) bool {
 	timeframeMu.RLock()
 	defer timeframeMu.RUnlock()
 	b := strings.ToUpper(strings.TrimSpace(bucket))
 	if b == "ALPHA" {
-		res := make([]string, len(liveAlphaSet))
-		copy(res, liveAlphaSet)
+		return len(liveAlphaSet) == 0
+	}
+	return len(liveCoreSet) == 0
+}
+
+// GetBucketTimeframeSet returns the active timeframe set for a bucket (ALPHA or CORE).
+// When the live set is empty (unrestricted), it returns all KnownIntervals keys in deterministic order.
+func GetBucketTimeframeSet(bucket string) []string {
+	timeframeMu.RLock()
+	defer timeframeMu.RUnlock()
+	b := strings.ToUpper(strings.TrimSpace(bucket))
+	var live []string
+	if b == "ALPHA" {
+		live = liveAlphaSet
+	} else {
+		live = liveCoreSet
+	}
+	if len(live) == 0 {
+		res := make([]string, len(AllKnownIntervals))
+		copy(res, AllKnownIntervals)
 		return res
 	}
-	res := make([]string, len(liveCoreSet))
-	copy(res, liveCoreSet)
+	res := make([]string, len(live))
+	copy(res, live)
 	return res
 }
 
@@ -118,6 +154,12 @@ func UpdateTimeframeSet(key, raw string) error {
 	k := strings.ToUpper(strings.TrimSpace(key))
 	switch k {
 	case "TIMEFRAME_SET_ALPHA", "ALPHA":
+		if strings.TrimSpace(raw) == "" {
+			timeframeMu.Lock()
+			liveAlphaSet = nil
+			timeframeMu.Unlock()
+			return nil
+		}
 		set, err := ParseTimeframeSet("TIMEFRAME_SET_ALPHA", raw)
 		if err != nil {
 			return err
@@ -127,6 +169,12 @@ func UpdateTimeframeSet(key, raw string) error {
 		timeframeMu.Unlock()
 		return nil
 	case "TIMEFRAME_SET_CORE", "CORE":
+		if strings.TrimSpace(raw) == "" {
+			timeframeMu.Lock()
+			liveCoreSet = nil
+			timeframeMu.Unlock()
+			return nil
+		}
 		set, err := ParseTimeframeSet("TIMEFRAME_SET_CORE", raw)
 		if err != nil {
 			return err

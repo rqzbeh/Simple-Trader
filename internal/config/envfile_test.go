@@ -57,7 +57,7 @@ ROUTING_CONFIDENCE_THRESHOLD=0.75
 
 	updates := map[string]string{
 		"ROUTING_CONFIDENCE_THRESHOLD": "0.80",
-		"NEW_KEY":                     "new_value",
+		"NEW_KEY":                      "new_value",
 	}
 
 	if err := UpsertEnv(path, updates); err != nil {

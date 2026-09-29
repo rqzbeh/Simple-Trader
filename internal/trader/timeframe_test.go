@@ -10,6 +10,11 @@ import (
 )
 
 func TestTimeframeQuestion_Alpha(t *testing.T) {
+	_ = config.UpdateTimeframeSet("TIMEFRAME_SET_ALPHA", "15m,1h,4h")
+	defer func() {
+		_ = config.UpdateTimeframeSet("TIMEFRAME_SET_ALPHA", "")
+	}()
+
 	q := TimeframeQuestion("ALPHA")
 	if q.Type != "choice" {
 		t.Fatalf("expected question type 'choice', got %q", q.Type)
@@ -52,6 +57,11 @@ func TestTimeframeQuestion_Alpha(t *testing.T) {
 }
 
 func TestTimeframeQuestion_Core(t *testing.T) {
+	_ = config.UpdateTimeframeSet("TIMEFRAME_SET_CORE", "1h,4h,12h")
+	defer func() {
+		_ = config.UpdateTimeframeSet("TIMEFRAME_SET_CORE", "")
+	}()
+
 	q := TimeframeQuestion("CORE")
 	criteria, ok := q.Criteria.(map[string]string)
 	if !ok {
@@ -194,5 +204,34 @@ func TestTimeframeQuestion_LiveConfigMutation(t *testing.T) {
 	}
 	if _, ok := crit2["4h"]; !ok {
 		t.Errorf("4h should be in criteria")
+	}
+}
+
+func TestValidateTimeframe_Unrestricted(t *testing.T) {
+	// Empty bucketSet = unrestricted mode (accepts any KnownIntervals)
+	ans := ai.JevAnswer{
+		Type:       "choice",
+		Choice:     "30m", // not in default alpha/core sets, but in KnownIntervals
+		Confidence: 0.88,
+		Probabilities: map[string]float64{
+			"30m": 0.88,
+			"1h":  0.12,
+		},
+	}
+	if err := ValidateTimeframe(ans, nil, "cycle-unrestricted-1"); err != nil {
+		t.Fatalf("expected 30m to be accepted in unrestricted mode: %v", err)
+	}
+
+	// Unknown interval rejected
+	ansUnknown := ai.JevAnswer{
+		Type:       "choice",
+		Choice:     "99m",
+		Confidence: 0.88,
+		Probabilities: map[string]float64{
+			"99m": 1.0,
+		},
+	}
+	if err := ValidateTimeframe(ansUnknown, nil, "cycle-unrestricted-2"); err == nil {
+		t.Fatalf("expected unknown interval 99m to be rejected")
 	}
 }

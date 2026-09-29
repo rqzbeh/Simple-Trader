@@ -76,9 +76,6 @@ func RequiredEnvKeys() []string {
 		"MIN_STOP_LOSS_PCT", "MAX_STOP_LOSS_PCT", "MIN_TAKE_PROFIT_PCT", "MAX_TAKE_PROFIT_PCT",
 		"MAKER_FEE_RATE", "TAKER_FEE_RATE", "MAX_SLIPPAGE_PCT", "MAX_TRADE_MARGIN_PCT",
 		"SIGNAL_MAX_AGE_MINUTES", "ADMIN_PASSWORD", "TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID",
-		"EARLY_EXIT_ENABLED", "EARLY_EXIT_MIN_HOLD_MIN", "EARLY_EXIT_MAX_PER_DAY",
-		"EARLY_EXIT_COOLDOWN_MIN", "EARLY_EXIT_CONF_FLOOR",
-		"TIMEFRAME_SET_ALPHA", "TIMEFRAME_SET_CORE",
 		"DB_MAX_CONNS", "DB_MIN_CONNS",
 	}
 }
@@ -104,10 +101,32 @@ func SampleRequiredEnv() map[string]string {
 		"MAX_SLIPPAGE_PCT": "0.05", "MAX_TRADE_MARGIN_PCT": "0.2",
 		"SIGNAL_MAX_AGE_MINUTES": "60", "ADMIN_PASSWORD": "",
 		"TELEGRAM_BOT_TOKEN": "", "TELEGRAM_CHAT_ID": "",
-		"EARLY_EXIT_ENABLED": "true", "EARLY_EXIT_MIN_HOLD_MIN": "30", "EARLY_EXIT_MAX_PER_DAY": "3",
-		"EARLY_EXIT_COOLDOWN_MIN": "60", "EARLY_EXIT_CONF_FLOOR": "0.75",
-		"TIMEFRAME_SET_ALPHA": "15m,1h,4h", "TIMEFRAME_SET_CORE": "1h,4h,12h",
 		"DB_MAX_CONNS": "25", "DB_MIN_CONNS": "5",
+	}
+}
+
+// SampleOptionalEnv returns sample bootstrap values for optional/core-managed environment variables (spec-019).
+func SampleOptionalEnv() map[string]string {
+	return map[string]string{
+		"TIMEFRAME_SET_ALPHA":      "15m,1h,4h",
+		"TIMEFRAME_SET_CORE":       "1h,4h,12h",
+		"EARLY_EXIT_ENABLED":       "true",
+		"EARLY_EXIT_MIN_HOLD_MIN":  "30",
+		"EARLY_EXIT_MAX_PER_DAY":   "3",
+		"EARLY_EXIT_COOLDOWN_MIN":  "60",
+		"EARLY_EXIT_CONF_FLOOR":    "0.75",
+		"MIN_RISK_TO_REWARD_RATIO": "2.5",
+		"DEFAULT_LEVERAGE":         "8",
+		"MAX_RISK_PER_TRADE_PCT":   "0.02",
+		"SL_ATR_MULT":              "1.5",
+		"TP_ATR_MULT":              "3.0",
+		"CLUSTER_DECAY_MODE":       "FAST_BREAKING",
+		"CONFLUENCE_MIN":           "0.60",
+		"UPSTREAM_PROXY_URL":       "",
+		"SHADOW_ENTRY":             "true",
+		"SHADOW_EXIT":              "true",
+		"SHADOW_NEWS":              "true",
+		"JEV_DISABLE":              "false",
 	}
 }
 
@@ -120,14 +139,12 @@ var (
 		"IMPACT_FACTOR", "SCREENER_MIN_24H_VOLUME", "SCREENER_MAX_SPREAD_BPS",
 		"MIN_STOP_LOSS_PCT", "MAX_STOP_LOSS_PCT", "MIN_TAKE_PROFIT_PCT", "MAX_TAKE_PROFIT_PCT",
 		"MAKER_FEE_RATE", "TAKER_FEE_RATE", "MAX_SLIPPAGE_PCT", "MAX_TRADE_MARGIN_PCT",
-		"EARLY_EXIT_CONF_FLOOR",
 	}
 	requiredIntKeys = []string{
 		"AI_TIMEOUT_SECONDS", "MAX_CONCURRENT_SIGNALS", "CALENDAR_HALT_MINUTES",
-		"SIGNAL_MAX_AGE_MINUTES", "EARLY_EXIT_MIN_HOLD_MIN", "EARLY_EXIT_MAX_PER_DAY",
-		"EARLY_EXIT_COOLDOWN_MIN", "DB_MAX_CONNS", "DB_MIN_CONNS",
+		"SIGNAL_MAX_AGE_MINUTES", "DB_MAX_CONNS", "DB_MIN_CONNS",
 	}
-	requiredBoolKeys = []string{"EARLY_EXIT_ENABLED"}
+	requiredBoolKeys = []string{}
 )
 
 // validateRequiredEnv: presence of every required key + type parse of typed

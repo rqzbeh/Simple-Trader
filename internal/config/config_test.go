@@ -28,9 +28,14 @@ func TestLoadConfig_MissingListsKeys(t *testing.T) {
 	if !strings.Contains(msg, "required env keys invalid") {
 		t.Errorf("error must state the cause, got: %v", msg)
 	}
-	for _, k := range []string{"PORT", "DATABASE_URL", "JEV_BASE_URL", "EARLY_EXIT_ENABLED", "TIMEFRAME_SET_ALPHA"} {
+	for _, k := range []string{"PORT", "DATABASE_URL", "JEV_BASE_URL", "INITIAL_CAPITAL", "ADMIN_PASSWORD"} {
 		if !strings.Contains(msg, k) {
 			t.Errorf("error must name missing key %s, got: %v", k, msg)
+		}
+	}
+	for _, k := range []string{"EARLY_EXIT_ENABLED", "EARLY_EXIT_MIN_HOLD_MIN", "TIMEFRAME_SET_ALPHA", "TIMEFRAME_SET_CORE"} {
+		if strings.Contains(msg, k+" (missing)") {
+			t.Errorf("offloaded optional key %s must not be required, got in error: %v", k, msg)
 		}
 	}
 }

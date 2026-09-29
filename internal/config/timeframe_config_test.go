@@ -75,47 +75,92 @@ func TestLoadTimeframeConfig_BootValidation(t *testing.T) {
 	defer func() {
 		os.Setenv("TIMEFRAME_SET_ALPHA", origAlpha)
 		os.Setenv("TIMEFRAME_SET_CORE", origCore)
+		_, _ = LoadTimeframeConfig()
 	}()
 
-	// 1. Missing ALPHA -> startup error mentioning key
-	os.Setenv("TIMEFRAME_SET_ALPHA", "")
-	os.Setenv("TIMEFRAME_SET_CORE", "1h,4h,12h")
-	cfg, err := LoadTimeframeConfig()
-	if err == nil {
-		t.Fatalf("expected error when TIMEFRAME_SET_ALPHA missing, got cfg: %+v", cfg)
-	}
-	if !strings.Contains(err.Error(), "TIMEFRAME_SET_ALPHA") {
-		t.Errorf("expected error to mention TIMEFRAME_SET_ALPHA, got %v", err)
-	}
-
-	// 2. Missing CORE -> startup error mentioning key
-	os.Setenv("TIMEFRAME_SET_ALPHA", "15m,1h,4h")
-	os.Setenv("TIMEFRAME_SET_CORE", "")
-	cfg, err = LoadTimeframeConfig()
-	if err == nil {
-		t.Fatalf("expected error when TIMEFRAME_SET_CORE missing, got cfg: %+v", cfg)
-	}
-	if !strings.Contains(err.Error(), "TIMEFRAME_SET_CORE") {
-		t.Errorf("expected error to mention TIMEFRAME_SET_CORE, got %v", err)
-	}
-
-	// 3. Unknown option in ALPHA -> error
+	// 1. Unknown option in ALPHA -> error
 	os.Setenv("TIMEFRAME_SET_ALPHA", "15m,99m,4h")
 	os.Setenv("TIMEFRAME_SET_CORE", "1h,4h,12h")
-	_, err = LoadTimeframeConfig()
+	_, err := LoadTimeframeConfig()
 	if err == nil {
 		t.Fatalf("expected error for unknown option, got nil")
 	}
 
-	// 4. Valid sets parse successfully
+	// 2. Unknown option in CORE -> error
+	os.Setenv("TIMEFRAME_SET_ALPHA", "15m,1h,4h")
+	os.Setenv("TIMEFRAME_SET_CORE", "invalid")
+	_, err = LoadTimeframeConfig()
+	if err == nil {
+		t.Fatalf("expected error for unknown option in CORE, got nil")
+	}
+
+	// 3. Valid sets parse successfully
 	os.Setenv("TIMEFRAME_SET_ALPHA", "15m,1h,4h")
 	os.Setenv("TIMEFRAME_SET_CORE", "1h,4h,12h")
-	cfg, err = LoadTimeframeConfig()
+	cfg, err := LoadTimeframeConfig()
 	if err != nil {
 		t.Fatalf("expected valid config to load, got error: %v", err)
 	}
 	if len(cfg.AlphaSet) != 3 || len(cfg.CoreSet) != 3 {
 		t.Errorf("unexpected set sizes: alpha=%v, core=%v", cfg.AlphaSet, cfg.CoreSet)
+	}
+}
+
+func TestTimeframeUnrestrictedWhenUnset(t *testing.T) {
+	origAlpha := os.Getenv("TIMEFRAME_SET_ALPHA")
+	origCore := os.Getenv("TIMEFRAME_SET_CORE")
+	defer func() {
+		os.Setenv("TIMEFRAME_SET_ALPHA", origAlpha)
+		os.Setenv("TIMEFRAME_SET_CORE", origCore)
+		_, _ = LoadTimeframeConfig()
+	}()
+
+	os.Unsetenv("TIMEFRAME_SET_ALPHA")
+	os.Unsetenv("TIMEFRAME_SET_CORE")
+	cfg, err := LoadTimeframeConfig()
+	if err != nil {
+		t.Fatalf("expected LoadTimeframeConfig to succeed when env unset, got: %v", err)
+	}
+	if !TimeframeUnrestricted() {
+		t.Errorf("expected TimeframeUnrestricted() to be true when unset")
+	}
+	if len(cfg.AlphaSet) != 0 || len(cfg.CoreSet) != 0 {
+		t.Errorf("expected empty slices for AlphaSet/CoreSet, got alpha=%v core=%v", cfg.AlphaSet, cfg.CoreSet)
+	}
+
+	alphaIntervals := GetBucketTimeframeSet("ALPHA")
+	if len(alphaIntervals) != len(AllKnownIntervals) {
+		t.Errorf("expected GetBucketTimeframeSet(ALPHA) to return all %d KnownIntervals, got %d: %v", len(AllKnownIntervals), len(alphaIntervals), alphaIntervals)
+	}
+	for i, v := range AllKnownIntervals {
+		if alphaIntervals[i] != v {
+			t.Errorf("at index %d: expected %s, got %s", i, v, alphaIntervals[i])
+		}
+	}
+
+	coreIntervals := GetBucketTimeframeSet("CORE")
+	if len(coreIntervals) != len(AllKnownIntervals) {
+		t.Errorf("expected GetBucketTimeframeSet(CORE) to return all %d KnownIntervals, got %d: %v", len(AllKnownIntervals), len(coreIntervals), coreIntervals)
+	}
+
+	// Set to "15m,1h,4h" -> restricted (existing behavior)
+	os.Setenv("TIMEFRAME_SET_ALPHA", "15m,1h,4h")
+	cfg, err = LoadTimeframeConfig()
+	if err != nil {
+		t.Fatalf("unexpected error loading restricted config: %v", err)
+	}
+	if TimeframeUnrestricted() {
+		t.Errorf("expected TimeframeUnrestricted() to be false when ALPHA set")
+	}
+	alphaRestricted := GetBucketTimeframeSet("ALPHA")
+	expected := []string{"15m", "1h", "4h"}
+	if len(alphaRestricted) != len(expected) {
+		t.Fatalf("expected 3 intervals for ALPHA, got %d: %v", len(alphaRestricted), alphaRestricted)
+	}
+	for i, v := range expected {
+		if alphaRestricted[i] != v {
+			t.Errorf("expected %s at index %d, got %s", v, i, alphaRestricted[i])
+		}
 	}
 }
 

@@ -206,6 +206,8 @@ No ML runs inside the serving backend. ML Engine UI, GPU trainers, training hand
 
 ### Required — boot fails listing every missing key (no in-code defaults, spec-017)
 
+Sample values follow the evidence-based recommendations in [`docs/RESEARCH-optimal-params.md`](docs/RESEARCH-optimal-params.md) (Kelly/drawdown/correlation/microstructure research).
+
 | Key | Purpose |
 |---|---|
 | `TYPESAFE_API_KEY` | Jev (System One) auth — boot FATAL if missing and `JEV_DISABLE` unset |
@@ -228,11 +230,11 @@ No ML runs inside the serving backend. ML Engine UI, GPU trainers, training hand
 One boot error lists **every** missing or unparseable key — copy `.env.example` (complete) to start. `.env` is the single source of truth; the process never substitutes a built-in value.
 
 
-### Optional — unset = decision core manages (spec-015)
+### Optional — unset = decision core manages (spec-015, spec-019)
 
 Judgment parameters. **Unset/empty → Jev picks the value each cycle** (clamped to hard mechanical bounds). **Set a value → user override wins, core is never asked.** The mode used is recorded per signal and shown in System Stats.
 
-`MIN_RISK_TO_REWARD_RATIO` · `DEFAULT_LEVERAGE` · `MAX_RISK_PER_TRADE_PCT` · `SL_ATR_MULT` · `TP_ATR_MULT` · `CLUSTER_DECAY_MODE` · `CONFLUENCE_MIN`
+`MIN_RISK_TO_REWARD_RATIO` · `DEFAULT_LEVERAGE` · `MAX_RISK_PER_TRADE_PCT` · `SL_ATR_MULT` · `TP_ATR_MULT` · `CLUSTER_DECAY_MODE` · `CONFLUENCE_MIN` · `EARLY_EXIT_MIN_HOLD_MIN` · `EARLY_EXIT_MAX_PER_DAY` · `EARLY_EXIT_COOLDOWN_MIN` · `EARLY_EXIT_CONF_FLOOR` · `TIMEFRAME_SET_ALPHA` · `TIMEFRAME_SET_CORE`
 
 ### Optional — built-in defaults
 
@@ -243,24 +245,25 @@ Delete any of these lines; code uses the default. An invalid value = explicit st
 | `PORT` | `8080` |
 | `AI_TEMPERATURE` / `AI_TIMEOUT_SECONDS` / `AI_REASONING_EFFORT` | `0.2` / `30` / `high` |
 | `INITIAL_CAPITAL` | `10000` |
-| `CORE_TARGET_PCT` / `ALPHA_TARGET_PCT` | `0.50` / `0.50` |
+| `CORE_TARGET_PCT` / `ALPHA_TARGET_PCT` | `0.50` / `0.40` |
 | `KELLY_FRACTION` / `IMPACT_FACTOR` | `0.50` / `0.05` |
 | `MIN_RISK_PER_TRADE_PCT` / `MAX_DRAWDOWN_LIMIT_PCT` | `0.005` / `0.08` |
-| `MAX_CONCURRENT_SIGNALS` | `5` |
-| `MIN_STOP_LOSS_PCT` / `MAX_STOP_LOSS_PCT` | `0.6` / `2.5` |
-| `MIN_TAKE_PROFIT_PCT` / `MAX_TAKE_PROFIT_PCT` | `1.5` / `8.0` |
+| `MAX_CONCURRENT_SIGNALS` | `3` |
+| `MIN_STOP_LOSS_PCT` / `MAX_STOP_LOSS_PCT` | `1.0` / `3.5` |
+| `MIN_TAKE_PROFIT_PCT` / `MAX_TAKE_PROFIT_PCT` | `2.0` / `8.0` |
 | `MAKER_FEE_RATE` / `TAKER_FEE_RATE` | `0.0002` / `0.0005` |
-| `MAX_SLIPPAGE_PCT` / `MAX_TRADE_MARGIN_PCT` | `0.05` / `0.20` |
-| `SIGNAL_MAX_AGE_MINUTES` | `60` |
+| `MAX_SLIPPAGE_PCT` / `MAX_TRADE_MARGIN_PCT` | `0.005` / `0.15` |
+| `SIGNAL_MAX_AGE_MINUTES` | `45` |
 | `CALENDAR_HALT_MINUTES` / `ECONOMIC_CALENDAR_URL` | `15` / faireconomy weekly JSON |
-| `SCREENER_MIN_24H_VOLUME` / `SCREENER_MAX_SPREAD_BPS` | `50000000` / `10` |
+| `SCREENER_MIN_24H_VOLUME` / `SCREENER_MAX_SPREAD_BPS` | `50000000` / `8` |
 
 ### Optional — feature keys
 
 | Key | Behavior when unset |
 |---|---|
-| `EARLY_EXIT_ENABLED`, `EARLY_EXIT_MIN_HOLD_MIN`, `EARLY_EXIT_MAX_PER_DAY`, `EARLY_EXIT_COOLDOWN_MIN`, `EARLY_EXIT_CONF_FLOOR` | built-in defaults (spec-014); invalid value = boot error |
-| `TIMEFRAME_SET_ALPHA` / `TIMEFRAME_SET_CORE` | built-in sets `15m,1h,4h` / `1h,4h,12h` (spec-016) |
+| `EARLY_EXIT_ENABLED` | enabled by default (toggle convention; only explicit `false` disables, spec-019) |
+| `EARLY_EXIT_MIN_HOLD_MIN`, `EARLY_EXIT_MAX_PER_DAY`, `EARLY_EXIT_COOLDOWN_MIN`, `EARLY_EXIT_CONF_FLOOR` | core-managed per news cycle by Jev (batched with close_now questions; clamped to safety caps [0,1440], [1,10], [0,1440], [0.5,1.0]); set = user override verbatim (spec-019) |
+| `TIMEFRAME_SET_ALPHA` / `TIMEFRAME_SET_CORE` | unrestricted mode (core chooses from all `KnownIntervals` {15m,30m,1h,2h,4h,6h,12h,1d}); set = restricted to listed subset (spec-019) |
 | `SHADOW_ENTRY` / `SHADOW_EXIT` / `SHADOW_NEWS` | enabled (`false` disables a channel) |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | Telegram notifications off |
 | `UPSTREAM_PROXY_URL` | direct connection (`socks5://host:port` or `http://host:port` routes Jev/9Router traffic) |

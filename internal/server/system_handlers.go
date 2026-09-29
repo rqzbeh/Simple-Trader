@@ -693,61 +693,89 @@ func validateAndBuildEnvUpdates(rawMap map[string]interface{}) (map[string]strin
 	}
 
 	if v, exists := rawMap["TIMEFRAME_SET_ALPHA"]; exists {
-		s := parseString(v)
-		set, err := config.ParseTimeframeSet("TIMEFRAME_SET_ALPHA", s)
-		if err != nil {
-			return nil, err
+		if isEmptyValue(v) {
+			envUpdates["TIMEFRAME_SET_ALPHA"] = ""
+		} else {
+			s := parseString(v)
+			set, err := config.ParseTimeframeSet("TIMEFRAME_SET_ALPHA", s)
+			if err != nil {
+				return nil, err
+			}
+			envUpdates["TIMEFRAME_SET_ALPHA"] = strings.Join(set, ",")
 		}
-		envUpdates["TIMEFRAME_SET_ALPHA"] = strings.Join(set, ",")
 	}
 
 	if v, exists := rawMap["TIMEFRAME_SET_CORE"]; exists {
-		s := parseString(v)
-		set, err := config.ParseTimeframeSet("TIMEFRAME_SET_CORE", s)
-		if err != nil {
-			return nil, err
+		if isEmptyValue(v) {
+			envUpdates["TIMEFRAME_SET_CORE"] = ""
+		} else {
+			s := parseString(v)
+			set, err := config.ParseTimeframeSet("TIMEFRAME_SET_CORE", s)
+			if err != nil {
+				return nil, err
+			}
+			envUpdates["TIMEFRAME_SET_CORE"] = strings.Join(set, ",")
 		}
-		envUpdates["TIMEFRAME_SET_CORE"] = strings.Join(set, ",")
 	}
 
 	if v, exists := rawMap["EARLY_EXIT_ENABLED"]; exists {
-		b, err := parseBool(v)
-		if err != nil {
-			return nil, fmt.Errorf("EARLY_EXIT_ENABLED invalid: must be a boolean")
+		if isEmptyValue(v) {
+			envUpdates["EARLY_EXIT_ENABLED"] = ""
+		} else {
+			b, err := parseBool(v)
+			if err != nil {
+				return nil, fmt.Errorf("EARLY_EXIT_ENABLED invalid: must be a boolean")
+			}
+			envUpdates["EARLY_EXIT_ENABLED"] = strconv.FormatBool(b)
 		}
-		envUpdates["EARLY_EXIT_ENABLED"] = strconv.FormatBool(b)
 	}
 
 	if v, exists := rawMap["EARLY_EXIT_MIN_HOLD_MIN"]; exists {
-		i, err := parseNumericInt(v)
-		if err != nil || i < 0 {
-			return nil, fmt.Errorf("EARLY_EXIT_MIN_HOLD_MIN invalid: must be >= 0")
+		if isEmptyValue(v) {
+			envUpdates["EARLY_EXIT_MIN_HOLD_MIN"] = ""
+		} else {
+			i, err := parseNumericInt(v)
+			if err != nil || i < 0 {
+				return nil, fmt.Errorf("EARLY_EXIT_MIN_HOLD_MIN invalid: must be >= 0")
+			}
+			envUpdates["EARLY_EXIT_MIN_HOLD_MIN"] = strconv.Itoa(i)
 		}
-		envUpdates["EARLY_EXIT_MIN_HOLD_MIN"] = strconv.Itoa(i)
 	}
 
 	if v, exists := rawMap["EARLY_EXIT_MAX_PER_DAY"]; exists {
-		i, err := parseNumericInt(v)
-		if err != nil || i < 1 {
-			return nil, fmt.Errorf("EARLY_EXIT_MAX_PER_DAY invalid: must be >= 1")
+		if isEmptyValue(v) {
+			envUpdates["EARLY_EXIT_MAX_PER_DAY"] = ""
+		} else {
+			i, err := parseNumericInt(v)
+			if err != nil || i < 1 {
+				return nil, fmt.Errorf("EARLY_EXIT_MAX_PER_DAY invalid: must be >= 1")
+			}
+			envUpdates["EARLY_EXIT_MAX_PER_DAY"] = strconv.Itoa(i)
 		}
-		envUpdates["EARLY_EXIT_MAX_PER_DAY"] = strconv.Itoa(i)
 	}
 
 	if v, exists := rawMap["EARLY_EXIT_COOLDOWN_MIN"]; exists {
-		i, err := parseNumericInt(v)
-		if err != nil || i < 0 {
-			return nil, fmt.Errorf("EARLY_EXIT_COOLDOWN_MIN invalid: must be >= 0")
+		if isEmptyValue(v) {
+			envUpdates["EARLY_EXIT_COOLDOWN_MIN"] = ""
+		} else {
+			i, err := parseNumericInt(v)
+			if err != nil || i < 0 {
+				return nil, fmt.Errorf("EARLY_EXIT_COOLDOWN_MIN invalid: must be >= 0")
+			}
+			envUpdates["EARLY_EXIT_COOLDOWN_MIN"] = strconv.Itoa(i)
 		}
-		envUpdates["EARLY_EXIT_COOLDOWN_MIN"] = strconv.Itoa(i)
 	}
 
 	if v, exists := rawMap["EARLY_EXIT_CONF_FLOOR"]; exists {
-		f, err := parseNumericFloat(v)
-		if err != nil || f < 0.0 || f > 1.0 {
-			return nil, fmt.Errorf("EARLY_EXIT_CONF_FLOOR invalid: must be between 0.0 and 1.0")
+		if isEmptyValue(v) {
+			envUpdates["EARLY_EXIT_CONF_FLOOR"] = ""
+		} else {
+			f, err := parseNumericFloat(v)
+			if err != nil || f < 0.0 || f > 1.0 {
+				return nil, fmt.Errorf("EARLY_EXIT_CONF_FLOOR invalid: must be between 0.0 and 1.0")
+			}
+			envUpdates["EARLY_EXIT_CONF_FLOOR"] = strconv.FormatFloat(f, 'f', -1, 64)
 		}
-		envUpdates["EARLY_EXIT_CONF_FLOOR"] = strconv.FormatFloat(f, 'f', -1, 64)
 	}
 
 	if v, exists := rawMap["SL_ATR_MULT"]; exists {
@@ -952,37 +980,107 @@ func (s *Server) applyLiveConfigUpdates(envUpdates map[string]string) {
 		_ = os.Setenv("SCREENER_MIN_24H_VOLUME", v)
 	}
 	if v, ok := envUpdates["TIMEFRAME_SET_ALPHA"]; ok {
-		_ = os.Setenv("TIMEFRAME_SET_ALPHA", v)
-		_ = config.UpdateTimeframeSet("TIMEFRAME_SET_ALPHA", v)
+		if v == "" {
+			_ = os.Unsetenv("TIMEFRAME_SET_ALPHA")
+			_ = config.UpdateTimeframeSet("TIMEFRAME_SET_ALPHA", "")
+		} else {
+			_ = os.Setenv("TIMEFRAME_SET_ALPHA", v)
+			_ = config.UpdateTimeframeSet("TIMEFRAME_SET_ALPHA", v)
+		}
 	}
 	if v, ok := envUpdates["TIMEFRAME_SET_CORE"]; ok {
-		_ = os.Setenv("TIMEFRAME_SET_CORE", v)
-		_ = config.UpdateTimeframeSet("TIMEFRAME_SET_CORE", v)
+		if v == "" {
+			_ = os.Unsetenv("TIMEFRAME_SET_CORE")
+			_ = config.UpdateTimeframeSet("TIMEFRAME_SET_CORE", "")
+		} else {
+			_ = os.Setenv("TIMEFRAME_SET_CORE", v)
+			_ = config.UpdateTimeframeSet("TIMEFRAME_SET_CORE", v)
+		}
 	}
 	if v, ok := envUpdates["EARLY_EXIT_ENABLED"]; ok {
-		b, _ := strconv.ParseBool(v)
-		s.cfg.EarlyExit.Enabled = b
-		_ = os.Setenv("EARLY_EXIT_ENABLED", v)
+		if v == "" {
+			if s.cfg.EarlyExit.Managed == nil {
+				s.cfg.EarlyExit.Managed = make(map[string]bool)
+			}
+			s.cfg.EarlyExit.Managed["ENABLED"] = true
+			s.cfg.EarlyExit.Enabled = false
+			_ = os.Unsetenv("EARLY_EXIT_ENABLED")
+		} else {
+			b, _ := strconv.ParseBool(v)
+			s.cfg.EarlyExit.Enabled = b
+			if s.cfg.EarlyExit.Managed != nil {
+				delete(s.cfg.EarlyExit.Managed, "ENABLED")
+			}
+			_ = os.Setenv("EARLY_EXIT_ENABLED", v)
+		}
 	}
 	if v, ok := envUpdates["EARLY_EXIT_MIN_HOLD_MIN"]; ok {
-		i, _ := strconv.Atoi(v)
-		s.cfg.EarlyExit.MinHoldMin = i
-		_ = os.Setenv("EARLY_EXIT_MIN_HOLD_MIN", v)
+		if v == "" {
+			if s.cfg.EarlyExit.Managed == nil {
+				s.cfg.EarlyExit.Managed = make(map[string]bool)
+			}
+			s.cfg.EarlyExit.Managed["MIN_HOLD_MIN"] = true
+			s.cfg.EarlyExit.MinHoldMin = 0
+			_ = os.Unsetenv("EARLY_EXIT_MIN_HOLD_MIN")
+		} else {
+			i, _ := strconv.Atoi(v)
+			s.cfg.EarlyExit.MinHoldMin = i
+			if s.cfg.EarlyExit.Managed != nil {
+				delete(s.cfg.EarlyExit.Managed, "MIN_HOLD_MIN")
+			}
+			_ = os.Setenv("EARLY_EXIT_MIN_HOLD_MIN", v)
+		}
 	}
 	if v, ok := envUpdates["EARLY_EXIT_MAX_PER_DAY"]; ok {
-		i, _ := strconv.Atoi(v)
-		s.cfg.EarlyExit.MaxPerDay = i
-		_ = os.Setenv("EARLY_EXIT_MAX_PER_DAY", v)
+		if v == "" {
+			if s.cfg.EarlyExit.Managed == nil {
+				s.cfg.EarlyExit.Managed = make(map[string]bool)
+			}
+			s.cfg.EarlyExit.Managed["MAX_PER_DAY"] = true
+			s.cfg.EarlyExit.MaxPerDay = 0
+			_ = os.Unsetenv("EARLY_EXIT_MAX_PER_DAY")
+		} else {
+			i, _ := strconv.Atoi(v)
+			s.cfg.EarlyExit.MaxPerDay = i
+			if s.cfg.EarlyExit.Managed != nil {
+				delete(s.cfg.EarlyExit.Managed, "MAX_PER_DAY")
+			}
+			_ = os.Setenv("EARLY_EXIT_MAX_PER_DAY", v)
+		}
 	}
 	if v, ok := envUpdates["EARLY_EXIT_COOLDOWN_MIN"]; ok {
-		i, _ := strconv.Atoi(v)
-		s.cfg.EarlyExit.CooldownMin = i
-		_ = os.Setenv("EARLY_EXIT_COOLDOWN_MIN", v)
+		if v == "" {
+			if s.cfg.EarlyExit.Managed == nil {
+				s.cfg.EarlyExit.Managed = make(map[string]bool)
+			}
+			s.cfg.EarlyExit.Managed["COOLDOWN_MIN"] = true
+			s.cfg.EarlyExit.CooldownMin = 0
+			_ = os.Unsetenv("EARLY_EXIT_COOLDOWN_MIN")
+		} else {
+			i, _ := strconv.Atoi(v)
+			s.cfg.EarlyExit.CooldownMin = i
+			if s.cfg.EarlyExit.Managed != nil {
+				delete(s.cfg.EarlyExit.Managed, "COOLDOWN_MIN")
+			}
+			_ = os.Setenv("EARLY_EXIT_COOLDOWN_MIN", v)
+		}
 	}
 	if v, ok := envUpdates["EARLY_EXIT_CONF_FLOOR"]; ok {
-		f, _ := strconv.ParseFloat(v, 64)
-		s.cfg.EarlyExit.ConfFloor = f
-		_ = os.Setenv("EARLY_EXIT_CONF_FLOOR", v)
+		if v == "" {
+			if s.cfg.EarlyExit.Managed == nil {
+				s.cfg.EarlyExit.Managed = make(map[string]bool)
+			}
+			s.cfg.EarlyExit.Managed["CONF_FLOOR"] = true
+			s.cfg.EarlyExit.ConfFloor = 0
+			_ = os.Unsetenv("EARLY_EXIT_CONF_FLOOR")
+		} else {
+			f, _ := strconv.ParseFloat(v, 64)
+			s.cfg.EarlyExit.ConfFloor = f
+			if s.cfg.EarlyExit.Managed != nil {
+				delete(s.cfg.EarlyExit.Managed, "CONF_FLOOR")
+			}
+			_ = os.Setenv("EARLY_EXIT_CONF_FLOOR", v)
+		}
 	}
 	if s.earlyExitManager != nil {
 		s.earlyExitManager.UpdateConfig(s.cfg.EarlyExit)

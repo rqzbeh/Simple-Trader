@@ -46,10 +46,31 @@ func TimeframeQuestion(bucket string) ai.JevQuestion {
 }
 
 // ValidateTimeframe checks that the timeframe answer choice is in bucketSet and distribution matches.
+// When bucketSet is empty/unrestricted, any key present in config.KnownIntervals is accepted (FR-602).
 // Returns a typed DecisionError with component="timeframe" on failure (FR-202, SC-202).
 func ValidateTimeframe(ans ai.JevAnswer, bucketSet []string, cycleID string) error {
 	if ans.Type != "choice" || ans.Choice == "" {
 		return ai.WrapDecision("timeframe", cycleID, ai.ErrJevSchema, "missing timeframe answer or invalid type")
+	}
+
+	if len(bucketSet) == 0 || len(bucketSet) == len(config.AllKnownIntervals) {
+		if !config.KnownIntervals[ans.Choice] {
+			return ai.WrapDecision("timeframe", cycleID, ai.ErrJevSchema, fmt.Sprintf("choice %q not in known intervals", ans.Choice))
+		}
+		if len(ans.Probabilities) == 0 {
+			return ai.WrapDecision("timeframe", cycleID, ai.ErrJevSchema, "empty timeframe probability distribution")
+		}
+		var sum float64
+		for k, prob := range ans.Probabilities {
+			if !config.KnownIntervals[k] {
+				return ai.WrapDecision("timeframe", cycleID, ai.ErrJevSchema, fmt.Sprintf("probability key %q outside known intervals", k))
+			}
+			sum += prob
+		}
+		if math.Abs(sum-1.0) > 0.05 {
+			return ai.WrapDecision("timeframe", cycleID, ai.ErrJevSchema, fmt.Sprintf("probabilities sum %.4f != 1", sum))
+		}
+		return nil
 	}
 
 	setMap := make(map[string]bool, len(bucketSet))

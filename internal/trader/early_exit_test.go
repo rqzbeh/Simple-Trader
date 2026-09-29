@@ -2,8 +2,12 @@ package trader
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -612,5 +616,265 @@ func TestEarlyExitFailureInjection_CoreTimeoutExplicitError(t *testing.T) {
 	}
 	if !strings.Contains(j.Error, "component=early-exit") || !strings.Contains(j.Error, "cycle=cycle-timeout-1") {
 		t.Errorf("expected explicit error with component and cycle, got %q", j.Error)
+	}
+}
+
+func TestEarlyExitGuardsManagedWhenUnset(t *testing.T) {
+	origEnabled := os.Getenv("EARLY_EXIT_ENABLED")
+	origMinHold := os.Getenv("EARLY_EXIT_MIN_HOLD_MIN")
+	origMaxPerDay := os.Getenv("EARLY_EXIT_MAX_PER_DAY")
+	origCooldown := os.Getenv("EARLY_EXIT_COOLDOWN_MIN")
+	origConfFloor := os.Getenv("EARLY_EXIT_CONF_FLOOR")
+	defer func() {
+		os.Setenv("EARLY_EXIT_ENABLED", origEnabled)
+		os.Setenv("EARLY_EXIT_MIN_HOLD_MIN", origMinHold)
+		os.Setenv("EARLY_EXIT_MAX_PER_DAY", origMaxPerDay)
+		os.Setenv("EARLY_EXIT_COOLDOWN_MIN", origCooldown)
+		os.Setenv("EARLY_EXIT_CONF_FLOOR", origConfFloor)
+	}()
+
+	// 1. Absent env -> EarlyExitConfig marks managed
+	os.Unsetenv("EARLY_EXIT_ENABLED")
+	os.Unsetenv("EARLY_EXIT_MIN_HOLD_MIN")
+	os.Unsetenv("EARLY_EXIT_MAX_PER_DAY")
+	os.Unsetenv("EARLY_EXIT_COOLDOWN_MIN")
+	os.Unsetenv("EARLY_EXIT_CONF_FLOOR")
+
+	cfg, err := config.LoadEarlyExitConfig()
+	if err != nil {
+		t.Fatalf("expected LoadEarlyExitConfig to succeed when unset: %v", err)
+	}
+	for _, k := range []string{"ENABLED", "MIN_HOLD_MIN", "MAX_PER_DAY", "COOLDOWN_MIN", "CONF_FLOOR"} {
+		if !cfg.Managed[k] {
+			t.Errorf("expected Managed[%q] to be true", k)
+		}
+	}
+	if !cfg.IsEnabled() {
+		t.Errorf("expected IsEnabled() to be true (absent = enabled toggle convention)")
+	}
+
+	// 2. Batch questions built for managed guards
+	questions := BuildEarlyExitGuardQuestions(cfg, nil)
+	expectedKeys := []string{
+		QuestionEarlyExitMinHold,
+		QuestionEarlyExitCooldown,
+		QuestionEarlyExitMaxPerDay,
+		QuestionEarlyExitConfFloor,
+	}
+	for _, k := range expectedKeys {
+		if _, ok := questions[k]; !ok {
+			t.Errorf("expected managed guard question %q in batch questions", k)
+		}
+	}
+
+	// Also verify BuildEarlyExitQuestions includes them when cfg is provided
+	pos := &db.Trade{ID: 10, Symbol: "BTC/USDT", Status: "OPEN", Side: "BUY", EntryPrice: 50000}
+	batched := BuildEarlyExitQuestions([]*db.Trade{pos}, nil, time.Now(), cfg)
+	if _, ok := batched["close_now:10"]; !ok {
+		t.Errorf("expected close_now:10 in batched questions")
+	}
+	for _, k := range expectedKeys {
+		if _, ok := batched[k]; !ok {
+			t.Errorf("expected guard question %q in batched questions", k)
+		}
+	}
+
+	// 3. Resolved values clamp (e.g. max_per_day answer 25 -> 10, conf_floor 0.3 -> 0.5)
+	maxPerDayVal := 25.0
+	confFloorVal := 0.3
+	minHoldVal := -10.0
+	cooldownVal := 2000.0
+
+	answers := map[string]ai.JevAnswer{
+		QuestionEarlyExitMaxPerDay: {Type: "score", Score: &maxPerDayVal},
+		QuestionEarlyExitConfFloor: {Type: "score", Score: &confFloorVal},
+		QuestionEarlyExitMinHold:   {Type: "score", Score: &minHoldVal},
+		QuestionEarlyExitCooldown:  {Type: "score", Score: &cooldownVal},
+	}
+
+	resolved, err := ResolveEarlyExitGuards(cfg, answers, "cycle-clamp-test")
+	if err != nil {
+		t.Fatalf("expected ResolveEarlyExitGuards to succeed: %v", err)
+	}
+
+	if resolved.MaxPerDay != 10 {
+		t.Errorf("expected MaxPerDay clamped to 10, got %d", resolved.MaxPerDay)
+	}
+	if !resolved.Clamped["max_per_day"] {
+		t.Errorf("expected Clamped[max_per_day] = true")
+	}
+
+	if resolved.ConfFloor != 0.5 {
+		t.Errorf("expected ConfFloor clamped to 0.5, got %f", resolved.ConfFloor)
+	}
+	if !resolved.Clamped["conf_floor"] {
+		t.Errorf("expected Clamped[conf_floor] = true")
+	}
+
+	if resolved.MinHoldMin != 0 {
+		t.Errorf("expected MinHoldMin clamped to 0, got %d", resolved.MinHoldMin)
+	}
+	if !resolved.Clamped["min_hold"] {
+		t.Errorf("expected Clamped[min_hold] = true")
+	}
+
+	if resolved.CooldownMin != 1440 {
+		t.Errorf("expected CooldownMin clamped to 1440, got %d", resolved.CooldownMin)
+	}
+	if !resolved.Clamped["cooldown"] {
+		t.Errorf("expected Clamped[cooldown] = true")
+	}
+
+	// 4. Override present -> question omitted + value verbatim
+	overrideCfg := config.EarlyExitConfig{
+		Enabled:     true,
+		MinHoldMin:  45,
+		MaxPerDay:   5,
+		CooldownMin: 120,
+		ConfFloor:   0.85,
+		Managed:     map[string]bool{}, // all overrides, none managed
+	}
+	overrideQuestions := BuildEarlyExitGuardQuestions(overrideCfg, nil)
+	if len(overrideQuestions) != 0 {
+		t.Errorf("expected 0 guard questions when override present, got %d", len(overrideQuestions))
+	}
+
+	resolvedOverride, err := ResolveEarlyExitGuards(overrideCfg, map[string]ai.JevAnswer{}, "cycle-override-test")
+	if err != nil {
+		t.Fatalf("expected ResolveEarlyExitGuards with overrides to succeed without answers: %v", err)
+	}
+	if resolvedOverride.MinHoldMin != 45 {
+		t.Errorf("expected verbatim MinHoldMin 45, got %d", resolvedOverride.MinHoldMin)
+	}
+	if resolvedOverride.MaxPerDay != 5 {
+		t.Errorf("expected verbatim MaxPerDay 5, got %d", resolvedOverride.MaxPerDay)
+	}
+	if resolvedOverride.CooldownMin != 120 {
+		t.Errorf("expected verbatim CooldownMin 120, got %d", resolvedOverride.CooldownMin)
+	}
+	if resolvedOverride.ConfFloor != 0.85 {
+		t.Errorf("expected verbatim ConfFloor 0.85, got %f", resolvedOverride.ConfFloor)
+	}
+	if len(resolvedOverride.Clamped) != 0 {
+		t.Errorf("expected zero clamped fields on override, got %v", resolvedOverride.Clamped)
+	}
+
+	// 5. Kill switch test: explicit false disables immediately
+	killCfg := config.EarlyExitConfig{
+		Enabled: false,
+		Managed: map[string]bool{"ENABLED": false},
+	}
+	resolvedKill, _ := ResolveEarlyExitGuards(killCfg, map[string]ai.JevAnswer{}, "cycle-kill")
+	if resolvedKill.Enabled {
+		t.Errorf("expected killCfg.Enabled = false")
+	}
+	passed, reason := EvaluateEarlyExitGuards(EarlyExitGuardParams{
+		Config:         killCfg,
+		ResolvedGuards: &resolvedKill,
+	})
+	if passed || reason != "kill_switch" {
+		t.Errorf("expected EvaluateEarlyExitGuards to fail with kill_switch, got passed=%v reason=%q", passed, reason)
+	}
+}
+
+// TestEarlyExitBatchStateNonNull proves the real state payload sent to Jev is non-null (T004b).
+func TestEarlyExitBatchStateNonNull(t *testing.T) {
+	now := time.Now()
+	pos := &db.Trade{
+		ID:           401,
+		Symbol:       "ETH/USDT",
+		Side:         "BUY",
+		EntryPrice:   3000.0,
+		StopLoss:     2850.0,
+		TakeProfit:   3300.0,
+		PositionSize: 2.0,
+		Leverage:     5,
+		EntryTime:    now.Add(-25 * time.Minute),
+		Status:       "OPEN",
+	}
+	cluster := &market.NewsCluster{
+		ID:             "9988",
+		Headline:       "Major institutional adoption announcement",
+		StoryCount:     4,
+		FusedSentiment: 0.72,
+		FreshWeight:    0.95,
+		Sources:        []string{"Bloomberg", "Reuters"},
+		FirstSeen:      now.Add(-10 * time.Minute),
+	}
+
+	// 1. BuildEarlyExitState produces real non-null state
+	state := BuildEarlyExitState([]*db.Trade{pos}, cluster, now)
+	if state.Timestamp == "" {
+		t.Errorf("expected non-empty timestamp")
+	}
+	if state.Cluster == nil {
+		t.Fatalf("expected non-nil catalyst cluster fact")
+	}
+	if state.Cluster.Headline != cluster.Headline {
+		t.Errorf("expected headline %q, got %q", cluster.Headline, state.Cluster.Headline)
+	}
+	if state.Cluster.FusedSentiment != cluster.FusedSentiment {
+		t.Errorf("expected fused sentiment %f, got %f", cluster.FusedSentiment, state.Cluster.FusedSentiment)
+	}
+	if len(state.Positions) != 1 {
+		t.Fatalf("expected 1 position, got %d", len(state.Positions))
+	}
+	if state.Positions[0].Symbol != "ETH/USDT" {
+		t.Errorf("expected position symbol ETH/USDT, got %s", state.Positions[0].Symbol)
+	}
+
+	// 2. Verify JSON marshaling produces non-null state object
+	rawBytes, err := json.Marshal(state)
+	if err != nil {
+		t.Fatalf("failed to marshal state: %v", err)
+	}
+	if string(rawBytes) == "null" || len(rawBytes) == 0 {
+		t.Fatalf("marshaled state must not be null")
+	}
+
+	// 3. Test jev.Evaluate request over mock HTTP server: state must be a non-null JSON object
+	var receivedState interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		receivedState = req["state"]
+		if req["state"] == nil {
+			// Fail with 422 exactly as TypeSafe does when state is null
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			w.Write([]byte(`{"type":"missing","loc":["body","state"],"msg":"Field required"}`))
+			return
+		}
+		// Return valid answers
+		resp := map[string]interface{}{
+			"answers": map[string]interface{}{
+				"close_now:401": map[string]interface{}{
+					"type":       "noul",
+					"confidence": 0.20,
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	jev := ai.NewJevClient(server.URL, "test-key", 5*time.Second)
+	questions := BuildEarlyExitQuestions([]*db.Trade{pos}, cluster, now)
+	answers, _, err := jev.Evaluate(context.Background(), "cycle-test-state", state, questions)
+	if err != nil {
+		t.Fatalf("jev.Evaluate failed (server returned 422 if state was null): %v", err)
+	}
+	if len(answers) == 0 {
+		t.Fatalf("expected answers from Jev, got empty")
+	}
+	if receivedState == nil {
+		t.Errorf("mock server received null state")
+	}
+	stateMap, ok := receivedState.(map[string]interface{})
+	if !ok || len(stateMap) == 0 {
+		t.Errorf("expected received state to be non-empty JSON object, got %v", receivedState)
 	}
 }

@@ -45,8 +45,8 @@ func TestSystemStatsEndpoint(t *testing.T) {
 	}
 
 	var data struct {
-		Version          string `json:"version"`
-		UptimeSeconds    int64  `json:"uptime_seconds"`
+		Version          string   `json:"version"`
+		UptimeSeconds    int64    `json:"uptime_seconds"`
 		RoutingThreshold *float64 `json:"routing_threshold"`
 		Gateway          struct {
 			Total         int64   `json:"total"`
@@ -382,5 +382,25 @@ func TestSystemConfigEndpoints(t *testing.T) {
 		if !ok || item["mode"] != "core_managed" {
 			t.Errorf("expected param %q mode to be core_managed after clear, got %v", k, item)
 		}
+	}
+
+	// (d) Test clearing early exit keys and timeframe keys back to managed/unrestricted (spec-019 T006)
+	clearEarlyExitPayload, _ := json.Marshal(map[string]interface{}{
+		"EARLY_EXIT_MIN_HOLD_MIN": "",
+		"EARLY_EXIT_MAX_PER_DAY":  "",
+		"EARLY_EXIT_COOLDOWN_MIN": "",
+		"EARLY_EXIT_CONF_FLOOR":   "",
+		"TIMEFRAME_SET_ALPHA":     "",
+	})
+	req = httptest.NewRequest(http.MethodPut, "/api/v1/system/config", bytes.NewReader(clearEarlyExitPayload))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for clearing early exit keys, got %d, body: %s", rec.Code, rec.Body.String())
+	}
+	if !cfg.EarlyExit.Managed["MIN_HOLD_MIN"] || cfg.EarlyExit.MinHoldMin != 0 {
+		t.Errorf("expected MIN_HOLD_MIN cleared to managed 0, got %d managed=%v", cfg.EarlyExit.MinHoldMin, cfg.EarlyExit.Managed["MIN_HOLD_MIN"])
 	}
 }
