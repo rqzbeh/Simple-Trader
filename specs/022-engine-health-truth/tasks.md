@@ -4,7 +4,7 @@
 - [X] T002 backend warmup probe for gateway + Jev on boot (async, bounded)
 - [X] T003 signal path: store-nil/insert-fail = explicit error before any Telegram dispatch (regression test: no telegram when insert fails)
 - [X] T004 gates G42-G45 appended (pre-code, unlazy)
-- [ ] T005 suite + race + docker build + compose full boot
-- [ ] T006 Playwright: System Stats cards non-DOWN on cold boot (both engines)
-- [ ] T007 CI → deploy VPS → live verify (stats truth, DB-connected, no false DOWN)
-- [ ] T008 converge + gates reverify ALL MET
+- [X] T005 suite + race + docker build + compose full boot
+- [X] T006 Playwright: System Stats cards non-DOWN on cold boot (both engines)
+- [X] T007 CI → deploy VPS → live verify (stats truth, DB-connected, no false DOWN)
+- [X] T008 converge + gates reverify ALL MET
