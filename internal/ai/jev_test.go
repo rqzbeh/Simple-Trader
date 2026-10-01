@@ -9,7 +9,9 @@ import (
 	"time"
 )
 
-func jevMock(t *testing.T, handler http.HandlerFunc) *httptest.Server { return httptest.NewServer(handler) }
+func jevMock(t *testing.T, handler http.HandlerFunc) *httptest.Server {
+	return httptest.NewServer(handler)
+}
 
 func TestJevEvaluateParsesTypedAnswer(t *testing.T) {
 	t.Setenv("JEV_MODEL", "jev-latest") // required env — no in-code model default (spec-017)

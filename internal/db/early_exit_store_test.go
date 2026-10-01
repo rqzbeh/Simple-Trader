@@ -10,16 +10,16 @@ func TestEarlyExitJudgmentValidation(t *testing.T) {
 	guardsPassed := true
 
 	valid := &EarlyExitJudgment{
-		CycleID:         "cycle-123",
-		PositionID:      101,
-		Symbol:          "BTC/USDT",
-		Verdict:         "DO_NOT_HOLD",
-		Noul:            &noul,
-		Confidence:      &conf,
-		Route:           "jev_direct",
-		GuardsPassed:    &guardsPassed,
-		Action:          "closed",
-		Status:          "ok",
+		CycleID:      "cycle-123",
+		PositionID:   101,
+		Symbol:       "BTC/USDT",
+		Verdict:      "DO_NOT_HOLD",
+		Noul:         &noul,
+		Confidence:   &conf,
+		Route:        "jev_direct",
+		GuardsPassed: &guardsPassed,
+		Action:       "closed",
+		Status:       "ok",
 	}
 	if err := valid.Validate(); err != nil {
 		t.Fatalf("valid judgment rejected: %v", err)
@@ -117,4 +117,3 @@ func TestEarlyExitBackfill_NilPool(t *testing.T) {
 		t.Fatalf("expected nil error on nil pool for backfill, got: %v", err)
 	}
 }
-

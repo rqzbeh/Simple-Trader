@@ -101,7 +101,7 @@ func TestInvestorWithdrawalMath(t *testing.T) {
 
 	// Withdraws $2,200
 	withdrawAmount := 2200.0
-	unitsRedeemed := withdrawAmount / nav // 2,000 units
+	unitsRedeemed := withdrawAmount / nav   // 2,000 units
 	remainingUnits := units - unitsRedeemed // 8,000 units
 
 	remainingEquity := remainingUnits * nav // $8,800

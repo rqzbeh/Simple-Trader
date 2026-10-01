@@ -27,7 +27,7 @@ func TestDynamicCryptoScreenerEvaluation(t *testing.T) {
 	t.Run("Filters candidates dynamically based on liquidity thresholds", func(t *testing.T) {
 		cfg := ScreenerConfig{
 			Min24hVolume: 50000000.0, // $50M
-			MaxSpreadBps: 10.0,        // 10 bps
+			MaxSpreadBps: 10.0,       // 10 bps
 			CandidatePairs: []string{
 				"BTC/USD",        // Qualified (high volume, tight spread)
 				"LOWVOL/USD",     // Disqualified (volume < $50M)

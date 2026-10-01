@@ -41,10 +41,10 @@ func Default3HourAggregatorConfig() AggregatorConfig {
 
 // CandleAggregator aggregates real-time price ticks into completed 2-hour OHLCV bars.
 type CandleAggregator struct {
-	mu           sync.RWMutex
-	cfg          AggregatorConfig
-	currentBars  map[string]*CandleBar   // Active partial bar per symbol
-	historyBars  map[string][]CandleBar  // Completed historical bars per symbol
+	mu          sync.RWMutex
+	cfg         AggregatorConfig
+	currentBars map[string]*CandleBar  // Active partial bar per symbol
+	historyBars map[string][]CandleBar // Completed historical bars per symbol
 }
 
 // NewCandleAggregator initializes the multi-horizon aggregator.

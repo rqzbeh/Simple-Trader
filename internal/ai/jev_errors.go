@@ -10,10 +10,10 @@ import (
 // answer is ever returned in place of these errors.
 
 var (
-	ErrJevAuth       = errors.New("jev: authentication failed")
-	ErrJevTimeout    = errors.New("jev: request timeout")
-	ErrJevSchema     = errors.New("jev: answer schema mismatch")
-	ErrJevRateLimit  = errors.New("jev: rate limited")
+	ErrJevAuth        = errors.New("jev: authentication failed")
+	ErrJevTimeout     = errors.New("jev: request timeout")
+	ErrJevSchema      = errors.New("jev: answer schema mismatch")
+	ErrJevRateLimit   = errors.New("jev: rate limited")
 	ErrJevUnavailable = errors.New("jev: service unavailable")
 
 	ErrLLMClassify = errors.New("llm-classifier: classification failed")

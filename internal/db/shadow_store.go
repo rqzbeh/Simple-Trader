@@ -92,6 +92,12 @@ func anyPtr(v []byte) any {
 
 // InsertShadowDecision persists one record.
 func (s *Store) InsertShadowDecision(ctx context.Context, d *ShadowDecision) error {
+	if s == nil || s.Pool == nil {
+		return fmt.Errorf("shadow_decisions: store or pool is nil")
+	}
+	if d == nil {
+		return fmt.Errorf("shadow_decisions: decision is nil")
+	}
 	if err := d.Validate(); err != nil {
 		return err
 	}
@@ -118,6 +124,9 @@ func (s *Store) InsertShadowDecision(ctx context.Context, d *ShadowDecision) err
 
 // Report aggregates evidence (FR-017).
 func (s *Store) ShadowReport(ctx context.Context, judgmentType string, days int) (map[string]interface{}, error) {
+	if s == nil || s.Pool == nil {
+		return nil, fmt.Errorf("shadow_decisions: store or pool is nil")
+	}
 	if days <= 0 {
 		days = 14
 	}

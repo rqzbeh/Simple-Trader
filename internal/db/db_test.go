@@ -61,7 +61,7 @@ func TestTradeModelCalculations(t *testing.T) {
 	}
 
 	pnl, retPct := tr.CalculatePnL()
-	expectedPnL := (2652.0 - 2600.0) * 10.0      // 520.0
+	expectedPnL := (2652.0 - 2600.0) * 10.0                    // 520.0
 	expectedRet := float32(((2652.0 - 2600.0) / 2600.0) * 100) // 2.0%
 
 	if pnl != expectedPnL {

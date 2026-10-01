@@ -115,8 +115,8 @@ func (c *Client) ClassifyNews(ctx context.Context, symbol string, headlines []st
 	}
 	f := false
 	req := openAIChatRequest{
-		Model:     c.cfg.ModelID,
-		Stream:    &f,
+		Model:      c.cfg.ModelID,
+		Stream:     &f,
 		ToolChoice: "none",
 		Messages: []openAIMessage{
 			{Role: "system", Content: newsSystemPrompt},

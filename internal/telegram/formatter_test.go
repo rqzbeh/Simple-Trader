@@ -220,7 +220,6 @@ func TestFormatEarlyExit(t *testing.T) {
 	}
 }
 
-
 // TestFormatterShowsRealTimeframe (spec-020 US-C2): the card must state the
 // STORED timeframe — the legacy hardcoded "2-Hour Swing Setup" claimed 2h on
 // 15m signals — and must never fabricate catalyst text or claim fixed R:R.
@@ -228,17 +227,17 @@ func TestFormatterShowsRealTimeframe(t *testing.T) {
 	tf := "15m"
 	tp2 := 175.5
 	sig := &db.FuturesTradeSignal{
-		Symbol:            "AAVE/USDT",
-		Direction:         "LONG",
-		Timeframe:         &tf,
-		Leverage:          3,
-		EntryPrice:        173.02,
-		StopLoss:          171.98,
-		TakeProfit1:       175.15,
-		TakeProfit2:       &tp2,
-		RiskRewardRatio:   2.05,
-		CatalystHeadline:  "BlackRock ETF inflows hit weekly record",
-		CatalystSource:    "cointelegraph",
+		Symbol:           "AAVE/USDT",
+		Direction:        "LONG",
+		Timeframe:        &tf,
+		Leverage:         3,
+		EntryPrice:       173.02,
+		StopLoss:         171.98,
+		TakeProfit1:      175.15,
+		TakeProfit2:      &tp2,
+		RiskRewardRatio:  2.05,
+		CatalystHeadline: "BlackRock ETF inflows hit weekly record",
+		CatalystSource:   "cointelegraph",
 	}
 	out := telegram.FormatSignalEntry(sig)
 	if !strings.Contains(out, "15m") {

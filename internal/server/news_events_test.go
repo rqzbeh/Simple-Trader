@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -93,4 +94,37 @@ func TestEnqueueNewsArticleMatchesSymbols(t *testing.T) {
 			t.Errorf("bad symbol %q", sym)
 		}
 	}
+}
+
+func TestEnqueueNewsArticleDegradedAndNilQueue(t *testing.T) {
+	// Nil server: must be safe no-op
+	var nilServer *Server
+	nilServer.EnqueueNewsArticle(&db.NewsArticle{Title: "Bitcoin rallies"})
+
+	// Nil queue: must be safe no-op
+	s := &Server{newsQueue: nil}
+	s.EnqueueNewsArticle(&db.NewsArticle{Title: "Bitcoin rallies"})
+
+	// Nil article: must be safe no-op
+	s.newsQueue = make(chan string, 16)
+	s.EnqueueNewsArticle(nil)
+	if len(s.newsQueue) != 0 {
+		t.Errorf("expected 0 queued items on nil article")
+	}
+}
+
+func TestStartNewsDrivenScannerDegraded(t *testing.T) {
+	// Server with nil crawler and nil screener must start worker without panic
+	s := &Server{}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	s.StartNewsDrivenScanner(ctx)
+	if s.newsQueue == nil {
+		t.Fatal("StartNewsDrivenScanner must initialize newsQueue if nil")
+	}
+
+	// Enqueue a symbol to verify consumption without panic
+	s.newsQueue <- "BTC/USDT"
+	time.Sleep(50 * time.Millisecond)
 }

@@ -58,10 +58,14 @@ func (s *Server) debounced(sym string, now time.Time, window time.Duration) bool
 // every universe symbol the headline is relevant to is queued for an
 // immediate evaluation. Queue overflow is logged explicitly, never silent.
 func (s *Server) EnqueueNewsArticle(article *db.NewsArticle) {
-	if article == nil || s.newsQueue == nil {
+	if s == nil || article == nil || s.newsQueue == nil {
 		return
 	}
-	for _, sym := range s.scanUniverse() {
+	universe := s.scanUniverse()
+	if len(universe) == 0 {
+		return
+	}
+	for _, sym := range universe {
 		if len(market.HeadlinesForSymbol([]string{article.Title}, sym)) == 0 {
 			continue
 		}
@@ -84,15 +88,32 @@ func (s *Server) EnqueueNewsArticle(article *db.NewsArticle) {
 // StartNewsDrivenScanner consumes the news queue: debounce → overlap guard →
 // single-symbol evaluation through the SAME pipeline as the periodic scan.
 func (s *Server) StartNewsDrivenScanner(ctx context.Context) {
-	s.newsQueue = make(chan string, 512)
+	if s == nil {
+		return
+	}
+	if s.newsQueue == nil {
+		s.newsQueue = make(chan string, 512)
+	}
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[ERROR] news-driven scanner recovered from panic: %v", r)
+			}
+		}()
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case sym := <-s.newsQueue:
 				s.newsPending.Delete(sym) // dequeued — eligible for future events
-				s.evalSymbolFromNews(ctx, sym)
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							log.Printf("[ERROR] evalSymbolFromNews %s recovered from panic: %v", sym, r)
+						}
+					}()
+					s.evalSymbolFromNews(ctx, sym)
+				}()
 			}
 		}
 	}()

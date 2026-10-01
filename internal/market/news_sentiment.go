@@ -4,10 +4,10 @@ package market
 type SentimentPolarity string
 
 const (
-	PolarityBullish  SentimentPolarity = "BULLISH"
-	PolarityBearish  SentimentPolarity = "BEARISH"
-	PolarityNeutral  SentimentPolarity = "NEUTRAL"
-	PolarityMixed    SentimentPolarity = "MIXED"
+	PolarityBullish SentimentPolarity = "BULLISH"
+	PolarityBearish SentimentPolarity = "BEARISH"
+	PolarityNeutral SentimentPolarity = "NEUTRAL"
+	PolarityMixed   SentimentPolarity = "MIXED"
 )
 
 // NewsSentimentReport captures classified news impact (spec-013 v3.0).

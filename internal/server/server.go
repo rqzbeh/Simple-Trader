@@ -108,7 +108,11 @@ func NewServer(
 			}
 		}
 	}
-	shadow := &trader.ShadowOrchestrator{Router: decisionRouter, Store: dbStore}
+	var shadowStore trader.ShadowDecisionSink
+	if dbStore != nil {
+		shadowStore = dbStore
+	}
+	shadow := &trader.ShadowOrchestrator{Router: decisionRouter, Store: shadowStore}
 	shadow.Start(2, 64)
 	shadow.SetEnabled("entry", os.Getenv("SHADOW_ENTRY") != "false")
 	shadow.SetEnabled("exit", os.Getenv("SHADOW_EXIT") != "false")
@@ -184,6 +188,7 @@ func NewServer(
 		marketData:        marketData,
 		candleDownloader:  candleDownloader,
 		calendar:          calendar,
+		newsQueue:         make(chan string, 512),
 	}
 
 	// Register initial SSE hydration provider so newly connected dashboards receive all cached live asset prices instantly

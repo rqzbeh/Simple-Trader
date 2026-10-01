@@ -33,9 +33,9 @@ type MacroEvent struct {
 
 // EconomicCalendar manages upcoming high-impact economic releases and enforces trade halts.
 type EconomicCalendar struct {
-	mu           sync.RWMutex
-	events       []MacroEvent
-	haltWindow   time.Duration // typically 15 minutes
+	mu         sync.RWMutex
+	events     []MacroEvent
+	haltWindow time.Duration // typically 15 minutes
 }
 
 // NewEconomicCalendar initializes the calendar tracker.

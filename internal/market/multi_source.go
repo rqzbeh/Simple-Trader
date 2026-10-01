@@ -190,15 +190,15 @@ type coinexV2TickerResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    []struct {
-		Market    string `json:"market"`
-		Last      string `json:"last"`
-		Open      string `json:"open"`
-		Close     string `json:"close"`
-		High      string `json:"high"`
-		Low       string `json:"low"`
-		Volume    string `json:"volume"`
-		Value     string `json:"value"`
-		Period    int64  `json:"period"`
+		Market string `json:"market"`
+		Last   string `json:"last"`
+		Open   string `json:"open"`
+		Close  string `json:"close"`
+		High   string `json:"high"`
+		Low    string `json:"low"`
+		Volume string `json:"volume"`
+		Value  string `json:"value"`
+		Period int64  `json:"period"`
 	} `json:"data"`
 }
 

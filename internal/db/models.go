@@ -82,23 +82,23 @@ func (s *Signal) Validate() error {
 
 // Trade represents an executed order.
 type Trade struct {
-	ID           int64      `json:"id"`
-	SignalID     *int64     `json:"signal_id"`
-	Symbol       string     `json:"symbol"`
-	Side         string     `json:"side"`   // 'BUY' or 'SELL'
-	Bucket       string     `json:"bucket"` // 'CORE' or 'ALPHA'
-	PositionSize float64    `json:"position_size"`
-	EntryPrice   float64    `json:"entry_price"`
-	EntryTime    time.Time  `json:"entry_time"`
-	ExitPrice    float64    `json:"exit_price"`
-	ExitTime     *time.Time `json:"exit_time"`
-	StopLoss     float64    `json:"stop_loss"`
-	TakeProfit   float64    `json:"take_profit"`
-	RealizedPnL  float64    `json:"realized_pnl"`
-	ReturnPct    float32    `json:"return_pct"`
-	ExitReason   string     `json:"exit_reason"`
-	RootCause    string     `json:"root_cause"`
-	Status       string     `json:"status"` // 'OPEN', 'CLOSED'
+	ID               int64      `json:"id"`
+	SignalID         *int64     `json:"signal_id"`
+	Symbol           string     `json:"symbol"`
+	Side             string     `json:"side"`   // 'BUY' or 'SELL'
+	Bucket           string     `json:"bucket"` // 'CORE' or 'ALPHA'
+	PositionSize     float64    `json:"position_size"`
+	EntryPrice       float64    `json:"entry_price"`
+	EntryTime        time.Time  `json:"entry_time"`
+	ExitPrice        float64    `json:"exit_price"`
+	ExitTime         *time.Time `json:"exit_time"`
+	StopLoss         float64    `json:"stop_loss"`
+	TakeProfit       float64    `json:"take_profit"`
+	RealizedPnL      float64    `json:"realized_pnl"`
+	ReturnPct        float32    `json:"return_pct"`
+	ExitReason       string     `json:"exit_reason"`
+	RootCause        string     `json:"root_cause"`
+	Status           string     `json:"status"` // 'OPEN', 'CLOSED'
 	ExecutionFee     float64    `json:"execution_fee"`
 	SlippagePaid     float64    `json:"slippage_paid"`
 	Leverage         int        `json:"leverage"`

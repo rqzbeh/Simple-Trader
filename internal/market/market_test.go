@@ -142,4 +142,3 @@ func TestAssetUniverse(t *testing.T) {
 		t.Errorf("expected both Core and Alpha assets present")
 	}
 }
-

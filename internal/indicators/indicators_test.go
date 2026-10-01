@@ -134,9 +134,9 @@ func TestOrderBookImbalance(t *testing.T) {
 func TestCVDAndDivergence(t *testing.T) {
 	cvd := indicators.NewCVDTracker(10)
 
-	cvd.Update(10.0, 5.0)  // +5
-	cvd.Update(20.0, 10.0) // +15
-	cvd.Update(15.0, 5.0)  // +25
+	cvd.Update(10.0, 5.0)         // +5
+	cvd.Update(20.0, 10.0)        // +15
+	cvd.Update(15.0, 5.0)         // +25
 	val := cvd.Update(30.0, 10.0) // +45
 
 	if val != 45.0 {
@@ -290,13 +290,13 @@ func TestBuildSnapshot(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		p := 100.0 + float64(i)*0.5
 		candles = append(candles, db.Candle{
-			Symbol:    "BTC/USDT",
-			Open:      p - 0.2,
-			High:      p + 1.0,
-			Low:       p - 1.0,
-			Close:     p,
-			Volume:    1000.0,
-			OpenTime:  now.Add(time.Duration(i) * time.Hour),
+			Symbol:   "BTC/USDT",
+			Open:     p - 0.2,
+			High:     p + 1.0,
+			Low:      p - 1.0,
+			Close:    p,
+			Volume:   1000.0,
+			OpenTime: now.Add(time.Duration(i) * time.Hour),
 		})
 	}
 
@@ -320,6 +320,3 @@ func TestBuildSnapshot(t *testing.T) {
 		t.Errorf("expected ConfluenceScore in [0, 1], got %f", snap.ConfluenceScore)
 	}
 }
-
-
-

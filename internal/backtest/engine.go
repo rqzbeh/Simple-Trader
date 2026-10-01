@@ -23,12 +23,12 @@ type Candle struct {
 
 // BacktestConfig configures the vectorized historical backtest run.
 type BacktestConfig struct {
-	Symbol            string                `json:"symbol"`
-	InitialCapital    float64               `json:"initial_capital"`
-	Friction          trader.FrictionModel  `json:"friction"`
-	Kelly             trader.KellyConfig    `json:"kelly"`
-	IndicatorsWeights map[string]float64    `json:"indicator_weights"`
-	RiskFreeRate      float64               `json:"risk_free_rate"` // Annualized, e.g. 0.04 (4%)
+	Symbol            string               `json:"symbol"`
+	InitialCapital    float64              `json:"initial_capital"`
+	Friction          trader.FrictionModel `json:"friction"`
+	Kelly             trader.KellyConfig   `json:"kelly"`
+	IndicatorsWeights map[string]float64   `json:"indicator_weights"`
+	RiskFreeRate      float64              `json:"risk_free_rate"` // Annualized, e.g. 0.04 (4%)
 }
 
 // TradeRecord stores individual trade performance from the backtest simulation.

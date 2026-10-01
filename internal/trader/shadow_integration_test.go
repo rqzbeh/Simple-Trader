@@ -59,3 +59,62 @@ func TestShadowTogglesPerType(t *testing.T) {
 		t.Fatal("toggle off failed")
 	}
 }
+
+func TestShadowRecordTypedNilStore(t *testing.T) {
+	o := &ShadowOrchestrator{}
+	var nilStore *db.Store
+	o.Store = nilStore
+	if err := o.Record(context.Background(), &db.ShadowDecision{CycleID: "c"}); err == nil {
+		t.Fatal("typed nil store must error explicitly, not panic")
+	}
+}
+
+func TestShadowNilOrchestratorSafe(t *testing.T) {
+	var o *ShadowOrchestrator
+	o.Start(1, 10)
+	o.SetEnabled("entry", true)
+	if o.active("entry") {
+		t.Fatal("nil orchestrator should not be active")
+	}
+	if err := o.Enqueue(func() {}); err == nil {
+		t.Fatal("expected error on nil orchestrator Enqueue")
+	}
+	if err := o.Record(context.Background(), &db.ShadowDecision{CycleID: "c"}); err == nil {
+		t.Fatal("expected error on nil orchestrator Record")
+	}
+	o.JudgeEntry("c", "BTC/USDT", nil, nil, nil, "NO_TRADE")
+}
+
+func TestShadowWorkerRecoverPanic(t *testing.T) {
+	o := &ShadowOrchestrator{}
+	o.Start(1, 10)
+
+	completed := make(chan struct{})
+	// Enqueue a job that deliberately panics
+	_ = o.Enqueue(func() {
+		panic("deliberate panic in shadow worker test")
+	})
+	// Enqueue a subsequent job to verify the worker continues processing
+	_ = o.Enqueue(func() {
+		close(completed)
+	})
+
+	select {
+	case <-completed:
+		// success: worker recovered from panic and processed the next job
+	case <-time.After(1 * time.Second):
+		t.Fatal("worker died after panic, did not recover to process next job")
+	}
+}
+
+func TestShadowJudgeEntryNilStoreNoPanic(t *testing.T) {
+	o := &ShadowOrchestrator{}
+	var nilStore *db.Store
+	o.Store = nilStore
+	o.SetEnabled("entry", true)
+	o.Start(1, 10)
+
+	// JudgeEntry with nil Router or nil Store must not panic
+	o.JudgeEntry("c1", "BTC/USDT", nil, nil, nil, "NO_TRADE")
+	time.Sleep(50 * time.Millisecond)
+}

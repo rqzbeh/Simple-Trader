@@ -846,6 +846,7 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 	defer batchCancel()
 
 	var wg sync.WaitGroup
+	var resultsMu sync.Mutex
 	// Modest concurrency: 24 parallel calls starved the gateway (100 of 123
 	// hit the deadline and fell back to the lexicon heuristic, which always
 	// reports neutral HOLD). Fewer in-flight calls keep each AI round-trip
@@ -869,7 +870,11 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 		wg.Add(1)
 		go func(idx int, symbol string) {
 			defer wg.Done()
-			sem <- struct{}{}
+			select {
+			case sem <- struct{}{}:
+			case <-batchCtx.Done():
+				return
+			}
 			defer func() { <-sem }()
 
 			// Do not start new evaluations after the batch deadline: their
@@ -879,20 +884,29 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 				return
 			}
 
-			evalCtx, evalCancel := context.WithTimeout(batchCtx, 20*time.Second)
+			evalTimeout := 20 * time.Second
+			if deadline, ok := batchCtx.Deadline(); ok {
+				remaining := time.Until(deadline)
+				if remaining <= 0 {
+					return
+				}
+				if remaining < evalTimeout {
+					evalTimeout = remaining
+				}
+			}
+
+			evalCtx, evalCancel := context.WithTimeout(batchCtx, evalTimeout)
 			defer evalCancel()
 
 			sig, holdReason, err := s.EvaluateSymbolSignal(evalCtx, symbol, newsHeadlines)
+			resultsMu.Lock()
 			if err != nil {
 				results[idx] = AssetScanResult{
 					Symbol: symbol,
 					Status: "ERROR",
 					Error:  err.Error(),
 				}
-				return
-			}
-
-			if sig == nil {
+			} else if sig == nil {
 				results[idx] = AssetScanResult{
 					Symbol:  symbol,
 					Status:  "HOLD",
@@ -905,13 +919,29 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 					Signal: sig,
 				}
 			}
+			resultsMu.Unlock()
 		}(i, sym)
 	}
 
-	wg.Wait()
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-batchCtx.Done():
+		log.Printf("[WARN] GenerateAllFuturesSignalsHandler: batch deadline reached (%v), returning partial results", batchCtx.Err())
+	}
+
+	resultsMu.Lock()
+	finalResults := make([]AssetScanResult, len(results))
+	copy(finalResults, results)
+	resultsMu.Unlock()
 
 	signalsCount := 0
-	for _, res := range results {
+	for _, res := range finalResults {
 		if res.Status == "SIGNAL" {
 			signalsCount++
 		}
@@ -920,7 +950,7 @@ func (s *Server) GenerateAllFuturesSignalsHandler(w http.ResponseWriter, r *http
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"scanned_count": len(symbols),
 		"signals_count": signalsCount,
-		"results":       results,
+		"results":       finalResults,
 		"timestamp":     time.Now(),
 	})
 }
@@ -1446,12 +1476,18 @@ func (s *Server) StartBackgroundSignalScanner(ctx context.Context, interval time
 // the screener's ACTIVE universe when available, otherwise the full catalog
 // (before the first screener pass completes).
 func (s *Server) scanUniverse() []string {
+	if s == nil {
+		return nil
+	}
 	if s.screener != nil {
 		if qualified := s.screener.GetActiveUniverse(); len(qualified) > 0 {
 			return qualified
 		}
 	}
 	allAssets := market.GetSupportedAssets()
+	if len(allAssets) == 0 {
+		return nil
+	}
 	symbols := make([]string, 0, len(allAssets))
 	for _, a := range allAssets {
 		symbols = append(symbols, a.Symbol)

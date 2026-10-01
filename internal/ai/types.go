@@ -22,11 +22,11 @@ type ClientConfig struct {
 // headlines attached to a DecisionRequest, so the model reasons from scored
 // evidence instead of raw text alone.
 type NewsSentimentInput struct {
-	Score         float64  `json:"score"`          // -1.0 (bearish) to +1.0 (bullish)
-	Polarity      string   `json:"polarity"`       // BULLISH, BEARISH, NEUTRAL
-	HeadlineCount int      `json:"headline_count"` // Headlines scored
-	BullishCount  int      `json:"bullish_count"`  // Headlines leaning bullish
-	BearishCount  int      `json:"bearish_count"`  // Headlines leaning bearish
+	Score         float64  `json:"score"`                 // -1.0 (bearish) to +1.0 (bullish)
+	Polarity      string   `json:"polarity"`              // BULLISH, BEARISH, NEUTRAL
+	HeadlineCount int      `json:"headline_count"`        // Headlines scored
+	BullishCount  int      `json:"bullish_count"`         // Headlines leaning bullish
+	BearishCount  int      `json:"bearish_count"`         // Headlines leaning bearish
 	KeyPhrases    []string `json:"key_phrases,omitempty"` // Trigger phrases detected
 }
 
@@ -40,7 +40,7 @@ type DecisionRequest struct {
 	NewsHeadlines  []string
 	NewsSentiment  *NewsSentimentInput
 	CatalystEvents []CatalystEventInput // clustered events (US3 T036)
-	HorizonMinutes int                 // profile holding horizon for the bucket (US4 T040)
+	HorizonMinutes int                  // profile holding horizon for the bucket (US4 T040)
 	// Gates: real outcomes of the pre-AI entry guards that already ran
 	// (spec-018 FR-501) — hydrated state, never an empty placeholder.
 	Gates map[string]string
@@ -60,15 +60,15 @@ type CatalystEventInput struct {
 type DecisionResponse struct {
 	Evidence                []string `json:"evidence,omitempty"`
 	Decision                string   `json:"decision"`                  // "BUY", "SELL", or "HOLD"
-	Confidence              float64 `json:"confidence"`                // 0.0 - 1.0
-	Reasoning               string  `json:"reasoning"`                 // LLM analytical justification
-	Catalyst                string  `json:"catalyst,omitempty"`        // Primary news catalyst headline or source
-	Leverage                int     `json:"leverage,omitempty"`        // Isolated leverage factor (1x - 10x)
-	AllocationPct           float64 `json:"allocation_pct,omitempty"`  // Suggested % of available alpha fund (e.g. 2.0%)
-	SuggestedStopLossPct    float64 `json:"suggested_stop_loss_pct"`   // e.g. 1.5%
-	SuggestedTakeProfitPct  float64 `json:"suggested_take_profit_pct"` // e.g. 3.0%
-	Regime                  string  `json:"regime"`                    // "BULL", "BEAR", or "RANGING"
-	EstimatedWinProbability float64 `json:"estimated_win_probability"` // 0.0 - 1.0
+	Confidence              float64  `json:"confidence"`                // 0.0 - 1.0
+	Reasoning               string   `json:"reasoning"`                 // LLM analytical justification
+	Catalyst                string   `json:"catalyst,omitempty"`        // Primary news catalyst headline or source
+	Leverage                int      `json:"leverage,omitempty"`        // Isolated leverage factor (1x - 10x)
+	AllocationPct           float64  `json:"allocation_pct,omitempty"`  // Suggested % of available alpha fund (e.g. 2.0%)
+	SuggestedStopLossPct    float64  `json:"suggested_stop_loss_pct"`   // e.g. 1.5%
+	SuggestedTakeProfitPct  float64  `json:"suggested_take_profit_pct"` // e.g. 3.0%
+	Regime                  string   `json:"regime"`                    // "BULL", "BEAR", or "RANGING"
+	EstimatedWinProbability float64  `json:"estimated_win_probability"` // 0.0 - 1.0
 	// GateRejected is set when an entry gate vetoed a BUY/SELL decision
 	// (spec 012 US1). Non-empty rule name; the signal was NOT persisted.
 	GateRejected string `json:"gate_rejected,omitempty"`
