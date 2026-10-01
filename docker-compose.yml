@@ -53,7 +53,7 @@ services:
     environment:
       PORT: ${PORT:?PORT required in .env}
       DATABASE_URL: postgres://${POSTGRES_USER:?POSTGRES_USER required}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD required}@postgres:5432/${POSTGRES_DB:?POSTGRES_DB required}?sslmode=disable
-      REDIS_URL: ${REDIS_URL:?REDIS_URL required in .env}
+      REDIS_URL: "redis://redis:6379/0"
       ENV: "production"
       ENV_FILE: "/.env"
     volumes:
