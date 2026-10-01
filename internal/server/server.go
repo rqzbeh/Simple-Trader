@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -211,7 +213,56 @@ func NewServer(
 	}
 
 	s.setupRoutes()
+
+	// spec-022 FR-802: boot warmup probe — populate gateway/Jev telemetry with
+	// a real reachability measurement so cold boot reports STANDBY-truthful
+	// numbers instead of 0/0 "DOWN". Actual model calls overwrite these
+	// counters on the first real judgment.
+	go s.warmupProbe()
 	return s
+}
+
+// warmupProbe pings both engines once, bounded and detached from any request
+// context. Any HTTP response (even 401/404) proves the endpoint is reachable;
+// only a transport error counts as a failure.
+func (s *Server) warmupProbe() {
+	client := &http.Client{Timeout: 8 * time.Second}
+	ping := func(url string) (bool, time.Duration, error) {
+		start := time.Now()
+		resp, err := client.Get(url)
+		latency := time.Since(start)
+		if err != nil {
+			return false, latency, err
+		}
+		resp.Body.Close()
+		return true, latency, nil
+	}
+	if base := strings.TrimRight(os.Getenv("AI_BASE_URL"), "/"); base != "" {
+		ok, latency, err := ping(base + "/models")
+		ms := float64(latency.Microseconds()) / 1000.0
+		ai.RecordGateway(ok, ms, errString(err))
+		log.Printf("[WARMUP] 9Router gateway %s in %.0fms", statusText(ok), ms)
+	}
+	if jev := strings.TrimRight(os.Getenv("JEV_BASE_URL"), "/"); jev != "" {
+		ok, latency, err := ping(jev)
+		ms := float64(latency.Microseconds()) / 1000.0
+		ai.RecordJev(ok, ms, errString(err))
+		log.Printf("[WARMUP] TypeSafe Jev %s in %.0fms", statusText(ok), ms)
+	}
+}
+
+func errString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+func statusText(ok bool) string {
+	if ok {
+		return "reachable"
+	}
+	return "unreachable"
 }
 
 // SetCandleDownloader injects a historical candle provider (useful for testing or alternative exchanges).

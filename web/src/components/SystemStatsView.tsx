@@ -39,19 +39,28 @@ interface SystemStatsResponse {
   jev: JevStatsData;
 }
 
-type StatusLevel = 'healthy' | 'degraded' | 'down';
+type StatusLevel = 'healthy' | 'degraded' | 'down' | 'standby' | 'idle';
 
-function getHealthStatus(stats: GatewayStatsData): { status: StatusLevel; label: string } {
-  if (!stats.last_ok_at || stats.success === 0) {
-    return { status: 'down', label: 'DOWN' };
-  }
-  const okTime = new Date(stats.last_ok_at).getTime();
+// spec-022 FR-801: truthful engine states — a cold boot or an event-driven
+// quiet window is NOT "DOWN". STANDBY = booted, no traffic yet; IDLE = last
+// call OK but older than 5m with zero failures; DEGRADED = recent failures;
+// DOWN only when failures exist and nothing succeeded recently.
+export function getHealthStatus(stats: GatewayStatsData): { status: StatusLevel; label: string } {
+  const hasSuccess = stats.total > 0 && stats.success > 0;
+  const okTime = stats.last_ok_at ? new Date(stats.last_ok_at).getTime() : 0;
   const fiveMinAgo = Date.now() - 5 * 60 * 1000;
-  if (okTime < fiveMinAgo) {
-    return { status: 'down', label: 'DOWN (>5M STALE)' };
+
+  if (!hasSuccess && stats.fail === 0) {
+    return { status: 'standby', label: 'STANDBY' };
+  }
+  if (stats.fail > 0 && !hasSuccess) {
+    return { status: 'down', label: 'DOWN' };
   }
   if (stats.fail > 0) {
     return { status: 'degraded', label: 'DEGRADED' };
+  }
+  if (okTime < fiveMinAgo) {
+    return { status: 'idle', label: 'IDLE (>5M)' };
   }
   return { status: 'healthy', label: 'HEALTHY' };
 }
@@ -222,6 +231,20 @@ export const SystemStatsView: React.FC = () => {
         return (
           <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
             <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+            <span>{statusInfo.label}</span>
+          </span>
+        );
+      case 'standby':
+        return (
+          <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
+            <span className="w-2 h-2 rounded-full bg-sky-500"></span>
+            <span>{statusInfo.label}</span>
+          </span>
+        );
+      case 'idle':
+        return (
+          <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full text-[10px] font-mono font-bold bg-slate-500/10 text-slate-500 dark:text-slate-400 border border-slate-500/20">
+            <span className="w-2 h-2 rounded-full bg-slate-500"></span>
             <span>{statusInfo.label}</span>
           </span>
         );

@@ -233,6 +233,13 @@ func metaSlice(m *trader.CatalystMeta) []trader.CatalystMeta {
 
 // EvaluateSymbolSignal evaluates a single symbol against breaking news catalysts and technical confluence.
 // If high conviction is detected, it persists the signal, broadcasts via SSE and Telegram, and returns the signal.
+// shouldAnnounceSignal reports whether a signal is safe to broadcast (SSE +
+// Telegram). Persisted (ID>0) and not already dispatched — zero-fallback:
+// never announce what the database does not hold (spec-022 FR-803).
+func shouldAnnounceSignal(sig *db.FuturesTradeSignal) bool {
+	return sig != nil && sig.ID > 0 && !sig.TelegramDispatched
+}
+
 func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol string, headlines []string) (*db.FuturesTradeSignal, string, error) {
 	if s.aiClient == nil {
 		return nil, "AI client not configured", errors.New("ai client not configured")
@@ -706,8 +713,10 @@ func (s *Server) EvaluateSymbolSignal(ctx context.Context, symbol string, headli
 	// Every active signal must hold a matching execution-engine position.
 	s.ensureSignalPosition(sig)
 
-	// Broadcast signal via SSE and Telegram ONLY if brand-new and not yet dispatched
-	if !sig.TelegramDispatched {
+	// spec-022 FR-803: announce ONLY a persisted, not-yet-dispatched signal.
+	// A signal with ID==0 never reached the database — broadcasting it makes
+	// Telegram claim trades the Terminal can never show (2026-10-01 defect).
+	if shouldAnnounceSignal(sig) {
 		if s.broadcaster != nil {
 			if sigBytes, err := json.Marshal(sig); err == nil {
 				s.broadcaster.Broadcast("futures_signal", string(sigBytes))
