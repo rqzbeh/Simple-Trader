@@ -16,12 +16,23 @@ export default defineConfig({
     },
   },
   build: {
-    rollupOptions: {
+    rolldownOptions: {
       output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom'],
-          'vendor-charts': ['lightweight-charts'],
-          'vendor-icons': ['lucide-react'],
+        codeSplitting: {
+          groups: [
+            {
+              name: 'vendor-react',
+              test: /node_modules[\\/](react|react-dom)[\\/]/,
+            },
+            {
+              name: 'vendor-charts',
+              test: /node_modules[\\/]lightweight-charts[\\/]/,
+            },
+            {
+              name: 'vendor-icons',
+              test: /node_modules[\\/]lucide-react[\\/]/,
+            },
+          ],
         },
       },
     },
@@ -35,7 +46,7 @@ export default defineConfig({
         return html.replaceAll('<script', '<script data-cfasync="false"');
       },
       closeBundle() {
-        const indexPath = path.resolve(__dirname, 'dist/index.html');
+        const indexPath = path.resolve(import.meta.dirname, 'dist/index.html');
         if (fs.existsSync(indexPath)) {
           let html = fs.readFileSync(indexPath, 'utf-8');
           html = html.replace(/<script\b(?![^>]*data-cfasync)/gi, '<script data-cfasync="false"');
