@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { createChart, IChartApi, ISeriesApi, ColorType, CandlestickData, Time } from 'lightweight-charts';
+import { createChart, IChartApi, ISeriesApi, ColorType, CandlestickData, Time, CandlestickSeries } from 'lightweight-charts';
 import { useTheme } from '../context/ThemeContext';
 import { formatChartTick, formatChartTime, useTimezone } from '../utils/time';
 import { CandleData } from '../types';
@@ -70,7 +70,7 @@ export const TradingViewChart: React.FC<ChartProps> = ({ symbol, data }) => {
       height: 420,
     });
 
-    const candlestickSeries = chart.addCandlestickSeries({
+    const candlestickSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#10b981',
       downColor: '#ef4444',
       borderVisible: false,
