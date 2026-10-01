@@ -61,8 +61,15 @@ func TestAESGCMTamperResistance(t *testing.T) {
 		t.Fatalf("expected error when decrypting with wrong key, got nil")
 	}
 
-	// Tampered ciphertext
-	tamperedCipher := "A" + cipherB64[1:]
+	// Tampered ciphertext — flip the FIRST base64 char to a DIFFERENT char.
+	// ("A"+rest was flaky: when the original already started with A the
+	// ciphertext was unchanged and GCM verification legitimately passed —
+	// CI failure TestAESGCMTamperResistance, 2026-10-01.)
+	repl := byte('A')
+	if cipherB64[0] == 'A' {
+		repl = 'B'
+	}
+	tamperedCipher := string(repl) + cipherB64[1:]
 	_, err = Decrypt(tamperedCipher, nonceHex, key)
 	if err == nil {
 		t.Fatalf("expected error on tampered ciphertext, got nil")
