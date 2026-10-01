@@ -3,6 +3,7 @@ package market
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -148,17 +149,21 @@ func (s *DynamicCryptoScreener) RunScreeningCycle(ctx context.Context) []db.Scre
 				sem <- struct{}{}
 				defer func() { <-sem }()
 
-				p, v, sp, err := s.provider.Get24hStats(sym)
-
-				// CORE commodities on Yahoo feeds are not on Binance: fall back
-				// to the live price the feed already cached in Redis.
-				if err != nil && GetBucket(sym) == "CORE" {
-					assetDef, _ := FindAsset(sym)
-					if assetDef.FeedSource == "YAHOO" && s.redisClient != nil {
-						if cached, cErr := s.redisClient.GetTicker(ctx, sym); cErr == nil && cached != nil && cached.Price > 0 {
-							p, v, sp, err = cached.Price, cached.Volume, 0, nil
-						}
+				// CORE commodities with FeedSource=YAHOO (OIL, ALU, NG, BRENT)
+				// are not on Binance at all. Skip the Binance round-trip that
+				// always returns 400 and go directly to the Redis-cached feed
+				// price. Only fall through to Binance for Binance-native assets.
+				var p, v, sp float64
+				var err error
+				assetDef, _ := FindAsset(sym)
+				if assetDef.FeedSource == "YAHOO" && s.redisClient != nil {
+					if cached, cErr := s.redisClient.GetTicker(ctx, sym); cErr == nil && cached != nil && cached.Price > 0 {
+						p, v, sp = cached.Price, cached.Volume, 0
+					} else {
+						err = fmt.Errorf("CORE/YAHOO asset %s: no cached price in Redis", sym)
 					}
+				} else {
+					p, v, sp, err = s.provider.Get24hStats(sym)
 				}
 				results[idx] = statsResult{price: p, vol: v, spread: sp, err: err}
 			}(i, symbol)
